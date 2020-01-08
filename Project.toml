@@ -1,0 +1,13 @@
+name = "TDAC"
+uuid = "507090cf-060f-45f0-ade2-b737b1c8d972"
+authors = ["Mosè Giordano"]
+version = "0.1.0"
+
+[compat]
+julia = "1.3"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
