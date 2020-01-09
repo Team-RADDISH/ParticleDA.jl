@@ -1,10 +1,10 @@
 # Solve the well-conditioned linear system
 # Sum( m(i,j)*a(j) ) == v(i) for a(:)
 # by Gauss-Seidel method.
-function matrix_gs!(m::AbstractMatrix{T},
-                    v::AbstractVector{T},
-                    a::AbstractVector{T}) where T
-    n = length(a)
+function matrix_gs!(m::AbstractMatrix{T},         # coefficient matrix
+                    v::AbstractVector{T},         # values
+                    a::AbstractVector{T}) where T # answers
+    n = length(a) # model size
     @assert length(v) == n
     @assert size(m) == (n, n)
     tolerance = 1e-6
