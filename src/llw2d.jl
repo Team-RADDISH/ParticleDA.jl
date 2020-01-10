@@ -2,12 +2,6 @@ module LLW2d
 
 using ..Params
 
-export
-    set_stations!,
-    timestep,
-    setup,
-    initheight!
-
 # Linear Long Wave (LLW) tsunami in 2D Cartesian Coordinate
 
 const nxa = 20            # absorber thickness

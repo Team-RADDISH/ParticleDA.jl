@@ -1,7 +1,5 @@
 module Matrix_ls
 
-export gs!
-
 # Solve the well-conditioned linear system
 # Sum( m(i,j)*a(j) ) == v(i) for a(:)
 # by Gauss-Seidel method.
