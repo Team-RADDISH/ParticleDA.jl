@@ -1,3 +1,7 @@
+module Params
+
+export g0, nx, ny, no, dx, dy, dt
+
 ## Parameters
 
 const g0 = 9.80665 #  Gravity Constant
@@ -9,3 +13,5 @@ const no = 36   # Number of stations
 const dx = 2000 # grid width of x-direction (m)
 const dy = 2000 # grid width of y-direction (m)
 const dt = 1    # time step width (sec)
+
+end # module

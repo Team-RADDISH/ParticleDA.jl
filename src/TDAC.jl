@@ -1,7 +1,10 @@
 module TDAC
 
-include("m_params.jl")
-include("m_matrix.jl")
-include("m_llw2d.jl")
+include("params.jl")
+include("matrix.jl")
+include("llw2d.jl")
+
+using .LLW2d
+using .Matrix_ls
 
 end # module

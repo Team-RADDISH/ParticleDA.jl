@@ -1,3 +1,13 @@
+module LLW2d
+
+using ..Params
+
+export
+    set_stations!,
+    timestep,
+    setup,
+    initheight!
+
 # Linear Long Wave (LLW) tsunami in 2D Cartesian Coordinate
 
 const nxa = 20            # absorber thickness
@@ -5,7 +15,7 @@ const nya = 20            # absorber thickness
 const apara = 0.015       # damping for boundaries
 const CUTOFF_DEPTH = 10   # shallowest water depth
 
-# TODO: compute in `llw2d__setup` and let it return these variables
+# TODO: compute in `setup` and let it return these variables
 #  real(DP) :: gg (Nx,Ny) !< absorbing boundary
 #  integer  :: ist(:), jst(:)  !! station locations
 #  real(DP) :: hh(:,:)  !< ocean depth
@@ -14,10 +24,13 @@ const CUTOFF_DEPTH = 10   # shallowest water depth
 #  real(DP) :: fn(:,:), fm(:,:), fe(:,:)  !< land filters
 
 # Set station locations. Users may need to modify it
-function llw2d_set_stations!(ist, jst)
+function set_stations!(ist::AbstractVector{Int},
+                       jst::AbstractVector{Int})
     # synthetic station locations
     nst = 0
-    @inbounds for i in 1:6, j in 1:6
+    # let's assume ist and jst have a square number of elements
+    n = floor(Int, sqrt(length(ist)))
+    @inbounds for i in 1:n, j in 1:n
         nst += 1
         ist[nst] = floor(Int, ((i - 1) * 20 + 150 ) * 1000 / dx + 0.5)
         jst[nst] = floor(Int, ((j - 1) * 20 + 150 ) * 1000 / dy + 0.5)
@@ -29,15 +42,12 @@ function llw2d_set_stations!(ist, jst)
     #   write(10,*) (ist(i)-1)*dx/1000., (jst(i)-1)*dy/1000
     # end do
     # close(10)
-
-    # return copy of station location
-    return copy(ist), copy(jst)
 end
 
 
-function llw2d_timestep(eta0::AbstractMatrix{T},
-                        mm0::AbstractMatrix{T},
-                        nn0::AbstractMatrix{T}) where T
+function timestep(eta0::AbstractMatrix{T},
+                  mm0::AbstractMatrix{T},
+                  nn0::AbstractMatrix{T}) where T
     dxeta = Matrix{T}(undef, nx, ny)
     dyeta = Matrix{T}(undef, nx, ny)
     dxM   = Matrix{T}(undef, nx, ny)
@@ -98,7 +108,7 @@ function llw2d_timestep(eta0::AbstractMatrix{T},
     return eta1, mm1, nn1
 end
 
-function llw2d__setup(T::DataType = Float64)
+function setup(T::DataType = Float64)
     # Memory allocation
     hh = Matrix{T}(undef, nx, ny)
     hm = Matrix{T}(undef, nx, ny)
@@ -161,13 +171,18 @@ function llw2d__setup(T::DataType = Float64)
 end
 
 
-function llw2d_initheight!(eta::AbstractMatrix{T}) where T
+function initheight!(eta::AbstractMatrix{T},
+                     hh::AbstractMatrix{T}) where T
+    @assert size(eta) == size(hh)
+
     # source size
     aa = 30000
     bb = 30000
 
     # bathymetry setting
     fill!(eta, 0)
+
+    nx, ny = size(eta)
 
     i0 = floor(Int, nx / 4)
     j0 = floor(Int, ny / 4)
@@ -191,7 +206,10 @@ function llw2d_initheight!(eta::AbstractMatrix{T}) where T
     # force zero amplitude on land
     for j in 1:ny
         for i in 1:nx
-            (hh[i, j] < epsilon(T)) && (eta[i, j] = 0)
+            (hh[i, j] < eps(T)) && (eta[i, j] = 0)
         end
     end
+    return eta
 end
+
+end # module
