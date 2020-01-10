@@ -67,4 +67,22 @@ end
     hh  = zeros(2, 2)
     initheight!(eta, hh)
     @test eta ≈ zeros(2, 2)
+
+    # timestep.  TODO: add real tests.  So far we're just making sure code won't
+    # crash
+    n = 200
+    eta0 = rand(n, n)
+    nn0 = rand(n, n)
+    mm0 = rand(n, n)
+    hn = rand(n, n)
+    hm = rand(n, n)
+    fm = rand(n, n)
+    fn = rand(n, n)
+    fe = rand(n,n)
+    gg = rand(n,n)
+    timestep(eta0, nn0, mm0, hm, hn, fm, fn, fe, gg)
+
+    # setup.  TODO: add real tests.  So far we're just making sure code won't
+    # crash
+    setup()
 end

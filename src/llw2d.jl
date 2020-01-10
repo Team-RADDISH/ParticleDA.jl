@@ -15,14 +15,6 @@ const nya = 20            # absorber thickness
 const apara = 0.015       # damping for boundaries
 const CUTOFF_DEPTH = 10   # shallowest water depth
 
-# TODO: compute in `setup` and let it return these variables
-#  real(DP) :: gg (Nx,Ny) !< absorbing boundary
-#  integer  :: ist(:), jst(:)  !! station locations
-#  real(DP) :: hh(:,:)  !< ocean depth
-#  real(DP) :: hm(:,:)  !< x-averaged depth
-#  real(DP) :: hn(:,:)  !< y-averaged depth
-#  real(DP) :: fn(:,:), fm(:,:), fe(:,:)  !< land filters
-
 # Set station locations. Users may need to modify it
 function set_stations!(ist::AbstractVector{Int},
                        jst::AbstractVector{Int})
@@ -47,11 +39,20 @@ end
 
 function timestep(eta0::AbstractMatrix{T},
                   mm0::AbstractMatrix{T},
-                  nn0::AbstractMatrix{T}) where T
+                  nn0::AbstractMatrix{T},
+                  hm::AbstractMatrix{T},
+                  hn::AbstractMatrix{T},
+                  fm::AbstractMatrix{T},
+                  fn::AbstractMatrix{T},
+                  fe::AbstractMatrix{T},
+                  gg::AbstractMatrix{T}) where T
+    nx, ny = size(eta0)
+    @assert (nx, ny) == size(mm0) == size(nn0) == size(hm) ==
+        size(hn) == size(fm) == size(fn) == size(fe) == size(gg)
     dxeta = Matrix{T}(undef, nx, ny)
     dyeta = Matrix{T}(undef, nx, ny)
     dxM   = Matrix{T}(undef, nx, ny)
-    dxN   = Matrix{T}(undef, nx, ny)
+    dyN   = Matrix{T}(undef, nx, ny)
     eta1  = Matrix{T}(undef, nx, ny)
     mm1   = Matrix{T}(undef, nx, ny)
     nn1   = Matrix{T}(undef, nx, ny)
@@ -85,19 +86,19 @@ function timestep(eta0::AbstractMatrix{T},
     # diffs
     for j in 1:ny
         @inbounds dxM[nx, j] = (-mm1[nx, j]) / dx
-        for i in 1:(Nx-1)
+        for i in 1:(nx-1)
             @inbounds dxM[i, j] = (mm1[i + 1, j] - mm1[i, j]) / dx
         end
     end
     for i in 1:nx
         @inbounds dyN[i, ny] = (-nn1[i, ny]) / dy
         for j in 1:(ny-1)
-            @inbounds dyN(i,j) = (nn1[i,j + 1] - nn1[i, j]) / dy
+            @inbounds dyN[i, j] = (nn1[i,j + 1] - nn1[i, j]) / dy
         end
     end
 
     # Update Wave Heigt
-    for j in 1:ny, i in 1:Nx
+    for j in 1:ny, i in 1:nx
         @inbounds eta1[i, j] = eta0[i, j] - (dxM[i, j] + dyN[i, j]) * dt
     end
 
@@ -110,12 +111,13 @@ end
 
 function setup(T::DataType = Float64)
     # Memory allocation
-    hh = Matrix{T}(undef, nx, ny)
-    hm = Matrix{T}(undef, nx, ny)
-    hn = Matrix{T}(undef, nx, ny)
-    fm = ones(T, nx, ne)
-    fn = ones(T, nx, ne)
-    fe = ones(T, nx, ne)
+    hh = Matrix{T}(undef, nx, ny) # ocean depth
+    hm = Matrix{T}(undef, nx, ny) # x-averaged depth
+    hn = Matrix{T}(undef, nx, ny) # y-averaged depth
+    gg = Matrix{T}(undef, nx, ny) # absorbing boundary
+    fm = ones(T, nx, ny) # land filters
+    fn = ones(T, nx, ny) # "
+    fe = ones(T, nx, ny) # "
 
     # Bathymetry set-up. Users may need to modify it
     fill!(hh, 3000)
@@ -131,7 +133,7 @@ function setup(T::DataType = Float64)
     for j in 1:ny
         for i in 2:nx
             hm[i, j] = (hh[i, j] + hh[i - 1, j]) / 2
-            if hh[i, j] <= 0 || hh(i - 1, j) <= 0
+            if hh[i, j] <= 0 || hh[i - 1, j] <= 0
                 hm[i, j] = 0
             end
         end
@@ -168,6 +170,7 @@ function setup(T::DataType = Float64)
              gg[i, j] = 1
           end
     end
+    return gg, hh, hm, hn, fn, fm, fe
 end
 
 
