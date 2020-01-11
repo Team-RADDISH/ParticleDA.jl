@@ -3,9 +3,10 @@ module Matrix_ls
 # Solve the well-conditioned linear system
 # Sum( m(i,j)*a(j) ) == v(i) for a(:)
 # by Gauss-Seidel method.
-function gs!(m::AbstractMatrix{T},         # coefficient matrix
-             v::AbstractVector{T},         # values
-             a::AbstractVector{T}) where T # answers
+function gs!(a::AbstractVector{T}, # answers
+             m::AbstractMatrix{T}, # coefficient matrix
+             v::AbstractVector{T}  # values
+             ) where T
     n = length(a) # model size
     @assert length(v) == n
     @assert size(m) == (n, n)

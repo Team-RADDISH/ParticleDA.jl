@@ -31,25 +31,27 @@ function set_stations!(ist::AbstractVector{Int},
 end
 
 
-function timestep(eta0::AbstractMatrix{T},
-                  mm0::AbstractMatrix{T},
-                  nn0::AbstractMatrix{T},
-                  hm::AbstractMatrix{T},
-                  hn::AbstractMatrix{T},
-                  fm::AbstractMatrix{T},
-                  fn::AbstractMatrix{T},
-                  fe::AbstractMatrix{T},
-                  gg::AbstractMatrix{T}) where T
-    nx, ny = size(eta0)
-    @assert (nx, ny) == size(mm0) == size(nn0) == size(hm) ==
-        size(hn) == size(fm) == size(fn) == size(fe) == size(gg)
+function timestep!(eta1::AbstractMatrix{T},
+                   mm1::AbstractMatrix{T},
+                   nn1::AbstractMatrix{T},
+                   eta0::AbstractMatrix{T},
+                   mm0::AbstractMatrix{T},
+                   nn0::AbstractMatrix{T},
+                   hm::AbstractMatrix{T},
+                   hn::AbstractMatrix{T},
+                   fm::AbstractMatrix{T},
+                   fn::AbstractMatrix{T},
+                   fe::AbstractMatrix{T},
+                   gg::AbstractMatrix{T}) where T
+    nx, ny = size(eta1)
+    @assert (nx, ny) == size(mm1) == size(nn1) == size(eta0) == size(mm0) ==
+        size(nn0) == size(hm) == size(hn) == size(fm) == size(fn) == size(fe) ==
+        size(gg)
+
     dxeta = Matrix{T}(undef, nx, ny)
     dyeta = Matrix{T}(undef, nx, ny)
     dxM   = Matrix{T}(undef, nx, ny)
     dyN   = Matrix{T}(undef, nx, ny)
-    eta1  = Matrix{T}(undef, nx, ny)
-    mm1   = Matrix{T}(undef, nx, ny)
-    nn1   = Matrix{T}(undef, nx, ny)
 
     # diffs
     for j in 1:ny
@@ -164,7 +166,7 @@ function setup(T::DataType = Float64)
              gg[i, j] = 1
           end
     end
-    return gg, hh, hm, hn, fn, fm, fe
+    return gg, hh, hm, hn, fm, fn, fe
 end
 
 
