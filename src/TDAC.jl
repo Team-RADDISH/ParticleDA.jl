@@ -135,7 +135,7 @@ function tdac()
     jst   = Vector{Int}(undef, no)
 
     # Set up tsunami model
-    hh, hm, hn, fn, fm, fe, gg = LLW2d.setup() # obtain initial tsunami height
+    gg, hh, hm, hn, fm, fn, fe = LLW2d.setup() # obtain initial tsunami height
     eta = reshape(@view(mt[1:nx*ny]), nx, ny)
     LLW2d.initheight!(eta, hh)
     LLW2d.set_stations!(ist, jst)
