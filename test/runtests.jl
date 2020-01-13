@@ -89,3 +89,8 @@ end
     # crash
     LLW2d.setup()
 end
+
+@testset "TDAC" begin
+    @test TDAC.get_distance(3/2000, 4/2000, 0, 0) == 5
+    @test TDAC.get_distance(10, 23, 5, 11) == 26000.0
+end

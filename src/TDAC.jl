@@ -12,6 +12,9 @@ using .Params
 using .LLW2d
 using .Matrix_ls
 
+const title_da  = "da"  # output file title
+const title_syn = "syn" # output file title for synthetic data
+
 # control parameters for optimum interpolations: See document
 const rho = 1.0  # Ratio between obs and bg error
 const rr = 20000 # Cutoff distance of error covariance (m)
@@ -19,6 +22,9 @@ const rr = 20000 # Cutoff distance of error covariance (m)
 # model sizes
 const nn    = 3 * nx * ny
 const ntmax = 3000  # Number of time steps
+
+# visualization
+const ntdec = 10 # decimation factor for visualization
 
 # grid-to-grid distance
 get_distance(i0, j0, i1, j1) =
@@ -139,18 +145,21 @@ function tdac()
 
     for it in 1:ntmax
 
-        # if mod(it-1, ntdec) == 0
-        #     write(STDERR,* ) "timestep = ", it
-        # end
-
+        if mod(it - 1, ntdec) == 0
+            println("timestep = ", it)
+        end
         ## save tsunami wavefield snapshot for visualization
         ##   note that m*(1:Nx*Ny) corresponds to the tsunami height
         ##
         # assimilation
-        # if ( mod(it-1, ntdec) == 0 ) then
-        #   call llw2d__output_snap(ma(1:nx*ny), (it-1)/ntdec, title_da)
-        #   call llw2d__output_snap(mt(1:nx*ny), (it-1)/ntdec, title_syn)
-        # endif
+        if mod(it - 1, ntdec) == 0
+            LLW2d.output_snap(reshape(@view(ma[1:nx*ny]), nx, ny),
+                              floor(Int, (it - 1) / ntdec),
+                              title_da)
+            LLW2d.output_snap(reshape(@view(ma[1:nx*ny]), nx, ny),
+                              floor(Int, (it - 1) / ntdec),
+                              title_syn)
+        end
 
         # Retrieve "observation" data from synthetic true wavefield
         #   This part is specialized for synthetic test.
