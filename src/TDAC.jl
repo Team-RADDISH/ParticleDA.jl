@@ -17,7 +17,9 @@ get_distance(i0, j0, i1, j1) =
     sqrt((float(i0 - i1) * dx) ^ 2 + (float(j0 - j1) * dy) ^ 2)
 
 # Return waveform data at stations from given model parameter matrix
-function get_obs(mm::AbstractVector{T},
+function get_obs(nx::Int,
+                 ny::Int,
+                 mm::AbstractVector{T},
                  ist::AbstractVector{Int},
                  jst::AbstractVector{Int}) where T
     @assert length(ist) == length(jst)
@@ -97,6 +99,8 @@ function resample(x::AbstractMatrix{T}, weight::AbstractVector{Float64}) where T
     nprt = size(x,2)
     nprt_inv = 1.0 / nprt
     k = 1
+
+    #TODO: Do we need to sort x by weight here?
     
     weight_cdf = cumsum(weight)
     x_resampled = zero(x)
@@ -170,7 +174,7 @@ function tdac()
         end
 
         xt = tsunami_update(xt, hm, hn, fn, fm, fe, gg) # integrate true synthetic wavefield
-        yt = get_obs(xt, ist, jst) # generate observed data
+        yt = get_obs(nx, ny, xt, ist, jst) # generate observed data
 
         add_noise!(xf, 1e-2)
         
@@ -182,7 +186,7 @@ function tdac()
             xf[:,ip] = tsunami_update(xf[:,ip], hm, hn, fn, fm, fe, gg) # forecasting
             
             # Retrieve forecasted tsunami waveform data at stations
-            yf[:,ip] = get_obs(xf[:,ip], ist, jst)
+            yf[:,ip] = get_obs(nx, ny, xf[:,ip], ist, jst)
             
         end
 
