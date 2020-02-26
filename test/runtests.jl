@@ -97,9 +97,9 @@ end
     x = Vector(1.:9.)
     ist = [1,2,3]
     jst = [1,2,3]
-    @test TDAC.get_obs(x,ist,jst) == [1.,5.,9.]
+    @test TDAC.get_obs(3,3,x,ist,jst) == [1.,5.,9.]
     
-    d11 = exp(-(sqrt(1.6e7) * 5e-5) ^ 2)
+    d11 = exp(-(sqrt(0.8e7) * 5e-5) ^ 2)
     d22 = exp(-(sqrt(3.2e7) * 5e-5) ^ 2)
     @test TDAC.get_obs_covariance(3,ist,jst) == [1.0 d11 d22; d11 1.0 d11; d22 d11 1.0]
 
@@ -123,6 +123,6 @@ end
     w = zeros(5)
     w[2] = .4
     w[4] = .6
-    @test TDAC.resample(x,w) == [ones(2,3) .* x[:,4] ones(2,2) .* x[:,2]]
+    @test sum(TDAC.resample(x,w), dims=2)[:] == 2 .* x[:,2] + 3 .* x[:,4]
     
 end
