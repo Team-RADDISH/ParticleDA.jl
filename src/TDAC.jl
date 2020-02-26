@@ -1,6 +1,6 @@
 module TDAC
 
-using Random, Distributions, Statistics
+using Random, Distributions, Statistics, Distributed
 
 export tdac
 
@@ -17,19 +17,21 @@ get_distance(i0, j0, i1, j1) =
     sqrt((float(i0 - i1) * dx) ^ 2 + (float(j0 - j1) * dy) ^ 2)
 
 # Return waveform data at stations from given model parameter matrix
-function get_obs!(obs::AbstractVector{T},
-                  mm::AbstractVector{T},
-                  ist::AbstractVector{Int},
-                  jst::AbstractVector{Int}) where T
-    nobs = length(obs)
+function get_obs(mm::AbstractVector{T},
+                 ist::AbstractVector{Int},
+                 jst::AbstractVector{Int}) where T
+    @assert length(ist) == length(jst)
+    nobs = length(ist)
+    obs = zeros(nobs)
     nn = length(mm)
-    @assert nobs == length(ist) == length(jst)
     for i in eachindex(obs)
         ii = ist[i]
         jj = jst[i]
         iptr = (jj - 1) * nx + ii
         obs[i] = mm[iptr]
     end
+
+    return obs
 end
 
 # Weight matrix based on the Optimum Interpolation method.
@@ -52,16 +54,15 @@ function get_obs_covariance(nobs::Int,
     return mu_boo
 end
 
-function tsunami_update!(xf::AbstractVector{T}, # output: forecasted
-                         xa::AbstractVector{T}, # input: assimilated
-                         hm::AbstractMatrix{T},
-                         hn::AbstractMatrix{T},
-                         fm::AbstractMatrix{T},
-                         fn::AbstractMatrix{T},
-                         fe::AbstractMatrix{T},
-                         gg::AbstractMatrix{T}) where T
+function tsunami_update(xa::AbstractVector{T},
+                        hm::AbstractMatrix{T},
+                        hn::AbstractMatrix{T},
+                        fm::AbstractMatrix{T},
+                        fn::AbstractMatrix{T},
+                        fe::AbstractMatrix{T},
+                        gg::AbstractMatrix{T}) where T
     nn = length(xa)
-    @assert nn == length(xf)
+    xf = zero(xa)
 
     nn = nx * ny
 
@@ -74,6 +75,9 @@ function tsunami_update!(xf::AbstractVector{T}, # output: forecasted
 
     # Parts of model vector are aliased to tsunami heiht and velocities
     LLW2d.timestep!(eta_f, mm_f, nn_f, eta_a, mm_a, nn_a, hm, hn, fn, fm, fe, gg)
+
+    return xf
+    
 end
 
 function get_weights(y::AbstractVector{T}, hx::AbstractMatrix{T}, cov_obs::AbstractMatrix{T}) where T
@@ -88,13 +92,15 @@ function get_weights(y::AbstractVector{T}, hx::AbstractMatrix{T}, cov_obs::Abstr
     
 end
 
-function resample(x::AbstractMatrix{T}, weight::AbstractVector{T}) where T
+function resample(x::AbstractMatrix{T}, weight::AbstractVector{Float64}) where T
+
+    nprt = size(x,2)
+    nprt_inv = 1.0 / nprt
+    k = 1
     
     weight_cdf = cumsum(weight)
     x_resampled = zero(x)
-    u = Random.rand(Float64, 1)[1]
-    k = 1
-    nprt_inv = 1.0 / nprt
+    u = nprt_inv * Random.rand(Float64)
 
     # Note: To parallelise this loop, updates to k and u have to be atomic.
     # TODO: search for better parallel implementations
@@ -111,6 +117,12 @@ function resample(x::AbstractMatrix{T}, weight::AbstractVector{T}) where T
     end
 
     return x_resampled
+    
+end
+
+function add_noise!(x, amplitude)
+    
+    x[:] += Random.randn(length(x)) * amplitude
     
 end
 
@@ -157,24 +169,34 @@ function tdac()
                               title_syn)
         end
 
-        tsunami_update!(xt, xt, hm, hn, fn, fm, fe, gg) # integrate true synthetic wavefield
-        get_obs!(yt, xt, ist, jst) # generate observed data
+        xt = tsunami_update(xt, hm, hn, fn, fm, fe, gg) # integrate true synthetic wavefield
+        yt = get_obs(xt, ist, jst) # generate observed data
 
+        add_noise!(xf, 1e-2)
+        
         # Forecast-Assimilate
         # TODO: parallelise this loop
-        for ip in 1:nprt
+        @distributed for ip in 1:nprt
             
             # tsunami forecast
-            tsunami_update!(xf[:,ip], xf[:,ip], hm, hn, fn, fm, fe, gg) # forecasting
+            xf[:,ip] = tsunami_update(xf[:,ip], hm, hn, fn, fm, fe, gg) # forecasting
             
             # Retrieve forecasted tsunami waveform data at stations
-            get_obs!(yf[:,ip], xf[:,ip], ist, jst)
+            yf[:,ip] = get_obs(xf[:,ip], ist, jst)
             
         end
 
         if mod(it - 1, da_period) == 0
-        
+
+            # println("observations")
+            # println("real :",yt)
+            # for ip in 1:nprt
+            #     println("model:",yf[:,ip])
+            # end
+            
             weight = get_weights(yt, yf, cov_obs)
+
+            # println("weights: ", weight)
             
             xf = resample(xf, weight)
 
