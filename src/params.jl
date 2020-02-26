@@ -9,7 +9,7 @@ const g0 = 9.80665 #  Gravity Constant
 # finite differnce method parametrs
 const nx = 200  # grid number (NS)
 const ny = 200  # grid number (EW)
-const nobs = 36   # Number of stations
+const nobs = 4   # Number of stations
 const dx = 2000 # grid width of x-direction (m)
 const dy = 2000 # grid width of y-direction (m)
 const dt = 1    # time step width (sec)
@@ -23,14 +23,15 @@ const title_syn = "syn" # output file title for synthetic data
 # control parameters for optimum interpolations: See document
 const rr = 20000 # Cutoff distance of error covariance (m)
 
-const ntmax = 100  # Number of time steps
+const ntmax = 500  # Number of time steps
 
 # visualization
-const ntdec = 10 # decimation factor for visualization
+const ntdec = 50 # decimation factor for visualization
+#const ntdec = ntmax # decimation factor for visualization
 
 # particle filter
-const nprt = 10 # number of particles
-const da_period = 20 # length of data assimilation steps (in time steps)
+const nprt = 4 # number of particles
+const da_period = 50 # length of data assimilation steps (in time steps)
 
 
 end # module
