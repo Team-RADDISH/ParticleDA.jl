@@ -16,7 +16,7 @@ using .Matrix_ls
 get_distance(i0, j0, i1, j1) =
     sqrt((float(i0 - i1) * dx) ^ 2 + (float(j0 - j1) * dy) ^ 2)
 
-# Return waveform data at stations from given model parameter matrix
+# Return observation data at stations from given model state
 function get_obs(nx::Int,
                  ny::Int,
                  state::AbstractVector{T},
@@ -36,7 +36,7 @@ function get_obs(nx::Int,
     return obs
 end
 
-# Weight matrix based on the Optimum Interpolation method.
+# Observation covariance matrix based on simple exponential decay
 function get_obs_covariance(nobs::Int,
                             ist::AbstractVector{Int},
                             jst::AbstractVector{Int})
@@ -56,6 +56,7 @@ function get_obs_covariance(nobs::Int,
     return mu_boo
 end
 
+# Update tsunami wavefield with LLW2d. Return new value.
 function tsunami_update(nx::Int,
                         ny::Int,
                         state::AbstractVector{T},
@@ -83,6 +84,7 @@ function tsunami_update(nx::Int,
     
 end
 
+# Update tsunami wavefield with LLW2d in-place.
 function tsunami_update!(nx::Int,
                          ny::Int,
                          state::AbstractVector{T},
@@ -107,19 +109,17 @@ function tsunami_update!(nx::Int,
     
 end
 
-
+# Get weights for particles by evaluating the probability of the observations predicted by the model
+# from a multivariate normal pdf with mean equal to real observations and covariance equal to observation covariance
 function get_weights(obs::AbstractVector{T}, obs_model::AbstractMatrix{T}, cov_obs::AbstractMatrix{T}) where T
-    
-    # for ip = 1:nprt
-    #     weight[i] = Distributions.pdf(Distributions.MvNormal(yt, cov_obs), hx[:,iprt])        
-    # end
-    
+        
     weight = Distributions.pdf(Distributions.MvNormal(obs, cov_obs), obs_model) # TODO: Verify that this works
     
     return weight / sum(weight)
     
 end
 
+# Resample particles from given weights using Stochastic Universal Sampling
 function resample(state::AbstractMatrix{T}, weight::AbstractVector{Float64}) where T
 
     nprt = size(state,2)
@@ -150,6 +150,7 @@ function resample(state::AbstractMatrix{T}, weight::AbstractVector{Float64}) whe
     
 end
 
+# Add (0,1) normal distributed white noise to state
 function add_noise!(state, amplitude)
     
     state[:] += Random.randn(length(state)) * amplitude
@@ -168,7 +169,7 @@ function tdac()
     weights = Vector{Float64}(undef, dim_state)
 
     obs_real = Vector{Float64}(undef, nobs)        # observed tsunami height
-    obs_model = Matrix{Float64}(undef, nobs, nprt)  # forecasted tsunami height
+    obs_model = Matrix{Float64}(undef, nobs, nprt) # forecasted tsunami height
 
     # station location in digital grids
     ist   = Vector{Int}(undef, nobs)
@@ -203,18 +204,19 @@ function tdac()
 
         add_noise!(state, 1e-2)
         
-        # Forecast-Assimilate
+        # Forecast
         # TODO: parallelise this loop
         @distributed for ip in 1:nprt
             
-            # tsunami forecast
-            tsunami_update!(nx,ny,@view(state[:,ip]), hm, hn, fn, fm, fe, gg) # forecasting
+            # Update tsunami forecast
+            tsunami_update!(nx,ny,@view(state[:,ip]), hm, hn, fn, fm, fe, gg)
             
-            # Retrieve forecasted tsunami waveform data at stations
+            # Retrieve forecasted observations at stations
             obs_model[:,ip] = get_obs(nx, ny, @view(state[:,ip]), ist, jst)
             
         end
 
+        # Weigh and resample particles
         if mod(it - 1, da_period) == 0
 
             # println("observations")
@@ -230,7 +232,7 @@ function tdac()
             state = resample(state, weight)
 
         end
-            
+        
         Statistics.mean!(state_avg, state)
         
     end
