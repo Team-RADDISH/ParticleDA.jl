@@ -1,6 +1,6 @@
 module Params
 
-export g0, nx, ny, nobs, dx, dy, dt, dim_state_vector, title_da, title_syn, rr, ntmax, ntdec, nprt, da_period
+export g0, nx, ny, nobs, dx, dy, dt, dim_state, title_da, title_syn, rr, ntmax, ntdec, nprt, da_period
 
 ## Parameters
 
@@ -15,7 +15,7 @@ const dy = 2000 # grid width of y-direction (m)
 const dt = 1    # time step width (sec)
 
 # model sizes
-const dim_state_vector    = 3 * nx * ny
+const dim_state    = 3 * nx * ny
 
 const title_da  = "da"  # output file title
 const title_syn = "syn" # output file title for synthetic data
@@ -27,7 +27,6 @@ const ntmax = 500  # Number of time steps
 
 # visualization
 const ntdec = 50 # decimation factor for visualization
-#const ntdec = ntmax # decimation factor for visualization
 
 # particle filter
 const nprt = 4 # number of particles

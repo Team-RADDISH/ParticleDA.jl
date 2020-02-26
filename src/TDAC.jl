@@ -24,7 +24,7 @@ function get_obs(nx::Int,
                  jst::AbstractVector{Int}) where T
     @assert length(ist) == length(jst)
     nobs = length(ist)
-    obs = zeros(nobs)
+    obs = Vector{T}(undef, nobs)
     nn = length(state)
     for i in eachindex(obs)
         ii = ist[i]
@@ -42,7 +42,7 @@ function get_obs_covariance(nobs::Int,
                             jst::AbstractVector{Int})
     
     @assert nobs == length(ist) == length(jst)
-    mu_boo = zeros(Float64, nobs, nobs)
+    mu_boo = Matrix{Float64}(undef, nobs, nobs)
 
     # Estimate background error between stations
     for j in 1:nobs
@@ -161,10 +161,11 @@ function tdac()
     #   state*(        1:  Nx*Ny): tsunami height eta(nx,ny)
     #   state*(  Nx*Ny+1:2*Nx*Ny): vertically integrated velocity Mx(nx,ny)
     #   state*(2*Nx*Ny+1:3*Nx*Ny): vertically integrated velocity Mx(nx,ny)
-    state = zeros(Float64, dim_state_vector, nprt) # model state vectors for particles
-    state_avg = zeros(Float64, dim_state_vector) # average of particle state vectors
-    state_true = zeros(Float64, dim_state_vector) # model vector: true wavefield (observation)
-    weights = zeros(Float64, dim_state_vector)
+    state = zeros(Float64, dim_state, nprt) # model state vectors for particles
+    state_true = zeros(Float64, dim_state) # model vector: true wavefield (observation)   
+    state_avg = zeros(Float64, dim_state) # average of particle state vectors
+    
+    weights = Vector{Float64}(undef, dim_state)
 
     obs_real = Vector{Float64}(undef, nobs)        # observed tsunami height
     obs_model = Matrix{Float64}(undef, nobs, nprt)  # forecasted tsunami height
