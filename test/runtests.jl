@@ -97,32 +97,32 @@ end
     x = Vector(1.:9.)
     ist = [1,2,3]
     jst = [1,2,3]
-    @test TDAC.get_obs(3,3,x,ist,jst) == [1.,5.,9.]
+    @test TDAC.get_obs(3,3,x,ist,jst) ≈ [1.,5.,9.]
     
     d11 = exp(-(sqrt(0.8e7) * 5e-5) ^ 2)
     d22 = exp(-(sqrt(3.2e7) * 5e-5) ^ 2)
-    @test TDAC.get_obs_covariance(3,ist,jst) == [1.0 d11 d22; d11 1.0 d11; d22 d11 1.0]
+    @test TDAC.get_obs_covariance(3,ist,jst) ≈ [1.0 d11 d22; d11 1.0 d11; d22 d11 1.0]
 
     y = [1.0, 2.0]
     hx = [0.5 0.9 1.5; 2.1 2.5 1.9]
     cov_obs = float(I(2))
-    @test TDAC.get_weights(y, hx, cov_obs) == ones(3) / 3
+    @test TDAC.get_weights(y, hx, cov_obs) ≈ ones(3) / 3
     hx = [0.9 0.5 1.5; 2.1 2.5 3.5]
     w = TDAC.get_weights(y, hx, cov_obs)
     @test w[1] > w[2] > w[3]
 
     x = reshape(Vector(1.:10.),2,5)
     w = ones(5) * .2
-    @test TDAC.resample(x,w) == x
+    @test TDAC.resample(x,w) ≈ x
     w = zeros(5)
     w[1] = 1.0
-    @test TDAC.resample(x,w) == ones(2,5) .* x[:,1]
+    @test TDAC.resample(x,w) ≈ ones(2,5) .* x[:,1]
     w = zeros(5)
     w[end] = 1.0
-    @test TDAC.resample(x,w) == ones(2,5) .* x[:,end]
+    @test TDAC.resample(x,w) ≈ ones(2,5) .* x[:,end]
     w = zeros(5)
     w[2] = .4
     w[4] = .6
-    @test sum(TDAC.resample(x,w), dims=2)[:] == 2 .* x[:,2] + 3 .* x[:,4]
+    @test sum(TDAC.resample(x,w), dims=2)[:] ≈ 2 .* x[:,2] + 3 .* x[:,4]
     
 end
