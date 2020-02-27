@@ -117,7 +117,7 @@ function tsunami_update!(xf::AbstractVector{T}, # output: forecasted
 end
 
 
-function tdac()
+function tdac(; verbose::Bool = false)
     # Model vector for data assimilation
     #   m*(        1:  Nx*Ny): tsunami height eta(nx,ny)
     #   m*(  Nx*Ny+1:2*Nx*Ny): vertically integrated velocity Mx(nx,ny)
@@ -145,20 +145,22 @@ function tdac()
 
     for it in 1:ntmax
 
-        if mod(it - 1, ntdec) == 0
-            println("timestep = ", it)
-        end
-        ## save tsunami wavefield snapshot for visualization
-        ##   note that m*(1:Nx*Ny) corresponds to the tsunami height
-        ##
-        # assimilation
-        if mod(it - 1, ntdec) == 0
-            LLW2d.output_snap(reshape(@view(ma[1:nx*ny]), nx, ny),
-                              floor(Int, (it - 1) / ntdec),
-                              title_da)
-            LLW2d.output_snap(reshape(@view(ma[1:nx*ny]), nx, ny),
-                              floor(Int, (it - 1) / ntdec),
-                              title_syn)
+        if verbose
+            if mod(it - 1, ntdec) == 0
+                println("timestep = ", it)
+            end
+            ## save tsunami wavefield snapshot for visualization
+            ##   note that m*(1:Nx*Ny) corresponds to the tsunami height
+            ##
+            # assimilation
+            if mod(it - 1, ntdec) == 0
+                LLW2d.output_snap(reshape(@view(ma[1:nx*ny]), nx, ny),
+                                  floor(Int, (it - 1) / ntdec),
+                                  title_da)
+                LLW2d.output_snap(reshape(@view(ma[1:nx*ny]), nx, ny),
+                                  floor(Int, (it - 1) / ntdec),
+                                  title_syn)
+            end
         end
 
         # Retrieve "observation" data from synthetic true wavefield
