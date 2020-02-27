@@ -83,9 +83,9 @@ function tsunami_update(nx::Int,
 end
 
 # Update tsunami wavefield with LLW2d in-place.
-function tsunami_update!(nx::Int,
+function tsunami_update!(state::AbstractVector{T},
+                         nx::Int,
                          ny::Int,
-                         state::AbstractVector{T},
                          hm::AbstractMatrix{T},
                          hn::AbstractMatrix{T},
                          fm::AbstractMatrix{T},
@@ -166,8 +166,8 @@ function tdac()
     
     state_resampled = Matrix{Float64}(undef, dim_state, nprt) #preallocate once instead of every time resample is called
     
-    weights = Vector{Float64}(undef, dim_state)
-
+    weights = Vector{Float64}(undef, nprt)
+    
     obs_real = Vector{Float64}(undef, nobs)        # observed tsunami height
     obs_model = Matrix{Float64}(undef, nobs, nprt) # forecasted tsunami height
 
@@ -199,7 +199,7 @@ function tdac()
                               title_syn)
         end
 
-        tsunami_update!(nx,ny,state_true, hm, hn, fn, fm, fe, gg) # integrate true synthetic wavefield
+        tsunami_update!(state_true, nx, ny, hm, hn, fn, fm, fe, gg) # integrate true synthetic wavefield
         get_obs!(obs_real, state_true, nx, ny, ist, jst) # generate observed data
         
         # Forecast
@@ -223,11 +223,11 @@ function tdac()
             #     println("model:",yf[:,ip])
             # end
             
-            get_weights!(weight, obs_real, obs_model, cov_obs)
+            get_weights!(weights, obs_real, obs_model, cov_obs)
 
             # println("weights: ", weight)
             
-            resample!(state_resampled, state, weight)
+            resample!(state_resampled, state, weights)
             state .= state_resampled
 
         end
