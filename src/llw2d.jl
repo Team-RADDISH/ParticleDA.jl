@@ -214,7 +214,9 @@ end
 # export snapshot data for visualization
 function output_snap(eta::AbstractMatrix, isnap::Int, title::AbstractString)
     nx, ny = size(eta)
-    fn_out = joinpath("out",
+    outdir = "out"
+    mkpath(outdir)
+    fn_out = joinpath(outdir,
                       "jl-$(title)__" *
                       lpad(isnap, 6, '0') *
                       "__.dat")

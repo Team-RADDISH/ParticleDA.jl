@@ -155,7 +155,7 @@ function add_noise!(state, amplitude)
     
 end
 
-function tdac()
+function tdac(; verbose::Bool = false)
     # Model vector for data assimilation
     #   state*(        1:  Nx*Ny): tsunami height eta(nx,ny)
     #   state*(  Nx*Ny+1:2*Nx*Ny): vertically integrated velocity Mx(nx,ny)
@@ -185,20 +185,22 @@ function tdac()
     
     for it in 1:ntmax
 
-        if mod(it - 1, ntdec) == 0
-            println("timestep = ", it)
+        if verbose
+            if mod(it - 1, ntdec) == 0
+                println("timestep = ", it)
+            end
+            
+            # save tsunami wavefield snapshot for visualization
+            if mod(it - 1, ntdec) == 0
+                LLW2d.output_snap(reshape(@view(state_avg[1:nx*ny]), nx, ny),
+                                  floor(Int, (it - 1) / ntdec),
+                                  title_da)
+                LLW2d.output_snap(reshape(@view(state_true[1:nx*ny]), nx, ny),
+                                  floor(Int, (it - 1) / ntdec),
+                                  title_syn)
+            end
         end
-        
-        # save tsunami wavefield snapshot for visualization
-        if mod(it - 1, ntdec) == 0
-            LLW2d.output_snap(reshape(@view(state_avg[1:nx*ny]), nx, ny),
-                              floor(Int, (it - 1) / ntdec),
-                              title_da)
-            LLW2d.output_snap(reshape(@view(state_true[1:nx*ny]), nx, ny),
-                              floor(Int, (it - 1) / ntdec),
-                              title_syn)
-        end
-
+            
         tsunami_update!(state_true, nx, ny, hm, hn, fn, fm, fe, gg) # integrate true synthetic wavefield
         get_obs!(obs_real, state_true, nx, ny, ist, jst) # generate observed data
         
