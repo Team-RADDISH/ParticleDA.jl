@@ -17,14 +17,13 @@ get_distance(i0, j0, i1, j1) =
     sqrt((float(i0 - i1) * dx) ^ 2 + (float(j0 - j1) * dy) ^ 2)
 
 # Return observation data at stations from given model state
-function get_obs(nx::Int,
-                 ny::Int,
-                 state::AbstractVector{T},
-                 ist::AbstractVector{Int},
-                 jst::AbstractVector{Int}) where T
-    @assert length(ist) == length(jst)
-    nobs = length(ist)
-    obs = Vector{T}(undef, nobs)
+function get_obs!(obs::AbstractVector{T},
+                  state::AbstractVector{T},
+                  nx::Int,
+                  ny::Int,
+                  ist::AbstractVector{Int},
+                  jst::AbstractVector{Int}) where T
+    @assert length(obs) == length(ist) == length(jst)
     nn = length(state)
     for i in eachindex(obs)
         ii = ist[i]
@@ -32,8 +31,6 @@ function get_obs(nx::Int,
         iptr = (jj - 1) * nx + ii
         obs[i] = state[iptr]
     end
-
-    return obs
 end
 
 # Observation covariance matrix based on simple exponential decay
@@ -111,11 +108,14 @@ end
 
 # Get weights for particles by evaluating the probability of the observations predicted by the model
 # from a multivariate normal pdf with mean equal to real observations and covariance equal to observation covariance
-function get_weights(obs::AbstractVector{T}, obs_model::AbstractMatrix{T}, cov_obs::AbstractMatrix{T}) where T
+function get_weights!(weight::AbstractVector{T},
+                      obs::AbstractVector{T},
+                      obs_model::AbstractMatrix{T},
+                      cov_obs::AbstractMatrix{T}) where T
         
     weight = Distributions.pdf(Distributions.MvNormal(obs, cov_obs), obs_model) # TODO: Verify that this works
     
-    return weight / sum(weight)
+    @. weight /= sum(weight)
     
 end
 
@@ -153,7 +153,7 @@ end
 # Add (0,1) normal distributed white noise to state
 function add_noise!(state, amplitude)
     
-    state[:] += Random.randn(length(state)) * amplitude
+    @. state += randn() * amplitude
     
 end
 
@@ -201,18 +201,16 @@ function tdac()
 
         tsunami_update!(nx,ny,state_true, hm, hn, fn, fm, fe, gg) # integrate true synthetic wavefield
         obs_real = get_obs(nx, ny, state_true, ist, jst) # generate observed data
-
-        add_noise!(state, 1e-2)
         
         # Forecast
         # TODO: parallelise this loop
         @distributed for ip in 1:nprt
             
             # Update tsunami forecast
-            tsunami_update!(nx,ny,@view(state[:,ip]), hm, hn, fn, fm, fe, gg)
+            tsunami_update!(@view(state[:,ip]), nx, ny, hm, hn, fn, fm, fe, gg)
             
             # Retrieve forecasted observations at stations
-            obs_model[:,ip] = get_obs(nx, ny, @view(state[:,ip]), ist, jst)
+            get_obs!(@view(obs_model[:,ip]), @view(state[:,ip]), nx, ny, ist, jst)
             
         end
 
@@ -225,7 +223,7 @@ function tdac()
             #     println("model:",yf[:,ip])
             # end
             
-            weight = get_weights(obs_real, obs_model, cov_obs)
+            get_weights!(weight, obs_real, obs_model, cov_obs)
 
             # println("weights: ", weight)
             
