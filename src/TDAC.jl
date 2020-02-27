@@ -1,6 +1,6 @@
 module TDAC
 
-using Random, Distributions, Statistics, Distributed
+using Random, Distributions, Statistics, Distributed, Base.Threads
 
 export tdac
 
@@ -25,6 +25,7 @@ function get_obs!(obs::AbstractVector{T},
                   jst::AbstractVector{Int}) where T
     @assert length(obs) == length(ist) == length(jst)
     nn = length(state)
+    
     for i in eachindex(obs)
         ii = ist[i]
         jj = jst[i]
@@ -113,14 +114,14 @@ function get_weights!(weight::AbstractVector{T},
                       obs_model::AbstractMatrix{T},
                       cov_obs::AbstractMatrix{T}) where T
         
-    weight = Distributions.pdf(Distributions.MvNormal(obs, cov_obs), obs_model) # TODO: Verify that this works
+    weight .= Distributions.pdf(Distributions.MvNormal(obs, cov_obs), obs_model) # TODO: Verify that this works
     
-    @. weight /= sum(weight)
+    weight ./= sum(weight)
     
 end
 
 # Resample particles from given weights using Stochastic Universal Sampling
-function resample(state::AbstractMatrix{T}, weight::AbstractVector{Float64}) where T
+function resample!(state_resampled::AbstractMatrix{T}, state::AbstractMatrix{T}, weight::AbstractVector{S}) where {T,S}
 
     nprt = size(state,2)
     nprt_inv = 1.0 / nprt
@@ -129,8 +130,7 @@ function resample(state::AbstractMatrix{T}, weight::AbstractVector{Float64}) whe
     #TODO: Do we need to sort state by weight here?
     
     weight_cdf = cumsum(weight)
-    state_resampled = zero(state)
-    u = nprt_inv * Random.rand(Float64)
+    u = nprt_inv * Random.rand(S)
 
     # Note: To parallelise this loop, updates to k and u have to be atomic.
     # TODO: search for better parallel implementations
@@ -145,8 +145,6 @@ function resample(state::AbstractMatrix{T}, weight::AbstractVector{Float64}) whe
         u += nprt_inv
         
     end
-
-    return state_resampled
     
 end
 
@@ -165,6 +163,8 @@ function tdac()
     state = zeros(Float64, dim_state, nprt) # model state vectors for particles
     state_true = zeros(Float64, dim_state) # model vector: true wavefield (observation)   
     state_avg = zeros(Float64, dim_state) # average of particle state vectors
+    
+    state_resampled = Matrix{Float64}(undef, dim_state, nprt) #preallocate once instead of every time resample is called
     
     weights = Vector{Float64}(undef, dim_state)
 
@@ -200,11 +200,11 @@ function tdac()
         end
 
         tsunami_update!(nx,ny,state_true, hm, hn, fn, fm, fe, gg) # integrate true synthetic wavefield
-        obs_real = get_obs(nx, ny, state_true, ist, jst) # generate observed data
+        get_obs!(obs_real, state_true, nx, ny, ist, jst) # generate observed data
         
         # Forecast
-        # TODO: parallelise this loop
-        @distributed for ip in 1:nprt
+        # TODO: parallelise/simd this loop
+        Threads.@threads for ip in 1:nprt
             
             # Update tsunami forecast
             tsunami_update!(@view(state[:,ip]), nx, ny, hm, hn, fn, fm, fe, gg)
@@ -227,7 +227,8 @@ function tdac()
 
             # println("weights: ", weight)
             
-            state = resample(state, weight)
+            resample!(state_resampled, state, weight)
+            state .= state_resampled
 
         end
         

@@ -97,7 +97,9 @@ end
     x = Vector(1.:9.)
     ist = [1,2,3]
     jst = [1,2,3]
-    @test TDAC.get_obs(3,3,x,ist,jst) ≈ [1.,5.,9.]
+    obs = Vector{Float64}(undef, 3)
+    TDAC.get_obs!(obs,x,3,3,ist,jst)
+    @test obs ≈ [1.,5.,9.]
     
     d11 = exp(-(sqrt(0.8e7) * 5e-5) ^ 2)
     d22 = exp(-(sqrt(3.2e7) * 5e-5) ^ 2)
@@ -106,23 +108,30 @@ end
     y = [1.0, 2.0]
     hx = [0.5 0.9 1.5; 2.1 2.5 1.9]
     cov_obs = float(I(2))
-    @test TDAC.get_weights(y, hx, cov_obs) ≈ ones(3) / 3
+    weights = Vector{Float64}(undef, 3)
+    TDAC.get_weights!(weights, y, hx, cov_obs)
+    @test weights ≈ ones(3) / 3
     hx = [0.9 0.5 1.5; 2.1 2.5 3.5]
-    w = TDAC.get_weights(y, hx, cov_obs)
-    @test w[1] > w[2] > w[3]
+    TDAC.get_weights!(weights, y, hx, cov_obs)
+    @test weights[1] > weights[2] > weights[3]
 
     x = reshape(Vector(1.:10.),2,5)
+    xrs = zero(x)
     w = ones(5) * .2
-    @test TDAC.resample(x,w) ≈ x
+    TDAC.resample!(xrs,x,w)
+    @test xrs ≈ x
     w = zeros(5)
     w[1] = 1.0
-    @test TDAC.resample(x,w) ≈ ones(2,5) .* x[:,1]
+    TDAC.resample!(xrs,x,w)
+    @test xrs ≈ ones(2,5) .* x[:,1]
     w = zeros(5)
     w[end] = 1.0
-    @test TDAC.resample(x,w) ≈ ones(2,5) .* x[:,end]
+    TDAC.resample!(xrs,x,w)
+    @test xrs ≈ ones(2,5) .* x[:,end]
     w = zeros(5)
     w[2] = .4
     w[4] = .6
-    @test sum(TDAC.resample(x,w), dims=2)[:] ≈ 2 .* x[:,2] + 3 .* x[:,4]
+    TDAC.resample!(xrs,x,w)
+    @test sum(xrs, dims=2)[:] ≈ 2 .* x[:,2] + 3 .* x[:,4]
     
 end
