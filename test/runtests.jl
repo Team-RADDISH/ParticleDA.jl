@@ -93,4 +93,63 @@ end
 @testset "TDAC" begin
     @test TDAC.get_distance(3/2000, 4/2000, 0, 0) == 5
     @test TDAC.get_distance(10, 23, 5, 11) == 26000.0
+
+    x = Vector(1.:9.)
+    # stations at (1,1) (2,2) and (3,3) return diagonal of x[3,3]
+    ist = [1,2,3]
+    jst = [1,2,3]
+    obs = Vector{Float64}(undef, 3)
+    TDAC.get_obs!(obs,x,3,3,ist,jst)
+    @test obs ≈ [1.,5.,9.]
+
+    # Observation covariances are ~exp(-sqrt(dx^2+dy^2)/r) 
+    d11 = exp(-(sqrt(0.8e7) * 5e-5) ^ 2)
+    d22 = exp(-(sqrt(3.2e7) * 5e-5) ^ 2)
+    @test TDAC.get_obs_covariance(3,ist,jst) ≈ [1.0 d11 d22; d11 1.0 d11; d22 d11 1.0]
+
+    y = [1.0, 2.0]
+    cov_obs = float(I(2))
+    weights = Vector{Float64}(undef, 3)
+    # model observations with equal distance from true observation return equal weights
+    hx = [0.5 0.9 1.5; 2.1 2.5 1.9]
+    TDAC.get_weights!(weights, y, hx, cov_obs)
+    @test weights ≈ ones(3) / 3
+    # model observations with decreasing distance from true observation return decreasing weights
+    hx = [0.9 0.5 1.5; 2.1 2.5 3.5]
+    TDAC.get_weights!(weights, y, hx, cov_obs)
+    @test weights[1] > weights[2] > weights[3]
+    # TODO: test with cov != I
+
+    x = reshape(Vector(1.:10.),2,5)
+    xrs = zero(x)
+    # equal weights return the same particles
+    w = ones(5) * .2
+    TDAC.resample!(xrs,x,w)
+    @test xrs ≈ x
+    # weight of 1.0 on first particle returns only copies of that particle
+    w = zeros(5)
+    w[1] = 1.0
+    TDAC.resample!(xrs,x,w)
+    @test xrs ≈ ones(2,5) .* x[:,1]
+    # weight of 1.0 on last particle returns only copies of that particle
+    w = zeros(5)
+    w[end] = 1.0
+    TDAC.resample!(xrs,x,w)
+    @test xrs ≈ ones(2,5) .* x[:,end]
+    # weights of .4 and .6 on particles 2 and 4 return a 40/60 mix of those particles
+    w = zeros(5)
+    w[2] = .4
+    w[4] = .6
+    TDAC.resample!(xrs,x,w)
+    @test sum(xrs, dims=2)[:] ≈ 2 .* x[:,2] + 3 .* x[:,4]
+    
+    nx = 3
+    ny = 3
+    # 0 input gives 0 output
+    # TODO: Not sure if this does anything sensible since LLW2d.setup() has not been called
+    #       At the very least it checks that tsunami_update! doesn't crash
+    x0 = x = zeros(nx * ny * 3)
+    hm = hn = fm = fn = fe = gg = zeros(nx,ny)
+    TDAC.tsunami_update!(x, nx, ny, hm, hn, fm, fn, fe, gg)
+    @test x ≈ x0
 end
