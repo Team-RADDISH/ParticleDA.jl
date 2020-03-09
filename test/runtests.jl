@@ -99,13 +99,13 @@ end
     ist = [1,2,3]
     jst = [1,2,3]
     obs = Vector{Float64}(undef, 3)
-    TDAC.get_obs!(obs,x,3,3,ist,jst)
+    TDAC.get_obs!(obs,x,3,ist,jst)
     @test obs ≈ [1.,5.,9.]
 
     # Observation covariances are ~exp(-sqrt(dx^2+dy^2)/r) 
     d11 = exp(-(sqrt(0.8e7) * 5e-5) ^ 2)
     d22 = exp(-(sqrt(3.2e7) * 5e-5) ^ 2)
-    @test TDAC.get_obs_covariance(3,ist,jst) ≈ [1.0 d11 d22; d11 1.0 d11; d22 d11 1.0]
+    @test TDAC.get_obs_covariance(3,5.0e-5,ist,jst) ≈ [1.0 d11 d22; d11 1.0 d11; d22 d11 1.0]
 
     y = [1.0, 2.0]
     cov_obs = float(I(2))

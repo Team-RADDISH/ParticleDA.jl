@@ -1,36 +1,50 @@
 module Params
 
-export g0, nx, ny, nobs, dx, dy, dt, dim_state, title_da, title_syn, rr, ntmax, ntdec, nprt, da_period
+export grid_params, run_params, output_params, da_params, physics_params
 
 ## Parameters
 
-const g0 = 9.80665 #  Gravity Constant
+include("./input.jl")
 
-# finite differnce method parametrs
-const nx = 200  # grid number (NS)
-const ny = 200  # grid number (EW)
-const nobs = 4   # Number of stations
-const dx = 2000 # grid width of x-direction (m)
-const dy = 2000 # grid width of y-direction (m)
-const dt = 1    # time step width (sec)
+struct Physics_params
+    g0::AbstractFloat
+end
 
-# model sizes
-const dim_state    = 3 * nx * ny
+struct Grid_params
+    nx::Int
+    ny::Int
+    nobs::Int
+    dx::AbstractFloat
+    dy::AbstractFloat
+    dim_grid::Int
+    dim_state::Int
 
-const title_da  = "da"  # output file title
-const title_syn = "syn" # output file title for synthetic data
+    Grid_params(nx, ny, nobs, dx, dy) = new(nx, ny, nobs, dx, dy, nx*ny, 3*nx*ny)
+    Grid_params(nx, ny, nobs, dx, dy, dim_grid) = new(nx, ny, nobs, dx, dy, dim_grid, 3*dim_grid)
+    Grid_params(nx, ny, nobs, dx, dy, dim_grid, dim_state) = new(nx, ny, nobs, dx, dy, dim_grid, dim_state)
+end
 
-# control parameters for optimum interpolations: See document
-const rr = 20000 # Cutoff distance of error covariance (m)
+struct Run_params
+    dt::AbstractFloat
+    ntmax::Int
+end
 
-const ntmax = 500  # Number of time steps
+struct Output_params
+    title_da::AbstractString
+    title_syn::AbstractString
+    ntdec::Int
+end
 
-# visualization
-const ntdec = 50 # decimation factor for visualization
+struct Da_params
+    nprt::Int
+    da_period::Int
+    inv_rr::AbstractFloat
+end
 
-# particle filter
-const nprt = 4 # number of particles
-const da_period = 50 # length of data assimilation steps (in time steps)
+physics_params = Physics_params(9.80665)
+grid_params = Grid_params(nx, ny, nobs, dx, dy)
+run_params = Run_params(dt, ntmax)
+output_params = Output_params(title_da, title_syn, ntdec)
+da_params = Da_params(nprt, da_period, 1.0 / rr)
 
-
-end # module
+end

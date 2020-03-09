@@ -14,13 +14,12 @@ using .Matrix_ls
 
 # grid-to-grid distance
 get_distance(i0, j0, i1, j1) =
-    sqrt((float(i0 - i1) * dx) ^ 2 + (float(j0 - j1) * dy) ^ 2)
+    sqrt((float(i0 - i1) * grid_params.dx) ^ 2 + (float(j0 - j1) * grid_params.dy) ^ 2)
 
 # Return observation data at stations from given model state
 function get_obs!(obs::AbstractVector{T},
                   state::AbstractVector{T},
-                  nx::Int,
-                  ny::Int,
+                  nx::Integer,
                   ist::AbstractVector{Int},
                   jst::AbstractVector{Int}) where T
     @assert length(obs) == length(ist) == length(jst)
@@ -36,6 +35,7 @@ end
 
 # Observation covariance matrix based on simple exponential decay
 function get_obs_covariance(nobs::Int,
+                            inv_rr::AbstractFloat,
                             ist::AbstractVector{Int},
                             jst::AbstractVector{Int})
     
@@ -43,43 +43,13 @@ function get_obs_covariance(nobs::Int,
     mu_boo = Matrix{Float64}(undef, nobs, nobs)
 
     # Estimate background error between stations
-    for j in 1:nobs
-        for i in 1:nobs
-            # Gaussian correlation function
-            dist = get_distance(ist[i], jst[i], ist[j], jst[j])
-            mu_boo[i, j] = exp(-(dist / rr) ^ 2)
-        end
+    for j in 1:nobs, i in 1:nobs
+        # Gaussian correlation function
+        dist = get_distance(ist[i], jst[i], ist[j], jst[j])
+        mu_boo[i, j] = exp(-(dist * inv_rr) ^ 2)
     end
     
     return mu_boo
-end
-
-# Update tsunami wavefield with LLW2d. Return new value.
-function tsunami_update(nx::Int,
-                        ny::Int,
-                        state::AbstractVector{T},
-                        hm::AbstractMatrix{T},
-                        hn::AbstractMatrix{T},
-                        fm::AbstractMatrix{T},
-                        fn::AbstractMatrix{T},
-                        fe::AbstractMatrix{T},
-                        gg::AbstractMatrix{T}) where T
-    nn = nx * ny
-
-    state_forecast = zero(state)
-    
-    eta_a = reshape(@view(state[1:nn]), nx, ny)
-    mm_a  = reshape(@view(state[(nn + 1):(2 * nn)]), nx, ny)
-    nn_a  = reshape(@view(state[(2 * nn + 1):(3 * nn)]), nx, ny)
-    eta_f = reshape(@view(state_forecast[1:nn]), nx, ny)
-    mm_f  = reshape(@view(state_forecast[(nn + 1):(2 * nn)]), nx, ny)
-    nn_f  = reshape(@view(state_forecast[(2 * nn + 1):(3 * nn)]), nx, ny)
-
-    # Parts of model vector are aliased to tsunami heiht and velocities
-    LLW2d.timestep!(eta_f, mm_f, nn_f, eta_a, mm_a, nn_a, hm, hn, fn, fm, fe, gg)
-
-    return state_forecast
-    
 end
 
 # Update tsunami wavefield with LLW2d in-place.
@@ -123,26 +93,30 @@ end
 # Resample particles from given weights using Stochastic Universal Sampling
 function resample!(state_resampled::AbstractMatrix{T}, state::AbstractMatrix{T}, weight::AbstractVector{S}) where {T,S}
 
+    ns = size(state,1)
     nprt = size(state,2)
+    
     nprt_inv = 1.0 / nprt
     k = 1
 
     #TODO: Do we need to sort state by weight here?
     
     weight_cdf = cumsum(weight)
-    u = nprt_inv * Random.rand(S)
+    u0 = nprt_inv * Random.rand(S)
 
     # Note: To parallelise this loop, updates to k and u have to be atomic.
     # TODO: search for better parallel implementations
     for ip in 1:nprt
 
+        u = u0 + (ip - 1) * nprt_inv
+        
         while(u > weight_cdf[k])
             k += 1
         end
 
-        state_resampled[:,ip] = state[:,k]
-
-        u += nprt_inv
+        for is in 1:ns
+            state_resampled[is,ip] = state[is,k]
+        end
         
     end
     
@@ -155,16 +129,20 @@ function add_noise!(state, amplitude)
     
 end
 
-function tdac(; verbose::Bool = false)
+function init_tdac(dim_state, nobs, nprt)
+
+    # Do memory allocations
+    
     # Model vector for data assimilation
     #   state*(        1:  Nx*Ny): tsunami height eta(nx,ny)
     #   state*(  Nx*Ny+1:2*Nx*Ny): vertically integrated velocity Mx(nx,ny)
     #   state*(2*Nx*Ny+1:3*Nx*Ny): vertically integrated velocity Mx(nx,ny)
     state = zeros(Float64, dim_state, nprt) # model state vectors for particles
+    
     state_true = zeros(Float64, dim_state) # model vector: true wavefield (observation)   
     state_avg = zeros(Float64, dim_state) # average of particle state vectors
-    
-    state_resampled = Matrix{Float64}(undef, dim_state, nprt) #preallocate once instead of every time resample is called
+
+    state_resampled = Matrix{Float64}(undef, dim_state, nprt) 
     
     weights = Vector{Float64}(undef, nprt)
     
@@ -172,63 +150,59 @@ function tdac(; verbose::Bool = false)
     obs_model = Matrix{Float64}(undef, nobs, nprt) # forecasted tsunami height
 
     # station location in digital grids
-    ist   = Vector{Int}(undef, nobs)
-    jst   = Vector{Int}(undef, nobs)
+    ist = Vector{Int}(undef, nobs)
+    jst = Vector{Int}(undef, nobs)
 
+    return state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst
+end
+
+function tdac(; verbose::Bool = false)
+
+    state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst = init_tdac(grid_params.dim_state,
+                                                                                                      grid_params.nobs,
+                                                                                                      da_params.nprt)
+    
     # Set up tsunami model
-    gg, hh, hm, hn, fm, fn, fe = LLW2d.setup() # obtain initial tsunami height
-    eta = reshape(@view(state[1:nx*ny]), nx, ny)
+    gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(grid_params.nx, grid_params.ny) # obtain initial tsunami height
+    eta = reshape(@view(state[1:grid_params.dim_grid]), grid_params.nx, grid_params.ny)
     LLW2d.initheight!(eta, hh)
     LLW2d.set_stations!(ist, jst)
 
-    cov_obs = get_obs_covariance(nobs, ist, jst)
+    cov_obs = get_obs_covariance(grid_params.nobs, da_params.inv_rr, ist, jst)
     
-    for it in 1:ntmax
+    for it in 1:run_params.ntmax
 
         if verbose
-            if mod(it - 1, ntdec) == 0
-                println("timestep = ", it)
-            end
-            
-            # save tsunami wavefield snapshot for visualization
-            if mod(it - 1, ntdec) == 0
-                LLW2d.output_snap(reshape(@view(state_avg[1:nx*ny]), nx, ny),
-                                  floor(Int, (it - 1) / ntdec),
-                                  title_da)
-                LLW2d.output_snap(reshape(@view(state_true[1:nx*ny]), nx, ny),
-                                  floor(Int, (it - 1) / ntdec),
-                                  title_syn)
+            if mod(it - 1, output_params.ntdec) == 0
+                # save tsunami wavefield snapshot for visualization
+                println("Writing output at timestep = ", it)
+                
+                LLW2d.output_snap(reshape(@view(state_avg[1:grid_params.dim_grid]),grid_params.nx,grid_params.ny),
+                                  floor(Int, (it - 1) / output_params.ntdec),
+                                  output_params.title_da)
+                LLW2d.output_snap(reshape(@view(state_true[1:grid_params.dim_grid]),grid_params.nx,grid_params.ny),
+                                  floor(Int, (it - 1) / output_params.ntdec),
+                                  output_params.title_syn)
             end
         end
-            
-        tsunami_update!(state_true, nx, ny, hm, hn, fn, fm, fe, gg) # integrate true synthetic wavefield
-        get_obs!(obs_real, state_true, nx, ny, ist, jst) # generate observed data
+
+        # integrate true synthetic wavefield and generate observed data
+        tsunami_update!(state_true, grid_params.nx, grid_params.ny, hm, hn, fn, fm, fe, gg)
+        get_obs!(obs_real, state_true, grid_params.nx, ist, jst)
         
-        # Forecast
-        # TODO: parallelise/simd this loop
-        Threads.@threads for ip in 1:nprt
+        # Forecast: Update tsunami forecast and get observations from it
+        # Parallelised with threads. TODO: Consider distributed and/or simd
+        Threads.@threads for ip in 1:da_params.nprt
             
-            # Update tsunami forecast
-            tsunami_update!(@view(state[:,ip]), nx, ny, hm, hn, fn, fm, fe, gg)
-            
-            # Retrieve forecasted observations at stations
-            get_obs!(@view(obs_model[:,ip]), @view(state[:,ip]), nx, ny, ist, jst)
+            tsunami_update!(@view(state[:,ip]), grid_params.nx, grid_params.ny, hm, hn, fn, fm, fe, gg)
+            get_obs!(@view(obs_model[:,ip]), @view(state[:,ip]), grid_params.nx, ist, jst)
             
         end
 
         # Weigh and resample particles
-        if mod(it - 1, da_period) == 0
-
-            # println("observations")
-            # println("real :",yt)
-            # for ip in 1:nprt
-            #     println("model:",yf[:,ip])
-            # end
+        if mod(it - 1, da_params.da_period) == 0
             
-            get_weights!(weights, obs_real, obs_model, cov_obs)
-
-            # println("weights: ", weight)
-            
+            get_weights!(weights, obs_real, obs_model, cov_obs)            
             resample!(state_resampled, state, weights)
             state .= state_resampled
 
