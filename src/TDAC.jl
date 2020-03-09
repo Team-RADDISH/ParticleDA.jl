@@ -163,7 +163,7 @@ function tdac(; verbose::Bool = false)
                                                                                                       da_params.nprt)
     
     # Set up tsunami model
-    gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(grid_params.nx, grid_params.ny) # obtain initial tsunami height
+    gg, hh, hm, hn, fm, fn, fe = LLW2d.setup() # obtain initial tsunami height
     eta = reshape(@view(state[1:grid_params.dim_grid]), grid_params.nx, grid_params.ny)
     LLW2d.initheight!(eta, hh)
     LLW2d.set_stations!(ist, jst)
