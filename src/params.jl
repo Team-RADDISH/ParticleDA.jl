@@ -41,10 +41,10 @@ struct Da_params
     inv_rr::AbstractFloat
 end
 
-physics_params = Physics_params(9.80665)
-grid_params = Grid_params(nx, ny, nobs, dx, dy)
-run_params = Run_params(dt, ntmax)
-output_params = Output_params(title_da, title_syn, ntdec)
-da_params = Da_params(nprt, da_period, 1.0 / rr)
+const physics_params = Physics_params(9.80665)
+const grid_params = Grid_params(nx, ny, nobs, dx, dy)
+const run_params = Run_params(dt, ntmax)
+const output_params = Output_params(title_da, title_syn, ntdec)
+const da_params = Da_params(nprt, da_period, 1.0 / rr)
 
 end
