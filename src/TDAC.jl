@@ -35,7 +35,7 @@ end
 
 # Observation covariance matrix based on simple exponential decay
 function get_obs_covariance(nobs::Int,
-                            inv_rr::AbstractFloat,
+                            inv_rr::Real,
                             ist::AbstractVector{Int},
                             jst::AbstractVector{Int})
     

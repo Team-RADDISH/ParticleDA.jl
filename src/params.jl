@@ -6,16 +6,16 @@ export grid_params, run_params, output_params, da_params, physics_params
 
 include("./input.jl")
 
-struct Physics_params
-    g0::AbstractFloat
+struct Physics_params{T<:AbstractFloat}
+    g0::T
 end
 
-struct Grid_params
+struct Grid_params{T<:AbstractFloat}
     nx::Int
     ny::Int
     nobs::Int
-    dx::AbstractFloat
-    dy::AbstractFloat
+    dx::T
+    dy::T
     dim_grid::Int
     dim_state::Int
 
@@ -24,21 +24,21 @@ struct Grid_params
     Grid_params(nx, ny, nobs, dx, dy, dim_grid, dim_state) = new(nx, ny, nobs, dx, dy, dim_grid, dim_state)
 end
 
-struct Run_params
-    dt::AbstractFloat
+struct Run_params{T<:AbstractFloat}
+    dt::T
     ntmax::Int
 end
 
 struct Output_params
-    title_da::AbstractString
-    title_syn::AbstractString
+    title_da::String
+    title_syn::String
     ntdec::Int
 end
 
-struct Da_params
+struct Da_params{T<:AbstractFloat}
     nprt::Int
     da_period::Int
-    inv_rr::AbstractFloat
+    inv_rr::T
 end
 
 const physics_params = Physics_params(9.80665)
