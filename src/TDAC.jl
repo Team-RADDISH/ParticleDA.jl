@@ -156,7 +156,7 @@ function init_tdac(dim_state, nobs, nprt)
     return state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst
 end
 
-function tdac(; verbose::Bool = false)
+function tdac(params; verbose::Bool = false)
 
     state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst = init_tdac(grid_params.dim_state,
                                                                                                       grid_params.nobs,
@@ -211,6 +211,24 @@ function tdac(; verbose::Bool = false)
         Statistics.mean!(state_avg, state)
         
     end
+
+    return state_avg
+end
+
+function read_input(path_to_input::String)
+
+    
+    
+end
+
+function tdac_main(;path_to_input::String = 'input.jl')
+
+    params = read_input(path_to_input)
+
+    # Verify input is OK
+    
+    state = tdac(params)
+    
 end
 
 end # module
