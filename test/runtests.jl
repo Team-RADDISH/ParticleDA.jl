@@ -90,7 +90,7 @@ end
 
     # setup.  TODO: add real tests.  So far we're just making sure code won't
     # crash
-    LLW2d.setup(200, 200, 3e4)
+    LLW2d.setup(n, n, 3e4)
 end
 
 @testset "TDAC" begin
@@ -148,14 +148,23 @@ end
     TDAC.resample!(xrs,x,w)
     @test sum(xrs, dims=2)[:] ≈ 2 .* x[:,2] + 3 .* x[:,4]
     
-    nx = 3
-    ny = 3
+    nx = 10
+    ny = 10
     dt = 1.0
     # 0 input gives 0 output
-    # TODO: Not sure if this does anything sensible since LLW2d.setup() has not been called
-    #       At the very least it checks that tsunami_update! doesn't crash
     x0 = x = zeros(nx * ny * 3)
-    hm = hn = fm = fn = fe = gg = zeros(nx,ny)
+    gg, hh, hm, hn, fm, fn, fe = TDAC.LLW2d.setup(nx,ny,3.0e4)
     TDAC.tsunami_update!(x, nx, ny, dx, dy, dt, hm, hn, fm, fn, fe, gg)
     @test x ≈ x0
+
+    # Initialise and update a tsunami on a small grid
+    s = 4e3
+    eta = reshape(@view(x[1:nx*ny]), nx, ny)
+    TDAC.LLW2d.initheight!(eta, hh, dx, dy, s)
+    @test eta[2,2] ≈ 1.0
+    @test sum(eta) ≈ 4.0
+    TDAC.tsunami_update!(x, nx, ny, dx, dy, dt, hm, hn, fm, fn, fe, gg)
+    show(eta)
+    @test sum(eta, dims=1) ≈ [0.9140901416339269 1.7010577375770561 0.9140901416339269 0.06356127284539884 0.0 0.0 0.0 0.0 0.0 0.0]
+    @test sum(eta, dims=2) ≈ [0.9068784611641829; 1.6999564781646717; 0.9204175965604575; 0.06554675780099671; 0.0; 0.0; 0.0; 0.0; 0.0; 0.0]
 end
