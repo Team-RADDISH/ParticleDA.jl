@@ -14,12 +14,18 @@ function set_stations!(ist::AbstractVector{Int},
                        jst::AbstractVector{Int})
     # synthetic station locations
     nst = 0
-    # let's assume ist and jst have a square number of elements
+    
+    # let's check ist and jst have a square number of elements before computing n
+    @assert mod(sqrt(length(ist)),1.0) ≈ 0
+    @assert mod(sqrt(length(jst)),1.0) ≈ 0
     n = floor(Int, sqrt(length(ist)))
+    
     @inbounds for i in 1:n, j in 1:n
         nst += 1
-        ist[nst] = floor(Int, ((i - 1) * 20 + 150 ) * 1000 / grid_params.dx + 0.5)
-        jst[nst] = floor(Int, ((j - 1) * 20 + 150 ) * 1000 / grid_params.dy + 0.5)
+        ist[nst] = floor(Int, ((i - 1) * grid_params.station_separation + grid_params.station_boundary )
+                         * grid_params.station_dx / grid_params.dx + 0.5)
+        jst[nst] = floor(Int, ((j - 1) * grid_params.station_separation + grid_params.station_boundary )
+                         * grid_params.station_dy / grid_params.dy + 0.5)
     end
 end
 

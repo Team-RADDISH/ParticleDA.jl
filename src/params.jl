@@ -9,12 +9,18 @@ struct tdac_params{T<:AbstractFloat}
     # Grid parameters
     nx::Int
     ny::Int
-    nobs::Int
     dx::T
     dy::T
     dim_grid::Int
     dim_state::Int
 
+    # Station parameters
+    nobs::Int
+    station_separation::Int
+    station_boundary::Int
+    station_dx::Real
+    station_dy::Real
+    
     # Run parameters
     dt::T
     ntmax::Int
