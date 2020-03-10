@@ -19,9 +19,9 @@ struct Grid_params{T<:AbstractFloat}
     dim_grid::Int
     dim_state::Int
 
-    Grid_params(nx, ny, nobs, dx, dy) = new(nx, ny, nobs, dx, dy, nx*ny, 3*nx*ny)
-    Grid_params(nx, ny, nobs, dx, dy, dim_grid) = new(nx, ny, nobs, dx, dy, dim_grid, 3*dim_grid)
-    Grid_params(nx, ny, nobs, dx, dy, dim_grid, dim_state) = new(nx, ny, nobs, dx, dy, dim_grid, dim_state)
+    Grid_params(nx, ny, nobs, dx, dy) = new{Float64}(nx, ny, nobs, dx, dy, nx*ny, 3*nx*ny)
+    Grid_params(nx, ny, nobs, dx, dy, dim_grid) = new{Float64}(nx, ny, nobs, dx, dy, dim_grid, 3*dim_grid)
+    Grid_params(nx, ny, nobs, dx, dy, dim_grid, dim_state) = new{Float64}(nx, ny, nobs, dx, dy, dim_grid, dim_state)
 end
 
 struct Run_params{T<:AbstractFloat}
