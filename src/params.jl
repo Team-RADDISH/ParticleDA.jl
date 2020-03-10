@@ -1,39 +1,43 @@
-module Params
+module Default_params
 
 export tdac_params
 
-struct tdac_params{T<:AbstractFloat}
-    # Physics parameters
-    g0::T
+Base.@kwdef struct tdac_params{T<:AbstractFloat}
 
     # Grid parameters
-    nx::Int
-    ny::Int
-    dx::T
-    dy::T
-    dim_grid::Int
-    dim_state::Int
+    nx::Int = 200
+    ny::Int = 200
+    dim_grid::Int = nx * ny
+    dim_state::Int = 3 * dim_grid
+    dx::T = 2.0e3
+    dy::T = 2.0e3
 
     # Station parameters
-    nobs::Int
-    station_separation::Int
-    station_boundary::Int
-    station_dx::Real
-    station_dy::Real
+    nobs::Int = 4
+    station_separation::Int = 20
+    station_boundary::Int = 150
+    station_dx::T = 1.0e3
+    station_dy::T = 1.0e3
     
     # Run parameters
-    dt::T
-    ntmax::Int
+    ntmax::Int = 500
+    dt::T = 1.0
+    verbose::Bool = false
 
     # Output parameters
-    title_da::String
-    title_syn::String
-    ntdec::Int
+    title_da::String = "da"
+    title_syn::String = "syn"
+    ntdec::Int = 50
 
     # DA parameters
-    nprt::Int
-    da_period::Int
-    inv_rr::T
+    nprt::Int = 4
+    da_period::Int = 50
+    rr::T = 2.0e4
+    inv_rr::T = 1.0/rr
+
+    # Initial values
+    source_size = 3.0e4
+    bathymetry_setup = 3.0e4
 end
 
 end

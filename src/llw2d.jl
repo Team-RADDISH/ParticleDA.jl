@@ -1,7 +1,5 @@
 module LLW2d
 
-using ..Params
-
 # Linear Long Wave (LLW) tsunami in 2D Cartesian Coordinate
 
 const nxa = 20            # absorber thickness
@@ -9,9 +7,12 @@ const nya = 20            # absorber thickness
 const apara = 0.015       # damping for boundaries
 const CUTOFF_DEPTH = 10   # shallowest water depth
 
+const g_n = 9.80665
+
 # Set station locations. Users may need to modify it
 function set_stations!(ist::AbstractVector{Int},
-                       jst::AbstractVector{Int})
+                       jst::AbstractVector{Int},
+                       station_separation::Int, station_boundary::Int, station_dx::Real, station_dy::Real, dx::Real, dy::Real)
     # synthetic station locations
     nst = 0
     
@@ -22,10 +23,10 @@ function set_stations!(ist::AbstractVector{Int},
     
     @inbounds for i in 1:n, j in 1:n
         nst += 1
-        ist[nst] = floor(Int, ((i - 1) * grid_params.station_separation + grid_params.station_boundary )
-                         * grid_params.station_dx / grid_params.dx + 0.5)
-        jst[nst] = floor(Int, ((j - 1) * grid_params.station_separation + grid_params.station_boundary )
-                         * grid_params.station_dy / grid_params.dy + 0.5)
+        ist[nst] = floor(Int, ((i - 1) * station_separation + station_boundary )
+                         * station_dx / dx + 0.5)
+        jst[nst] = floor(Int, ((j - 1) * station_separation + station_boundary )
+                         * station_dy / dy + 0.5)
     end
 end
 
@@ -41,7 +42,8 @@ function timestep!(eta1::AbstractMatrix{T},
                    fm::AbstractMatrix{T},
                    fn::AbstractMatrix{T},
                    fe::AbstractMatrix{T},
-                   gg::AbstractMatrix{T}) where T
+                   gg::AbstractMatrix{T},
+                   dx::Real,dy::Real,dt::Real) where T
     nx, ny = size(eta1)
     @assert (nx, ny) == size(mm1) == size(nn1) == size(eta0) == size(mm0) ==
         size(nn0) == size(hm) == size(hn) == size(fm) == size(fn) == size(fe) ==
@@ -55,21 +57,21 @@ function timestep!(eta1::AbstractMatrix{T},
     # diffs
     for j in 1:ny
         for i in 2:nx
-            @inbounds dxeta[i,j] = (eta0[i,j] - eta0[i - 1,j]) / grid_params.dx
+            @inbounds dxeta[i,j] = (eta0[i,j] - eta0[i - 1,j]) / dx
         end
-        @inbounds dxeta[1,j] = (eta0[1,j] - 0) / grid_params.dx
+        @inbounds dxeta[1,j] = (eta0[1,j] - 0) / dx
     end
     for i in 1:nx
         for j in 2:ny
-            @inbounds dyeta[i,j] = (eta0[i,j] - eta0[i, j - 1]) / grid_params.dy
+            @inbounds dyeta[i,j] = (eta0[i,j] - eta0[i, j - 1]) / dy
         end
-        @inbounds dyeta[i,1] = (eta0[i,1] - 0) / grid_params.dy
+        @inbounds dyeta[i,1] = (eta0[i,1] - 0) / dy
     end
 
     # Update Velocity
     for j in 1:ny, i in 1:nx
-        @inbounds mm1[i,j] = mm0[i, j] - physics_params.g0 * hm[i, j] * dxeta[i, j] * run_params.dt
-        @inbounds nn1[i,j] = nn0[i, j] - physics_params.g0 * hn[i, j] * dyeta[i, j] * run_params.dt
+        @inbounds mm1[i,j] = mm0[i, j] - g_n * hm[i, j] * dxeta[i, j] * dt
+        @inbounds nn1[i,j] = nn0[i, j] - g_n * hn[i, j] * dyeta[i, j] * dt
     end
 
     # boundary condition
@@ -80,21 +82,21 @@ function timestep!(eta1::AbstractMatrix{T},
 
     # diffs
     for j in 1:ny
-        @inbounds dxM[nx, j] = (-mm1[nx, j]) / grid_params.dx
+        @inbounds dxM[nx, j] = (-mm1[nx, j]) / dx
         for i in 1:(nx-1)
-            @inbounds dxM[i, j] = (mm1[i + 1, j] - mm1[i, j]) / grid_params.dx
+            @inbounds dxM[i, j] = (mm1[i + 1, j] - mm1[i, j]) / dx
         end
     end
     for i in 1:nx
-        @inbounds dyN[i, ny] = (-nn1[i, ny]) / grid_params.dy
+        @inbounds dyN[i, ny] = (-nn1[i, ny]) / dy
         for j in 1:(ny-1)
-            @inbounds dyN[i, j] = (nn1[i,j + 1] - nn1[i, j]) / grid_params.dy
+            @inbounds dyN[i, j] = (nn1[i,j + 1] - nn1[i, j]) / dy
         end
     end
 
     # Update Wave Heigt
     for j in 1:ny, i in 1:nx
-        @inbounds eta1[i, j] = eta0[i, j] - (dxM[i, j] + dyN[i, j]) * run_params.dt
+        @inbounds eta1[i, j] = eta0[i, j] - (dxM[i, j] + dyN[i, j]) * dt
     end
 
     # boundary condition
@@ -104,9 +106,9 @@ function timestep!(eta1::AbstractMatrix{T},
     return eta1, mm1, nn1
 end
 
-function setup(nx::Int = grid_params.nx,
-               ny::Int = grid_params.nx,
-               hh_val::AbstractFloat = 3000.0,
+function setup(nx::Int,
+               ny::Int,
+               bathymetry_val::Real,
                T::DataType = Float64)
     # Memory allocation
     hh = Matrix{T}(undef, nx, ny) # ocean depth
@@ -118,7 +120,7 @@ function setup(nx::Int = grid_params.nx,
     fe = ones(T, nx, ny) # "
 
     # Bathymetry set-up. Users may need to modify it
-    fill!(hh, hh_val)
+    fill!(hh, bathymetry_val)
     @inbounds for j in 1:ny, i in 1:nx
         if hh[i,j] < 0
             hh[i,j] = 0
@@ -174,12 +176,12 @@ end
 
 function initheight!(eta::AbstractMatrix{T},
                      hh::AbstractMatrix{T},
-                     aa_and_bb_val::AbstractFloat = 3.0e4) where T
+                     dx::Real,dy::Real,source_size::Real) where T
     @assert size(eta) == size(hh)
 
     # source size
-    aa = aa_and_bb_val
-    bb = aa_and_bb_val
+    aa = source_size
+    bb = source_size
 
     # bathymetry setting
     fill!(eta, 0)
@@ -189,15 +191,15 @@ function initheight!(eta::AbstractMatrix{T},
     i0 = floor(Int, nx / 4)
     j0 = floor(Int, ny / 4)
     for j in 1:ny
-        if -bb <= (j - j0) * grid_params.dy && (j - j0) * grid_params.dy <= bb
-            hy = (1 + cospi((j - j0) * grid_params.dy / bb)) / 2
+        if -bb <= (j - j0) * dy && (j - j0) * dy <= bb
+            hy = (1 + cospi((j - j0) * dy / bb)) / 2
         else
             hy = 0.0
         end
 
         for i in 1:nx
-            if -aa <= (i - i0) * grid_params.dx && (i - i0) * grid_params.dx <= aa
-                hx = (1 + cospi((i - i0) * grid_params.dx / aa)) / 2
+            if -aa <= (i - i0) * dx && (i - i0) * dx <= aa
+                hx = (1 + cospi((i - i0) * dx / aa)) / 2
             else
                 hx = 0.0
             end
@@ -215,7 +217,7 @@ function initheight!(eta::AbstractMatrix{T},
 end
 
 # export snapshot data for visualization
-function output_snap(eta::AbstractMatrix, isnap::Integer, title::AbstractString)
+function output_snap(eta::AbstractMatrix, isnap::Integer, title::AbstractString, dx::Real, dy::Real)
     nx, ny = size(eta)
     outdir = "out"
     mkpath(outdir)
@@ -226,9 +228,9 @@ function output_snap(eta::AbstractMatrix, isnap::Integer, title::AbstractString)
     open(fn_out, "w") do io
         for j in 1:ny
             for i in 1:nx
-                println(io, (i - 1) * grid_params.dx * 1.0e-3,
+                println(io, (i - 1) * dx * 1.0e-3,
                         "\t",
-                        (j - 1) * grid_params.dy * 1.0e-3,
+                        (j - 1) * dy * 1.0e-3,
                         "\t",
                         real(eta[i,j]))
             end

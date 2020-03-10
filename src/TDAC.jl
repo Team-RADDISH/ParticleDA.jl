@@ -1,20 +1,20 @@
 module TDAC
 
-using Random, Distributions, Statistics, Distributed, Base.Threads
+using Random, Distributions, Statistics, Distributed, Base.Threads, YAML
 
-export tdac
+export tdac, main
 
 include("params.jl")
-include("matrix.jl")
 include("llw2d.jl")
+include("matrix.jl")
 
-using .Params
+using .Default_params
 using .LLW2d
 using .Matrix_ls
 
 # grid-to-grid distance
-get_distance(i0, j0, i1, j1) =
-    sqrt((float(i0 - i1) * grid_params.dx) ^ 2 + (float(j0 - j1) * grid_params.dy) ^ 2)
+get_distance(i0, j0, i1, j1, dx, dy) =
+    sqrt((float(i0 - i1) * dx) ^ 2 + (float(j0 - j1) * dy) ^ 2)
 
 # Return observation data at stations from given model state
 function get_obs!(obs::AbstractVector{T},
@@ -36,6 +36,8 @@ end
 # Observation covariance matrix based on simple exponential decay
 function get_obs_covariance(nobs::Int,
                             inv_rr::Real,
+                            dx::Real,
+                            dy::Real,
                             ist::AbstractVector{Int},
                             jst::AbstractVector{Int})
     
@@ -45,7 +47,7 @@ function get_obs_covariance(nobs::Int,
     # Estimate background error between stations
     for j in 1:nobs, i in 1:nobs
         # Gaussian correlation function
-        dist = get_distance(ist[i], jst[i], ist[j], jst[j])
+        dist = get_distance(ist[i], jst[i], ist[j], jst[j], dx, dy)
         mu_boo[i, j] = exp(-(dist * inv_rr) ^ 2)
     end
     
@@ -56,15 +58,18 @@ end
 function tsunami_update!(state::AbstractVector{T},
                          nx::Int,
                          ny::Int,
+                         dx::Real,
+                         dy::Real,
+                         dt::Real,
                          hm::AbstractMatrix{T},
                          hn::AbstractMatrix{T},
                          fm::AbstractMatrix{T},
                          fn::AbstractMatrix{T},
                          fe::AbstractMatrix{T},
                          gg::AbstractMatrix{T}) where T
-    
-    nn = nx * ny
 
+    nn = nx * ny
+    
     eta_a = reshape(@view(state[1:nn]), nx, ny)
     mm_a  = reshape(@view(state[(nn + 1):(2 * nn)]), nx, ny)
     nn_a  = reshape(@view(state[(2 * nn + 1):(3 * nn)]), nx, ny)
@@ -73,7 +78,7 @@ function tsunami_update!(state::AbstractVector{T},
     nn_f  = reshape(@view(state[(2 * nn + 1):(3 * nn)]), nx, ny)
 
     # Parts of model vector are aliased to tsunami heiht and velocities
-    LLW2d.timestep!(eta_f, mm_f, nn_f, eta_a, mm_a, nn_a, hm, hn, fn, fm, fe, gg)
+    LLW2d.timestep!(eta_f, mm_f, nn_f, eta_a, mm_a, nn_a, hm, hn, fn, fm, fe, gg, dx, dy, dt)
     
 end
 
@@ -156,51 +161,60 @@ function init_tdac(dim_state, nobs, nprt)
     return state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst
 end
 
-function tdac(params; verbose::Bool = false)
+function tdac(params)
 
-    state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst = init_tdac(grid_params.dim_state,
-                                                                                                      grid_params.nobs,
-                                                                                                      da_params.nprt)
+    state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst = init_tdac(params.dim_state,
+                                                                                                      params.nobs,
+                                                                                                      params.nprt)
     
     # Set up tsunami model
-    gg, hh, hm, hn, fm, fn, fe = LLW2d.setup() # obtain initial tsunami height
-    eta = reshape(@view(state[1:grid_params.dim_grid]), grid_params.nx, grid_params.ny)
-    LLW2d.initheight!(eta, hh)
-    LLW2d.set_stations!(ist, jst)
+    gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx, params.ny, params.bathymetry_setup)
 
-    cov_obs = get_obs_covariance(grid_params.nobs, da_params.inv_rr, ist, jst)
+    # obtain initial tsunami height
+    eta = reshape(@view(state[1:params.dim_grid]), params.nx, params.ny)
+    LLW2d.initheight!(eta, hh, params.dx, params.dy, params.source_size)
+
+    # set station positions
+    LLW2d.set_stations!(ist,
+                        jst,
+                        params.station_separation,
+                        params.station_boundary,
+                        params.station_dx,
+                        params.station_dy,
+                        params.dx,
+                        params.dy)
+
+    cov_obs = get_obs_covariance(params.nobs, params.inv_rr, params.dx, params.dy, ist, jst)
     
-    for it in 1:run_params.ntmax
+    for it in 1:params.ntmax
 
-        if verbose
-            if mod(it - 1, output_params.ntdec) == 0
-                # save tsunami wavefield snapshot for visualization
-                println("Writing output at timestep = ", it)
-                
-                LLW2d.output_snap(reshape(@view(state_avg[1:grid_params.dim_grid]),grid_params.nx,grid_params.ny),
-                                  floor(Int, (it - 1) / output_params.ntdec),
-                                  output_params.title_da)
-                LLW2d.output_snap(reshape(@view(state_true[1:grid_params.dim_grid]),grid_params.nx,grid_params.ny),
-                                  floor(Int, (it - 1) / output_params.ntdec),
-                                  output_params.title_syn)
-            end
+        if params.verbose && mod(it - 1, params.ntdec) == 0
+            # save tsunami wavefield snapshot for visualization
+            println("Writing output at timestep = ", it)
+            
+            LLW2d.output_snap(reshape(@view(state_avg[1:params.dim_grid]),params.nx,params.ny),
+                              floor(Int, (it - 1) / params.ntdec),
+                              params.title_da, params.dx, params.dy)
+            LLW2d.output_snap(reshape(@view(state_true[1:params.dim_grid]),params.nx,params.ny),
+                              floor(Int, (it - 1) / params.ntdec),
+                              params.title_syn, params.dx, params.dy)
         end
 
         # integrate true synthetic wavefield and generate observed data
-        tsunami_update!(state_true, grid_params.nx, grid_params.ny, hm, hn, fn, fm, fe, gg)
-        get_obs!(obs_real, state_true, grid_params.nx, ist, jst)
+        tsunami_update!(state_true, params.nx, params.ny, params.dx, params.dy, params.dt, hm, hn, fn, fm, fe, gg)
+        get_obs!(obs_real, state_true, params.nx, ist, jst)
         
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads. TODO: Consider distributed and/or simd
-        Threads.@threads for ip in 1:da_params.nprt
+        Threads.@threads for ip in 1:params.nprt
             
-            tsunami_update!(@view(state[:,ip]), grid_params.nx, grid_params.ny, hm, hn, fn, fm, fe, gg)
-            get_obs!(@view(obs_model[:,ip]), @view(state[:,ip]), grid_params.nx, ist, jst)
+            tsunami_update!(@view(state[:,ip]), params.nx, params.ny, params.dx, params.dy, params.dt, hm, hn, fn, fm, fe, gg)
+            get_obs!(@view(obs_model[:,ip]), @view(state[:,ip]), params.nx, ist, jst)
             
         end
 
         # Weigh and resample particles
-        if mod(it - 1, da_params.da_period) == 0
+        if mod(it - 1, params.da_period) == 0
             
             get_weights!(weights, obs_real, obs_model, cov_obs)            
             resample!(state_resampled, state, weights)
@@ -215,19 +229,33 @@ function tdac(params; verbose::Bool = false)
     return state_avg
 end
 
-function read_input(path_to_input::String)
+function get_params(path_to_input_file::String)
 
-    
+    # Read input provided in a yaml file. Overwrite default input parameters with the values provided.
+    if isfile(path_to_input_file)
+        user_input_dict = YAML.load_file(path_to_input_file)
+        user_input = (; (Symbol(k) => v for (k,v) in user_input_dict)...)    
+        params = tdac_params(;user_input...)
+        println("Read input parameters from ",path_to_input_file)
+    else
+        if !isempty(path_to_input_file)
+            println("Input file ", path_to_input_file, " not found, using default parameters.")
+        else
+            println("Using default parameters")
+        end
+        params = tdac_params()
+    end
+    return params
     
 end
 
-function tdac_main(;path_to_input::String = 'input.jl')
+function main(path_to_input_file::String = "")
 
-    params = read_input(path_to_input)
-
-    # Verify input is OK
+    params = get_params(path_to_input_file)
     
-    state = tdac(params)
+    final_state = tdac(params)
+
+    nothing
     
 end
 
