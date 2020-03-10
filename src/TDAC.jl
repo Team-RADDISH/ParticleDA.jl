@@ -249,13 +249,11 @@ function get_params(path_to_input_file::String)
     
 end
 
-function main(path_to_input_file::String = "")
+function tdac(path_to_input_file::String = "")
 
     params = get_params(path_to_input_file)
     
-    final_state = tdac(params)
-
-    nothing
+    return tdac(params)
     
 end
 

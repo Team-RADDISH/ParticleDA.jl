@@ -36,8 +36,8 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
     inv_rr::T = 1.0/rr
 
     # Initial values
-    source_size = 3.0e4
-    bathymetry_setup = 3.0e4
+    source_size::T = 3.0e4
+    bathymetry_setup::T = 3.0e4
 end
 
 end
