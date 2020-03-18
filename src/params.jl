@@ -1,36 +1,43 @@
-module Params
+module Default_params
 
-export g0, nx, ny, nobs, dx, dy, dt, dim_state, title_da, title_syn, rr, ntmax, ntdec, nprt, da_period
+export tdac_params
 
-## Parameters
+Base.@kwdef struct tdac_params{T<:AbstractFloat}
 
-const g0 = 9.80665 #  Gravity Constant
+    # Grid parameters
+    nx::Int = 200
+    ny::Int = 200
+    dim_grid::Int = nx * ny
+    dim_state::Int = 3 * dim_grid
+    dx::T = 2.0e3
+    dy::T = 2.0e3
 
-# finite differnce method parametrs
-const nx = 200  # grid number (NS)
-const ny = 200  # grid number (EW)
-const nobs = 4   # Number of stations
-const dx = 2000 # grid width of x-direction (m)
-const dy = 2000 # grid width of y-direction (m)
-const dt = 1    # time step width (sec)
+    # Station parameters
+    nobs::Int = 4
+    station_separation::Int = 20
+    station_boundary::Int = 150
+    station_dx::T = 1.0e3
+    station_dy::T = 1.0e3
+    
+    # Run parameters
+    ntmax::Int = 500
+    dt::T = 1.0
+    verbose::Bool = false
 
-# model sizes
-const dim_state    = 3 * nx * ny
+    # Output parameters
+    title_da::String = "da"
+    title_syn::String = "syn"
+    ntdec::Int = 50
 
-const title_da  = "da"  # output file title
-const title_syn = "syn" # output file title for synthetic data
+    # DA parameters
+    nprt::Int = 4
+    da_period::Int = 50
+    rr::T = 2.0e4
+    inv_rr::T = 1.0/rr
 
-# control parameters for optimum interpolations: See document
-const rr = 20000 # Cutoff distance of error covariance (m)
+    # Initial values
+    source_size::T = 3.0e4
+    bathymetry_setup::T = 3.0e4
+end
 
-const ntmax = 500  # Number of time steps
-
-# visualization
-const ntdec = 50 # decimation factor for visualization
-
-# particle filter
-const nprt = 4 # number of particles
-const da_period = 50 # length of data assimilation steps (in time steps)
-
-
-end # module
+end

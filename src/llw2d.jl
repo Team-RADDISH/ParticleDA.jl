@@ -1,7 +1,5 @@
 module LLW2d
 
-using ..Params
-
 # Linear Long Wave (LLW) tsunami in 2D Cartesian Coordinate
 
 const nxa = 20            # absorber thickness
@@ -9,25 +7,27 @@ const nya = 20            # absorber thickness
 const apara = 0.015       # damping for boundaries
 const CUTOFF_DEPTH = 10   # shallowest water depth
 
+const g_n = 9.80665
+
 # Set station locations. Users may need to modify it
 function set_stations!(ist::AbstractVector{Int},
-                       jst::AbstractVector{Int})
+                       jst::AbstractVector{Int},
+                       station_separation::Int, station_boundary::Int, station_dx::Real, station_dy::Real, dx::Real, dy::Real)
     # synthetic station locations
     nst = 0
-    # let's assume ist and jst have a square number of elements
+    
+    # let's check ist and jst have a square number of elements before computing n
+    @assert mod(sqrt(length(ist)),1.0) ≈ 0
+    @assert mod(sqrt(length(jst)),1.0) ≈ 0
     n = floor(Int, sqrt(length(ist)))
+    
     @inbounds for i in 1:n, j in 1:n
         nst += 1
-        ist[nst] = floor(Int, ((i - 1) * 20 + 150 ) * 1000 / dx + 0.5)
-        jst[nst] = floor(Int, ((j - 1) * 20 + 150 ) * 1000 / dy + 0.5)
+        ist[nst] = floor(Int, ((i - 1) * station_separation + station_boundary )
+                         * station_dx / dx + 0.5)
+        jst[nst] = floor(Int, ((j - 1) * station_separation + station_boundary )
+                         * station_dy / dy + 0.5)
     end
-
-    # output for visualization
-    # open(10, file='./out/stloc.dat')
-    # do i=1, nst
-    #   write(10,*) (ist(i)-1)*dx/1000., (jst(i)-1)*dy/1000
-    # end do
-    # close(10)
 end
 
 
@@ -42,7 +42,8 @@ function timestep!(eta1::AbstractMatrix{T},
                    fm::AbstractMatrix{T},
                    fn::AbstractMatrix{T},
                    fe::AbstractMatrix{T},
-                   gg::AbstractMatrix{T}) where T
+                   gg::AbstractMatrix{T},
+                   dx::Real,dy::Real,dt::Real) where T
     nx, ny = size(eta1)
     @assert (nx, ny) == size(mm1) == size(nn1) == size(eta0) == size(mm0) ==
         size(nn0) == size(hm) == size(hn) == size(fm) == size(fn) == size(fe) ==
@@ -69,8 +70,8 @@ function timestep!(eta1::AbstractMatrix{T},
 
     # Update Velocity
     for j in 1:ny, i in 1:nx
-        @inbounds mm1[i,j] = mm0[i, j] - g0 * hm[i, j] * dxeta[i, j] * dt
-        @inbounds nn1[i,j] = nn0[i, j] - g0 * hn[i, j] * dyeta[i, j] * dt
+        @inbounds mm1[i,j] = mm0[i, j] - g_n * hm[i, j] * dxeta[i, j] * dt
+        @inbounds nn1[i,j] = nn0[i, j] - g_n * hn[i, j] * dyeta[i, j] * dt
     end
 
     # boundary condition
@@ -105,7 +106,10 @@ function timestep!(eta1::AbstractMatrix{T},
     return eta1, mm1, nn1
 end
 
-function setup(T::DataType = Float64)
+function setup(nx::Int,
+               ny::Int,
+               bathymetry_val::Real,
+               T::DataType = Float64)
     # Memory allocation
     hh = Matrix{T}(undef, nx, ny) # ocean depth
     hm = Matrix{T}(undef, nx, ny) # x-averaged depth
@@ -116,7 +120,7 @@ function setup(T::DataType = Float64)
     fe = ones(T, nx, ny) # "
 
     # Bathymetry set-up. Users may need to modify it
-    fill!(hh, 3000)
+    fill!(hh, bathymetry_val)
     @inbounds for j in 1:ny, i in 1:nx
         if hh[i,j] < 0
             hh[i,j] = 0
@@ -171,12 +175,13 @@ end
 
 
 function initheight!(eta::AbstractMatrix{T},
-                     hh::AbstractMatrix{T}) where T
+                     hh::AbstractMatrix{T},
+                     dx::Real,dy::Real,source_size::Real) where T
     @assert size(eta) == size(hh)
 
     # source size
-    aa = 30000
-    bb = 30000
+    aa = source_size
+    bb = source_size
 
     # bathymetry setting
     fill!(eta, 0)
@@ -212,7 +217,7 @@ function initheight!(eta::AbstractMatrix{T},
 end
 
 # export snapshot data for visualization
-function output_snap(eta::AbstractMatrix, isnap::Int, title::AbstractString)
+function output_snap(eta::AbstractMatrix, isnap::Integer, title::AbstractString, dx::Real, dy::Real)
     nx, ny = size(eta)
     outdir = "out"
     mkpath(outdir)
@@ -223,9 +228,9 @@ function output_snap(eta::AbstractMatrix, isnap::Int, title::AbstractString)
     open(fn_out, "w") do io
         for j in 1:ny
             for i in 1:nx
-                println(io, (i - 1) * dx / 1000,
+                println(io, (i - 1) * dx * 1.0e-3,
                         "\t",
-                        (j - 1) * dy / 1000,
+                        (j - 1) * dy * 1.0e-3,
                         "\t",
                         real(eta[i,j]))
             end
