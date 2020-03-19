@@ -1,6 +1,6 @@
 module TDAC
 
-using Random, Distributions, Statistics, Distributed, Base.Threads, YAML
+using Random, Distributions, Statistics, Base.Threads, YAML, MPI
 
 export tdac, main
 
