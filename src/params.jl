@@ -38,6 +38,9 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
     # Initial values
     source_size::T = 3.0e4
     bathymetry_setup::T = 3.0e4
+
+    # Parallelisation parameters
+    master_rank::Int = 0
 end
 
 end

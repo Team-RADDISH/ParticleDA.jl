@@ -134,30 +134,39 @@ function add_noise!(state, amplitude)
     
 end
 
-function init_tdac(dim_state, nobs, nprt)
+function init_tdac(dim_state::Int, nobs::Int, nprt_total::Int)
 
     # Do memory allocations
-    
-    # Model vector for data assimilation
-    #   state*(        1:  Nx*Ny): tsunami height eta(nx,ny)
-    #   state*(  Nx*Ny+1:2*Nx*Ny): vertically integrated velocity Mx(nx,ny)
-    #   state*(2*Nx*Ny+1:3*Nx*Ny): vertically integrated velocity Mx(nx,ny)
-    state = zeros(Float64, dim_state, nprt) # model state vectors for particles
-    
-    state_true = zeros(Float64, dim_state) # model vector: true wavefield (observation)   
-    state_avg = zeros(Float64, dim_state) # average of particle state vectors
 
-    state_resampled = Matrix{Float64}(undef, dim_state, nprt) 
-    
-    weights = Vector{Float64}(undef, nprt)
-    
-    obs_real = Vector{Float64}(undef, nobs)        # observed tsunami height
-    obs_model = Matrix{Float64}(undef, nobs, nprt) # forecasted tsunami height
+    # For now, assume that the particles can be evenly divided between ranks
+    @assert mod(nprt_total, MPI.Comm_size(MPI.COMM_WORLD)) == 0
+    nprt_per_rank = Int(nprt_total / MPI.Comm_size(MPI.COMM_WORLD))
+
+    # TODO: Initialize random number generators?
 
     # station location in digital grids
     ist = Vector{Int}(undef, nobs)
     jst = Vector{Int}(undef, nobs)
+    
+    if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+        state = zeros(Float64, dim_state, nprt_total) # model state vectors for particles
+        obs_model = Matrix{Float64}(undef, nobs, nprt_total) # forecasted tsunami height
 
+        state_true = zeros(Float64, dim_state) # model vector: true wavefield (observation)   
+        state_avg = zeros(Float64, dim_state) # average of particle state vectors
+        state_resampled = Matrix{Float64}(undef, dim_state, nprt_total) # resampled state vectors
+        weights = Vector{Float64}(undef, nprt_total) # particle weights
+        obs_real = Vector{Float64}(undef, nobs) # observed tsunami height
+    else
+        state = zeros(Float64, dim_state, nprt_per_rank) # model state vectors for particles
+        obs_model = Matrix{Float64}(undef, nobs, nprt_per_rank) # forecasted tsunami height
+        state_true = []
+        state_avg = []
+        state_resampled = []
+        weights = []
+        obs_real = []
+    end
+        
     return state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst
 end
 
@@ -173,9 +182,21 @@ end
 
 function tdac(params)
 
-    state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst = init_tdac(params.dim_state,
-                                                                                                      params.nobs,
-                                                                                                      params.nprt)
+    MPI.Init()
+    my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
+    my_size = MPI.Comm_size(MPI.COMM_WORLD)
+    
+    nprt_per_rank = Int(params.nprt / my_size)
+
+    (state,
+     state_true,
+     state_avg,
+     state_resampled,
+     weights,
+     obs_real,
+     obs_model,
+     ist,
+     jst) = init_tdac(params.dim_state,params.nobs,params.nprt)
     
     # Set up tsunami model
     gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx, params.ny, params.bathymetry_setup)
@@ -198,36 +219,76 @@ function tdac(params)
     
     for it in 1:params.ntmax
 
-        if params.verbose && mod(it - 1, params.ntdec) == 0
-            print_output(state_true, params.title_syn, it, params)
-            print_output(state_avg, params.title_da, it, params)
-        end
+        if my_rank == params.master_rank
+        
+            if params.verbose && mod(it - 1, params.ntdec) == 0
+                print_output(state_true, params.title_syn, it, params)
+                print_output(state_avg, params.title_da, it, params)
+            end
 
-        # integrate true synthetic wavefield and generate observed data
-        tsunami_update!(state_true, params.nx, params.ny, params.dx, params.dy, params.dt, hm, hn, fn, fm, fe, gg)
-        get_obs!(obs_real, state_true, params.nx, ist, jst)
+            # integrate true synthetic wavefield and generate observed data
+            tsunami_update!(state_true, params.nx, params.ny, params.dx, params.dy, params.dt, hm, hn, fn, fm, fe, gg)
+            get_obs!(obs_real, state_true, params.nx, ist, jst)
+
+        end
         
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads. TODO: Consider distributed and/or simd
-        Threads.@threads for ip in 1:params.nprt
+        #Threads.@threads for ip in 1:params.nprt
+        for ip in 1:nprt_per_rank
             
             tsunami_update!(@view(state[:,ip]), params.nx, params.ny, params.dx, params.dy, params.dt, hm, hn, fn, fm, fe, gg)
             get_obs!(@view(obs_model[:,ip]), @view(state[:,ip]), params.nx, ist, jst)
             
         end
-
+                
         # Weigh and resample particles
         if mod(it - 1, params.da_period) == 0
-            
-            get_weights!(weights, obs_real, obs_model, cov_obs)            
-            resample!(state_resampled, state, weights)
-            state .= state_resampled
 
+            # Gather all particles to master rank
+            # Doing MPI collectives in place to save memory allocations.
+            # This style with if statmeents is recommended instead of MPI.Gather_in_place! which is a bit strange.
+            # Note that only master_rank allocates memory for all particles. Other ranks only allocate
+            # for their chunk of state.
+            if my_rank == params.master_rank
+                MPI.Gather!(nothing, @view(state[:]), params.dim_state * nprt_per_rank, params.master_rank, MPI.COMM_WORLD)
+                MPI.Gather!(nothing, @view(obs_model[:]), params.nobs * nprt_per_rank, params.master_rank, MPI.COMM_WORLD)
+            else
+                MPI.Gather!(@view(state[:]), nothing, params.dim_state * nprt_per_rank, params.master_rank, MPI.COMM_WORLD)
+                MPI.Gather!(@view(obs_model[:]), nothing, params.nobs * nprt_per_rank, params.master_rank, MPI.COMM_WORLD)
+            end
+            
+            if my_rank == params.master_rank
+                
+                get_weights!(weights, obs_real, obs_model, cov_obs)            
+                resample!(state_resampled, state, weights)
+                state .= state_resampled
+                
+            end
+
+            # Scatter the new particles to all ranks. In place similar to gather above.
+            if my_rank == params.master_rank
+                MPI.Scatter!(@view(state[:]),
+                             nothing,
+                             params.dim_state * nprt_per_rank,
+                             params.master_rank,
+                             MPI.COMM_WORLD)
+            else
+                MPI.Scatter!(nothing,
+                             @view(state[:]),
+                             params.dim_state * nprt_per_rank,
+                             params.master_rank,
+                             MPI.COMM_WORLD)
+            end
+        end
+
+        if my_rank == 0
+            Statistics.mean!(state_avg, state)
         end
         
-        Statistics.mean!(state_avg, state)
-        
     end
+
+    MPI.Finalize()
 
     return state_avg
 end
