@@ -221,6 +221,16 @@ function init_tdac(dim_state, nobs, nprt)
     return state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst
 end
 
+function print_output(state, title, it::Int, params)
+
+    # save tsunami wavefield snapshot for visualization
+    println("Writing output at timestep = ", it)
+    
+    LLW2d.output_snap(reshape(@view(state[1:params.dim_grid]),params.nx,params.ny),
+                      floor(Int, (it - 1) / params.ntdec),
+                      title, params.dx, params.dy)
+end
+
 function tdac(params)
 
     state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst = init_tdac(params.dim_state,
@@ -258,15 +268,8 @@ function tdac(params)
     for it in 1:params.ntmax
 
         if params.verbose && mod(it - 1, params.ntdec) == 0
-            # save tsunami wavefield snapshot for visualization
-            println("Writing output at timestep = ", it)
-            
-            LLW2d.output_snap(reshape(@view(state_avg[1:params.dim_grid]),params.nx,params.ny),
-                              floor(Int, (it - 1) / params.ntdec),
-                              params.title_da, params.dx, params.dy)
-            LLW2d.output_snap(reshape(@view(state_true[1:params.dim_grid]),params.nx,params.ny),
-                              floor(Int, (it - 1) / params.ntdec),
-                              params.title_syn, params.dx, params.dy)
+            print_output(state_true, params.title_syn, it, params)
+            print_output(state_avg, params.title_da, it, params)
         end
 
         # integrate true synthetic wavefield and generate observed data
