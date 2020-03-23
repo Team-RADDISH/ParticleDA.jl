@@ -134,7 +134,7 @@ function add_noise!(state, amplitude)
     
 end
 
-function init_tdac(dim_state::Int, nobs::Int, nprt_total::Int)
+function init_tdac(dim_state::Int, nobs::Int, nprt_total::Int, master_rank::Int = 0)
 
     # Do memory allocations
 
@@ -148,7 +148,7 @@ function init_tdac(dim_state::Int, nobs::Int, nprt_total::Int)
     ist = Vector{Int}(undef, nobs)
     jst = Vector{Int}(undef, nobs)
     
-    if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+    if MPI.Comm_rank(MPI.COMM_WORLD) == master_rank
         state = zeros(Float64, dim_state, nprt_total) # model state vectors for particles
         obs_model = Matrix{Float64}(undef, nobs, nprt_total) # forecasted tsunami height
 
@@ -196,7 +196,7 @@ function tdac(params)
      obs_real,
      obs_model,
      ist,
-     jst) = init_tdac(params.dim_state,params.nobs,params.nprt)
+     jst) = init_tdac(params.dim_state,params.nobs,params.nprt,params.master_rank)
     
     # Set up tsunami model
     gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx, params.ny, params.bathymetry_setup)
@@ -233,9 +233,8 @@ function tdac(params)
         end
         
         # Forecast: Update tsunami forecast and get observations from it
-        # Parallelised with threads. TODO: Consider distributed and/or simd
-        #Threads.@threads for ip in 1:params.nprt
-        for ip in 1:nprt_per_rank
+        # Parallelised with threads and MPI.
+        Threads.@threads for ip in 1:nprt_per_rank
             
             tsunami_update!(@view(state[:,ip]), params.nx, params.ny, params.dx, params.dy, params.dt, hm, hn, fn, fm, fe, gg)
             get_obs!(@view(obs_model[:,ip]), @view(state[:,ip]), params.nx, ist, jst)
