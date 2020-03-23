@@ -201,10 +201,12 @@ function tdac(params)
     # Set up tsunami model
     gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx, params.ny, params.bathymetry_setup)
 
-    # obtain initial tsunami height
-    eta = reshape(@view(state_true[1:params.dim_grid]), params.nx, params.ny)
-    LLW2d.initheight!(eta, hh, params.dx, params.dy, params.source_size)
-
+    if my_rank == param.master_rank
+        # obtain initial tsunami height
+        eta = reshape(@view(state_true[1:params.dim_grid]), params.nx, params.ny)
+        LLW2d.initheight!(eta, hh, params.dx, params.dy, params.source_size)
+    end
+        
     # set station positions
     LLW2d.set_stations!(ist,
                         jst,
