@@ -1,5 +1,5 @@
 using TDAC
-using LinearAlgebra, Test
+using LinearAlgebra, Test, HDF5
 
 @testset "Matrix_ls" begin
     using TDAC.Matrix_ls
@@ -93,7 +93,7 @@ end
     LLW2d.setup(n, n, 3e4)
 end
 
-@testset "TDAC" begin
+@testset "TDAC unit tests" begin
     dx = dy = 2e3
     
     @test TDAC.get_distance(3/2000, 4/2000, 0, 0, dx, dy) == 5
@@ -167,4 +167,12 @@ end
     TDAC.tsunami_update!(x, nx, ny, dx, dy, dt, hm, hn, fm, fn, fe, gg)
     @test sum(eta, dims=1) ≈ [0.9140901416339269 1.7010577375770561 0.9140901416339269 0.06356127284539884 0.0 0.0 0.0 0.0 0.0 0.0]
     @test sum(eta, dims=2) ≈ [0.9068784611641829; 1.6999564781646717; 0.9204175965604575; 0.06554675780099671; 0.0; 0.0; 0.0; 0.0; 0.0; 0.0]
+end
+
+@testset "TDAC integration tests" begin
+
+    x_true,x_da = TDAC.tdac("integration_test_1.yaml")
+    data_true = h5read("reference_data.h5", "integration_test_1")
+    @test x_true ≈ data_true
+    
 end
