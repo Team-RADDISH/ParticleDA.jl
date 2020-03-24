@@ -236,7 +236,9 @@ function get_params(path_to_input_file::String)
         user_input_dict = YAML.load_file(path_to_input_file)
         user_input = (; (Symbol(k) => v for (k,v) in user_input_dict)...)    
         params = tdac_params(;user_input...)
-        println("Read input parameters from ",path_to_input_file)
+        if params.verbose
+            println("Read input parameters from ",path_to_input_file)
+        end
     else
         if !isempty(path_to_input_file)
             println("Input file ", path_to_input_file, " not found, using default parameters.")
