@@ -226,7 +226,7 @@ function tdac(params)
         
     end
 
-    return state_avg
+    return state_true, state_avg
 end
 
 function get_params(path_to_input_file::String)
@@ -256,5 +256,7 @@ function tdac(path_to_input_file::String = "")
     return tdac(params)
     
 end
+
+
 
 end # module
