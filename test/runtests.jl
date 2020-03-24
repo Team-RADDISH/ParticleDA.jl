@@ -173,6 +173,6 @@ end
 
     x_true,x_da = TDAC.tdac("integration_test_1.yaml")
     data_true = h5read("reference_data.h5", "integration_test_1")
-    @test norm(x_true) ≈ norm(data_true)
+    @test x_true ≈ data_true
     
 end
