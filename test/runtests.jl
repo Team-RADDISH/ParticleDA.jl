@@ -1,47 +1,6 @@
 using TDAC
 using LinearAlgebra, Test, HDF5
 
-@testset "Matrix_ls" begin
-    using TDAC.Matrix_ls
-
-    ### gs!
-    n = 5
-
-    m = float(collect(I(n)))
-    a = Vector{Float64}(undef, n)
-    v = ones(n)
-    Matrix_ls.gs!(a, m, v)
-    @test a == v
-    v = zeros(n)
-    Matrix_ls.gs!(a, m, v)
-    @test a == v
-    v = randn(n)
-    Matrix_ls.gs!(a, m, v)
-    @test a ≈ v
-
-    v = randn(n)
-    m = v .* I(5)
-    Matrix_ls.gs!(a, m, v)
-    @test a ≈ ones(n)
-
-    v0 = 1.0:5.0
-    m = v0 .* I(5)
-    v = randn(n)
-    Matrix_ls.gs!(a, m, v)
-    @test a ≈ v ./ v0
-
-    m = reshape(1.0:(n^2), (n,n)) ./ 10
-    m[diagind(m)] *= 1e2
-    v = 1.0:5.0
-    Matrix_ls.gs!(a, m, v)
-    @test a ≈ [0.08863042084147274, 0.02683554264812562, 0.022082135935372775,
-               0.020330901243131676, 0.019420256962167263]
-
-    m = reshape(1.0:(n^2), (n,n))
-    v = (1.0:5.0) .^ 2
-    @test_throws ErrorException Matrix_ls.gs!(a, m, v)
-end
-
 @testset "LLW2d" begin
     using TDAC.LLW2d
 
