@@ -6,11 +6,9 @@ export tdac, main
 
 include("params.jl")
 include("llw2d.jl")
-include("matrix.jl")
 
 using .Default_params
 using .LLW2d
-using .Matrix_ls
 
 # grid-to-grid distance
 get_distance(i0, j0, i1, j1, dx, dy) =
