@@ -38,10 +38,18 @@ To run the simulation using default parameters, call the main function with no a
 TDAC.tdac()
 ```
 
-Note that with the default parameters, no output is produced. The default parameters can be 
-found in the file [parameters.jl](https://github.com/Team-RADDISH/TDAC.jl/blob/master/src/params.jl).
+Note that with the default parameters, no output is written. The function `TDAC()` returns the true
+state vector and the average state vector of the particles at the end of the simulation. To suppress
+printing the return values on screen, use
+
+```julia
+TDAC.tdac();
+```
+
+The default parameters can be found in the file [parameters.jl]
+(https://github.com/Team-RADDISH/TDAC.jl/blob/master/src/params.jl).
 The parameter `verbose` is set to `false` to suppress the output. If `verbose` is set to `true`, 
-the code will produce two ascii files in the `out/` directory. The file `jl-syn__XXXXXX__.dat` 
+`TDAC()` will produce two ascii files in the `out/` directory. The file `jl-syn__XXXXXX__.dat` 
 contains the true state vector at time step XXXXXX. The file `jl-da__XXXXXX__.dat` contains the 
 average state vector of all particles in the simualtion.
 
