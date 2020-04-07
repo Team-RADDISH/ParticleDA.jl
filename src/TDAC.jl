@@ -160,11 +160,11 @@ function init_tdac(dim_state::Int, nobs::Int, nprt_total::Int, master_rank::Int 
     else
         state = zeros(Float64, dim_state, nprt_per_rank) # model state vectors for particles
         obs_model = Matrix{Float64}(undef, nobs, nprt_per_rank) # forecasted tsunami height
-        state_true = []
-        state_avg = []
-        state_resampled = []
-        weights = []
-        obs_real = []
+        state_true = nothing
+        state_avg = nothing
+        state_resampled = nothing
+        weights = nothing
+        obs_real = nothing
     end
         
     return state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst
