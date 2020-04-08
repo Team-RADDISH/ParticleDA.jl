@@ -46,8 +46,7 @@ printing the return values on screen, use
 TDAC.tdac();
 ```
 
-The default parameters can be found in the file [parameters.jl]
-(https://github.com/Team-RADDISH/TDAC.jl/blob/master/src/params.jl).
+The default parameters can be found in the file [parameters.jl](https://github.com/Team-RADDISH/TDAC.jl/blob/master/src/params.jl).
 The parameter `verbose` is set to `false` to suppress the output. If `verbose` is set to `true`, 
 `TDAC()` will produce two ascii files in the `out/` directory. The file `jl-syn__XXXXXX__.dat` 
 contains the true state vector at time step XXXXXX. The file `jl-da__XXXXXX__.dat` contains the 
