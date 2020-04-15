@@ -6,11 +6,9 @@ export tdac, main
 
 include("params.jl")
 include("llw2d.jl")
-include("matrix.jl")
 
 using .Default_params
 using .LLW2d
-using .Matrix_ls
 
 # grid-to-grid distance
 get_distance(i0, j0, i1, j1, dx, dy) =
@@ -206,7 +204,7 @@ function tdac(params)
         eta = reshape(@view(state_true[1:params.dim_grid]), params.nx, params.ny)
         LLW2d.initheight!(eta, hh, params.dx, params.dy, params.source_size)
     end
-        
+
     # set station positions
     LLW2d.set_stations!(ist,
                         jst,
@@ -291,7 +289,7 @@ function tdac(params)
 
     MPI.Finalize()
 
-    return state_avg
+    return state_true, state_avg
 end
 
 function get_params(path_to_input_file::String)
@@ -301,7 +299,9 @@ function get_params(path_to_input_file::String)
         user_input_dict = YAML.load_file(path_to_input_file)
         user_input = (; (Symbol(k) => v for (k,v) in user_input_dict)...)    
         params = tdac_params(;user_input...)
-        println("Read input parameters from ",path_to_input_file)
+        if params.verbose
+            println("Read input parameters from ",path_to_input_file)
+        end
     else
         if !isempty(path_to_input_file)
             println("Input file ", path_to_input_file, " not found, using default parameters.")
