@@ -46,7 +46,7 @@ function get_obs_covariance(nobs::Int,
     for j in 1:nobs, i in 1:nobs
         # Gaussian correlation function
         dist = get_distance(ist[i], jst[i], ist[j], jst[j], dx, dy)
-        mu_boo[i, j] = exp(-(dist * inv_rr) ^ 2)
+        mu_boo[i, j] = exp(-0.5 * (dist * inv_rr) ^ 2)
     end
     
     return mu_boo
