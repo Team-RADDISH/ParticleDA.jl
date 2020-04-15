@@ -62,6 +62,10 @@ The input file is in the yaml format. Each row contains `<parameter name> : <par
 For an example input file, see the [input file for the first integration test](https://github.com/Team-RADDISH/TDAC.jl/blob/master/test/integration_test_1.yaml). 
 Any parameters not specified in the input file will retain their default values.
 
+## Plotting (Experimental)
+
+To plot data in the ascii files produced by `TDAC.tdac()`, there is a [jupyter notebook](https://github.com/Team-RADDISH/TDAC.jl/blob/master/extra/Plot_tdac_output.ipynb) that plots contours of the tsunami height.
+
 ## Testing
 
 We have a basic test suite for `TDAC.jl`.  You can run the tests by entering the
