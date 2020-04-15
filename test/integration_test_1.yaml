@@ -1,0 +1,5 @@
+nprt: 1
+da_period: 10000
+nobs: 4
+ntmax: 251
+ntdec: 250
