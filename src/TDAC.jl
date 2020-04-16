@@ -157,7 +157,7 @@ function sample_gaussian_random_field!(field::AbstractVector{T},
                                        seed::Int = 12345) where T
 
     rng = Random.MersenneTwister(seed)
-    field = GaussianRandomFields.sample(grf, xi=randn(rng, randdim(grf)))
+    field .= @view(GaussianRandomFields.sample(grf, xi=randn(rng, randdim(grf)))[:])
     
 end
 
