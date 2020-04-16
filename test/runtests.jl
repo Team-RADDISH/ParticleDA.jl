@@ -126,6 +126,14 @@ end
     TDAC.tsunami_update!(x, nx, ny, dx, dy, dt, hm, hn, fm, fn, fe, gg)
     @test sum(eta, dims=1) ≈ [0.9140901416339269 1.7010577375770561 0.9140901416339269 0.06356127284539884 0.0 0.0 0.0 0.0 0.0 0.0]
     @test sum(eta, dims=2) ≈ [0.9068784611641829; 1.6999564781646717; 0.9204175965604575; 0.06554675780099671; 0.0; 0.0; 0.0; 0.0; 0.0; 0.0]
+
+    # Test gaussian random field sampling
+    # NOTE: This test may fail if future versions of Julia break the random stream
+    x = 1.:2.
+    y = 1.:2.
+    grf = TDAC.init_gaussian_random_field_generator(1.0,1.0,1.0,x,y,0)
+    f = zeros(4)
+    @test TDAC.sample_gaussian_random_field!(f,grf,111) ≈ [0.6557046297366607; 1.5910215819249545; -0.24926319501705058;  0.5071812806563433]
 end
 
 @testset "TDAC integration tests" begin
