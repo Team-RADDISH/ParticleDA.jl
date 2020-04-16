@@ -1,5 +1,5 @@
 using TDAC
-using LinearAlgebra, Test, HDF5
+using LinearAlgebra, Test, HDF5, Random
 
 @testset "LLW2d" begin
     using TDAC.LLW2d
@@ -133,7 +133,8 @@ end
     y = 1.:2.
     grf = TDAC.init_gaussian_random_field_generator(1.0,1.0,1.0,x,y,0)
     f = zeros(4)
-    @test TDAC.sample_gaussian_random_field!(f,grf,111) ≈ [0.6557046297366607; 1.5910215819249545; -0.24926319501705058;  0.5071812806563433]
+    rng = Random.MersenneTwister(111)
+    @test TDAC.sample_gaussian_random_field!(f,grf,rng) ≈ [0.6557046297366607; 1.5910215819249545; -0.24926319501705058;  0.5071812806563433]
 end
 
 @testset "TDAC integration tests" begin

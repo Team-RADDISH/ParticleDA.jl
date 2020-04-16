@@ -154,9 +154,8 @@ end
 # Get a random sample from gaussian random field grf
 function sample_gaussian_random_field!(field::AbstractVector{T},
                                        grf::GaussianRandomFields.GaussianRandomField,
-                                       seed::Int = 12345) where T
+                                       rng::Random.AbstractRNG) where T
 
-    rng = Random.MersenneTwister(seed)
     field .= @view(GaussianRandomFields.sample(grf, xi=randn(rng, randdim(grf)))[:])
     
 end
@@ -164,6 +163,7 @@ end
 # Add a gaussian random field to each variable in the state vector of one particle
 function add_noise!(state::AbstractVector{T},
                     grf::GaussianRandomFields.GaussianRandomField,
+                    rng::Random.AbstractRNG,
                     nvar::Int,
                     dim_grid::Int) where T
 
@@ -171,7 +171,7 @@ function add_noise!(state::AbstractVector{T},
     
     for ivar in 1:nvar
         
-        sample_gaussian_random_field!(random_field, grf, ivar)
+        sample_gaussian_random_field!(random_field, grf, rng)
         @view(state[(nvar-1)*dim_grid+1:nvar*dim_grid]) .+= random_field
 
     end
@@ -212,7 +212,10 @@ function tdac(params)
                                                                                                       params.nprt)
 
     x, y = get_axes(params.nx, params.ny, params.dx, params.dy)
+    
     background_grf = init_gaussian_random_field_generator(params.lambda, params.nu, params.sigma, x, y, params.padding)
+
+    rng = Random.MersenneTwister(params.random_seed)
     
     # Set up tsunami model
     gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx, params.ny, params.bathymetry_setup)
@@ -221,6 +224,9 @@ function tdac(params)
     eta = reshape(@view(state_true[1:params.dim_grid]), params.nx, params.ny)
     LLW2d.initheight!(eta, hh, params.dx, params.dy, params.source_size)
 
+    # Initialize all particles to the true initial state
+    state .= state_true
+    
     # set station positions
     LLW2d.set_stations!(ist,
                         jst,
@@ -256,7 +262,7 @@ function tdac(params)
         Threads.@threads for ip in 1:params.nprt
             
             tsunami_update!(@view(state[:,ip]), params.nx, params.ny, params.dx, params.dy, params.dt, hm, hn, fn, fm, fe, gg)
-            add_noise!(@view(state[:,ip]), background_grf, params.n_state_var, params.dim_grid)
+            add_noise!(@view(state[:,ip]), background_grf, rng, params.n_state_var, params.dim_grid)
             get_obs!(@view(obs_model[:,ip]), @view(state[:,ip]), params.nx, ist, jst)
             
         end

@@ -34,6 +34,7 @@ Parameters for TDAC run. Arguments:
 * `nu` : Smoothess parameter for Matérn covariance kernel
 * `sigma` : Marginal standard deviation for Matérn covariance kernel
 * `padding` : Min padding for circulant embedding gaussian random field generator
+* `random_seed` : Seed number for the pseudorandom number generator
 
 """
 Base.@kwdef struct tdac_params{T<:AbstractFloat}
@@ -73,6 +74,8 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
     nu::T = 2.5
     sigma::T = 1.0
     padding::Int = 100
+
+    random_seed::Int = 12345
 end
 
 end
