@@ -30,15 +30,20 @@ Parameters for TDAC run. Arguments:
 * `inv_rr` : Inverse of length scale, stored for performance
 * `source_size` : Initial condition parameter
 * `bathymetry_setup` : Bathymetry set-up.
+* `lambda` : Length scale for Matérn covariance kernel (could be same as rr)
+* `nu` : Smoothess parameter for Matérn covariance kernel
+* `sigma` : Marginal standard deviation for Matérn covariance kernel
+* `padding` : Min padding for circulant embedding gaussian random field generator
 
 """
 Base.@kwdef struct tdac_params{T<:AbstractFloat}
 
     nx::Int = 200
     ny::Int = 200
-    
+
+    n_state_var::Int = 3
     dim_grid::Int = nx * ny
-    dim_state::Int = 3 * dim_grid
+    dim_state::Int = n_state_var * dim_grid
     dx::T = 2.0e3
     dy::T = 2.0e3
 
@@ -63,6 +68,11 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
 
     source_size::T = 3.0e4
     bathymetry_setup::T = 3.0e4
+
+    lambda::T = 1.0e4
+    nu::T = 2.5
+    sigma::T = 1.0
+    padding::Int = 100
 end
 
 end
