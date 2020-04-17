@@ -67,9 +67,9 @@ end
     @test obs ≈ [1.,5.,9.]
 
     # Observation covariances are ~exp(-sqrt(dx^2+dy^2)/r) 
-    d11 = exp(-0.5 * (sqrt(0.8e7) * 5e-5) ^ 2)
-    d22 = exp(-0.5 * (sqrt(3.2e7) * 5e-5) ^ 2)
-    @test TDAC.get_obs_covariance(3,5.0e-5,dx,dy,ist,jst) ≈ [1.0 d11 d22; d11 1.0 d11; d22 d11 1.0]
+    d11 = exp(-0.5 * (sqrt(0.8e7) * 1.0e-4) ^ 2)
+    d22 = exp(-0.5 * (sqrt(3.2e7) * 1.0e-4) ^ 2)
+    @test TDAC.get_obs_covariance(3,1.0e-4,dx,dy,ist,jst) ≈ [1.0 d11 d22; d11 1.0 d11; d22 d11 1.0]
 
     y = [1.0, 2.0]
     cov_obs = float(I(2))

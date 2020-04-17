@@ -58,7 +58,7 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
 
     nprt::Int = 4
     da_period::Int = 50
-    rr::T = 2.0e4
+    rr::T = 1.0e4
     inv_rr::T = 1.0/rr
 
     source_size::T = 3.0e4
