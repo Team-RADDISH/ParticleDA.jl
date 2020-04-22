@@ -53,6 +53,7 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
     station_boundary::Int = 150
     station_dx::T = 1.0e3
     station_dy::T = 1.0e3
+    obs_noise_amplitude::T = 1.0
     
     ntmax::Int = 500
     dt::T = 1.0

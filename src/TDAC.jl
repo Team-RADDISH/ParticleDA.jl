@@ -167,15 +167,15 @@ function sample_gaussian_random_field!(field::AbstractVector{T},
 
     @assert length(random_numbers) == length(field)
     field .= @view(GaussianRandomFields.sample(grf, xi=random_numbers)[:])
-    
+
 end
 
 # Add a gaussian random field to each variable in the state vector of one particle
-function add_noise!(state::AbstractVector{T},
-                    grf::GaussianRandomFields.GaussianRandomField,
-                    rng::Random.AbstractRNG,
-                    nvar::Int,
-                    dim_grid::Int) where T
+function add_random_field!(state::AbstractVector{T},
+                           grf::GaussianRandomFields.GaussianRandomField,
+                           rng::Random.AbstractRNG,
+                           nvar::Int,
+                           dim_grid::Int) where T
 
     random_field = Vector{Float64}(undef, dim_grid)
     
@@ -186,6 +186,13 @@ function add_noise!(state::AbstractVector{T},
 
     end
 
+end
+
+# Add a (0,1) normal distributed random number, scaled by amplitude, to each element of vec
+function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, amplitude::T) where T
+
+    @. vec += amplitude * randn((rng,), T)
+    
 end
 
 function init_tdac(dim_state, nobs, nprt)
@@ -272,8 +279,9 @@ function tdac(params)
         Threads.@threads for ip in 1:params.nprt
             
             tsunami_update!(@view(state[:,ip]), params.nx, params.ny, params.dx, params.dy, params.dt, hm, hn, fn, fm, fe, gg)
-            add_noise!(@view(state[:,ip]), background_grf, rng, params.n_state_var, params.dim_grid)
+            add_random_field!(@view(state[:,ip]), background_grf, rng, params.n_state_var, params.dim_grid)
             get_obs!(@view(obs_model[:,ip]), @view(state[:,ip]), params.nx, ist, jst)
+            add_noise!(@view(obs_model[:,ip]), rng, params.obs_noise_amplitude)
             
         end
 
