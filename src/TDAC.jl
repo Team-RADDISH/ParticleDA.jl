@@ -151,12 +151,22 @@ function init_gaussian_random_field_generator(lambda::T,
     
 end
 
-# Get a random sample from gaussian random field grf
+# Get a random sample from gaussian random field grf using random number generator rng
 function sample_gaussian_random_field!(field::AbstractVector{T},
                                        grf::GaussianRandomFields.GaussianRandomField,
                                        rng::Random.AbstractRNG) where T
 
     field .= @view(GaussianRandomFields.sample(grf, xi=randn(rng, randdim(grf)))[:])
+    
+end
+
+# Get a random sample from gaussian random field grf using random_numbers
+function sample_gaussian_random_field!(field::AbstractVector{T},
+                                       grf::GaussianRandomFields.GaussianRandomField,
+                                       random_numbers::AbstractVector{T}) where T
+
+    @assert length(random_numbers) == length(field)
+    field .= @view(GaussianRandomFields.sample(grf, xi=random_numbers)[:])
     
 end
 
