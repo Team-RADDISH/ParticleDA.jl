@@ -133,7 +133,7 @@ end
     grf = TDAC.init_gaussian_random_field_generator(1.0,1.0,1.0,x,y,0)
     f = zeros(4)
     rnn = [9.,9.,9.,9.]
-    @test TDAC.sample_gaussian_random_field!(f,grf,rnn) ≈ [16.2387054353321 5.115956753643809; 5.115956753643808 2.8210669567042155]
+    @test TDAC.sample_gaussian_random_field!(f,grf,rnn) ≈ [16.2387054353321, 5.115956753643809, 5.115956753643808, 2.8210669567042155]
 end
 
 @testset "TDAC integration tests" begin
