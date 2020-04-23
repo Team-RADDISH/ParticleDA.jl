@@ -1,5 +1,5 @@
 using TDAC
-using LinearAlgebra, Test, HDF5
+using LinearAlgebra, Test, HDF5, Random
 
 @testset "LLW2d" begin
     using TDAC.LLW2d
@@ -126,6 +126,15 @@ end
     TDAC.tsunami_update!(x, nx, ny, dx, dy, dt, hm, hn, fm, fn, fe, gg)
     @test sum(eta, dims=1) ≈ [0.9140901416339269 1.7010577375770561 0.9140901416339269 0.06356127284539884 0.0 0.0 0.0 0.0 0.0 0.0]
     @test sum(eta, dims=2) ≈ [0.9068784611641829; 1.6999564781646717; 0.9204175965604575; 0.06554675780099671; 0.0; 0.0; 0.0; 0.0; 0.0; 0.0]
+    
+    # Test gaussian random field sampling
+    x = 1.:2.
+    y = 1.:2.
+    grf = TDAC.init_gaussian_random_field_generator(1.0,1.0,1.0,x,y,0)
+    f = zeros(4)
+    rnn = [9.,9.,9.,9.]
+    TDAC.sample_gaussian_random_field!(f,grf,rnn)
+    @test f ≈ [17.07868874658702, 3.812477565296764, 3.8124775652967635, 1.8023374615813794]
 end
 
 @testset "TDAC integration tests" begin
