@@ -221,14 +221,17 @@ function init_tdac(dim_state, nobs, nprt)
     return state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst
 end
 
-function print_output(state, title, it::Int, params)
+function print_output(state_true::AbstractVector{T}, state_avg::AbstractVector{T}, it::Int, params) where T
 
     # save tsunami wavefield snapshot for visualization
     println("Writing output at timestep = ", it)
     
-    LLW2d.output_snap(reshape(@view(state[1:params.dim_grid]),params.nx,params.ny),
+    LLW2d.output_snap(reshape(@view(state_true[1:params.dim_grid]),params.nx,params.ny),
                       floor(Int, (it - 1) / params.ntdec),
-                      title, params.dx, params.dy)
+                      params.title_syn, params.dx, params.dy)
+    LLW2d.output_snap(reshape(@view(state_avg[1:params.dim_grid]),params.nx,params.ny),
+                      floor(Int, (it - 1) / params.ntdec),
+                      params.title_da, params.dx, params.dy)
 end
 
 function tdac(params)
@@ -268,8 +271,7 @@ function tdac(params)
     for it in 1:params.ntmax
 
         if params.verbose && mod(it - 1, params.ntdec) == 0
-            print_output(state_true, params.title_syn, it, params)
-            print_output(state_avg, params.title_da, it, params)
+            print_output(state_true, state_avg, it, params)
         end
 
         # integrate true synthetic wavefield and generate observed data
@@ -305,32 +307,38 @@ end
 
 function get_params(path_to_input_file::String)
 
+    my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
+
     # Read input provided in a yaml file. Overwrite default input parameters with the values provided.
     if isfile(path_to_input_file)
         user_input_dict = YAML.load_file(path_to_input_file)
-        user_input = (; (Symbol(k) => v for (k,v) in user_input_dict)...)    
+        user_input = (; (Symbol(k) => v for (k,v) in user_input_dict)...)
         params = tdac_params(;user_input...)
-        if params.verbose
+        if my_rank == params.master_rank
             println("Read input parameters from ",path_to_input_file)
         end
     else
-        if !isempty(path_to_input_file)
-            println("Input file ", path_to_input_file, " not found, using default parameters.")
-        else
-            println("Using default parameters")
+        if my_rank == params.master_rank
+            if !isempty(path_to_input_file)
+                println("Input file ", path_to_input_file, " not found, using default parameters.")
+            else
+                println("Using default parameters")
+            end
         end
         params = tdac_params()
     end
     return params
-    
+
 end
 
 function tdac(path_to_input_file::String = "")
 
+    MPI.Init()
+
     params = get_params(path_to_input_file)
-    
+
     return tdac(params)
-    
+
 end
 
 end # module
