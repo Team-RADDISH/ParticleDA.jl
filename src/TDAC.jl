@@ -1,6 +1,6 @@
 module TDAC
 
-using Random, Distributions, Statistics, Distributed, Base.Threads, YAML
+using Random, Distributions, Statistics, Distributed, Base.Threads, YAML, GaussianRandomFields
 
 export tdac, main
 
@@ -125,10 +125,72 @@ function resample!(state_resampled::AbstractMatrix{T}, state::AbstractMatrix{T},
     
 end
 
-# Add (0,1) normal distributed white noise to state
-function add_noise!(state, amplitude)
+function get_axes(nx::Int, ny::Int, dx::Real, dy::Real)
+
+    x = range(0, length=nx, step=dx)
+    y = range(0, length=ny, step=dy)
+
+    return x,y
+end
+
+# Initialize a gaussian random field generating function using the Matern covariance kernel
+# and circulant embedding generation method
+# TODO: Could generalise this
+function init_gaussian_random_field_generator(lambda::T,
+                                              nu::T,
+                                              sigma::T,
+                                              x::AbstractVector{T},
+                                              y::AbstractVector{T},
+                                              pad::Int) where T
+                                               
+    # Let's limit ourselves to two-dimensional fields
+    dim = 2
     
-    @. state += randn() * amplitude
+    cov = CovarianceFunction(dim, Matern(lambda, nu, σ = sigma))
+    grf = GaussianRandomField(cov, CirculantEmbedding(), x, y, minpadding=pad)
+    
+end
+
+# Get a random sample from gaussian random field grf using random number generator rng
+function sample_gaussian_random_field!(field::AbstractVector{T},
+                                       grf::GaussianRandomFields.GaussianRandomField,
+                                       rng::Random.AbstractRNG) where T
+
+    field .= @view(GaussianRandomFields.sample(grf, xi=randn(rng, randdim(grf)))[:])
+    
+end
+
+# Get a random sample from gaussian random field grf using random_numbers
+function sample_gaussian_random_field!(field::AbstractVector{T},
+                                       grf::GaussianRandomFields.GaussianRandomField,
+                                       random_numbers::AbstractVector{T}) where T
+
+    field .= @view(GaussianRandomFields.sample(grf, xi=random_numbers)[:])
+
+end
+
+# Add a gaussian random field to each variable in the state vector of one particle
+function add_random_field!(state::AbstractVector{T},
+                           grf::GaussianRandomFields.GaussianRandomField,
+                           rng::Random.AbstractRNG,
+                           nvar::Int,
+                           dim_grid::Int) where T
+
+    random_field = Vector{Float64}(undef, dim_grid)
+    
+    for ivar in 1:nvar
+        
+        sample_gaussian_random_field!(random_field, grf, rng)
+        @view(state[(nvar-1)*dim_grid+1:nvar*dim_grid]) .+= random_field
+
+    end
+
+end
+
+# Add a (0,1) normal distributed random number, scaled by amplitude, to each element of vec
+function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, amplitude::T) where T
+
+    @. vec += amplitude * randn((rng,), T)
     
 end
 
@@ -164,6 +226,12 @@ function tdac(params)
     state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst = init_tdac(params.dim_state,
                                                                                                       params.nobs,
                                                                                                       params.nprt)
+
+    x, y = get_axes(params.nx, params.ny, params.dx, params.dy)
+    
+    background_grf = init_gaussian_random_field_generator(params.lambda, params.nu, params.sigma, x, y, params.padding)
+
+    rng = Random.MersenneTwister(params.random_seed)
     
     # Set up tsunami model
     gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx, params.ny, params.bathymetry_setup)
@@ -172,6 +240,9 @@ function tdac(params)
     eta = reshape(@view(state_true[1:params.dim_grid]), params.nx, params.ny)
     LLW2d.initheight!(eta, hh, params.dx, params.dy, params.source_size)
 
+    # Initialize all particles to the true initial state
+    state .= state_true
+    
     # set station positions
     LLW2d.set_stations!(ist,
                         jst,
@@ -207,7 +278,9 @@ function tdac(params)
         Threads.@threads for ip in 1:params.nprt
             
             tsunami_update!(@view(state[:,ip]), params.nx, params.ny, params.dx, params.dy, params.dt, hm, hn, fn, fm, fe, gg)
+            add_random_field!(@view(state[:,ip]), background_grf, rng, params.n_state_var, params.dim_grid)
             get_obs!(@view(obs_model[:,ip]), @view(state[:,ip]), params.nx, ist, jst)
+            add_noise!(@view(obs_model[:,ip]), rng, params.obs_noise_amplitude)
             
         end
 
