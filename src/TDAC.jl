@@ -165,7 +165,6 @@ function sample_gaussian_random_field!(field::AbstractVector{T},
                                        grf::GaussianRandomFields.GaussianRandomField,
                                        random_numbers::AbstractVector{T}) where T
 
-    @assert length(random_numbers) == length(field)
     field .= @view(GaussianRandomFields.sample(grf, xi=random_numbers)[:])
 
 end
