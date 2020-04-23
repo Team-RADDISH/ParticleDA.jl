@@ -220,7 +220,7 @@ function init_tdac(dim_state::Int, nobs::Int, nprt_total::Int, master_rank::Int 
     else
         state = zeros(Float64, dim_state, nprt_per_rank) # model state vectors for particles
         obs_model = Matrix{Float64}(undef, nobs, nprt_per_rank) # forecasted tsunami height
-        state_true = nothing
+        state_true = Vector{Float64}(undef, dim_state)
         state_avg = nothing
         state_resampled = nothing
         weights = nothing
@@ -277,6 +277,8 @@ function tdac(params)
         eta = reshape(@view(state_true[1:params.dim_grid]), params.nx, params.ny)
         LLW2d.initheight!(eta, hh, params.dx, params.dy, params.source_size)
     end
+
+    MPI.Bcast!(state_true, params.master_rank, MPI.COMM_WORLD)
 
     # Initialize all particles to the true initial state
     state .= state_true
@@ -378,17 +380,16 @@ function get_params(path_to_input_file::String)
         user_input_dict = YAML.load_file(path_to_input_file)
         user_input = (; (Symbol(k) => v for (k,v) in user_input_dict)...)
         params = tdac_params(;user_input...)
-        if my_rank == params.master_rank
+        if params.verbose
             println("Read input parameters from ",path_to_input_file)
         end
     else
-        if my_rank == params.master_rank
-            if !isempty(path_to_input_file)
-                println("Input file ", path_to_input_file, " not found, using default parameters.")
-            else
-                println("Using default parameters")
-            end
+        if !isempty(path_to_input_file)
+            println("Input file ", path_to_input_file, " not found, using default parameters.")
+        else
+            println("Using default parameters")
         end
+
         params = tdac_params()
     end
     return params
@@ -399,7 +400,18 @@ function tdac(path_to_input_file::String = "")
 
     MPI.Init()
 
-    params = get_params(path_to_input_file)
+    # Do I/O on rank 0 only and then broadcast params
+    if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+
+        params = get_params(path_to_input_file)
+
+    else
+
+        params = nothing
+
+    end
+
+    params = MPI.bcast(params, 0, MPI.COMM_WORLD)
 
     return tdac(params)
 
