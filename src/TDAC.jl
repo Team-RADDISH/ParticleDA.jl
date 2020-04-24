@@ -267,7 +267,7 @@ function tdac(params)
     
     background_grf = init_gaussian_random_field_generator(params.lambda, params.nu, params.sigma, x, y, params.padding)
 
-    rng = Random.MersenneTwister(params.random_seed)
+    rng = Random.MersenneTwister(params.random_seed + my_rank)
     
     # Set up tsunami model
     gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx, params.ny, params.bathymetry_setup)
