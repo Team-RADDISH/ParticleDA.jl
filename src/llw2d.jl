@@ -17,8 +17,8 @@ function set_stations!(ist::AbstractVector{Int},
     nst = 0
     
     # let's check ist and jst have a square number of elements before computing n
-    @assert mod(sqrt(length(ist)),1.0) ≈ 0
-    @assert mod(sqrt(length(jst)),1.0) ≈ 0
+    mod(sqrt(length(ist)),1.0) ≈ 0 || throw(DomainError(ist, "ist should be a perfect square"))
+    mod(sqrt(length(jst)),1.0) ≈ 0 || throw(DomainError(jst, "jst should be a perfect square"))
     n = floor(Int, sqrt(length(ist)))
     
     @inbounds for i in 1:n, j in 1:n
@@ -45,9 +45,22 @@ function timestep!(eta1::AbstractMatrix{T},
                    gg::AbstractMatrix{T},
                    dx::Real,dy::Real,dt::Real) where T
     nx, ny = size(eta1)
-    @assert (nx, ny) == size(mm1) == size(nn1) == size(eta0) == size(mm0) ==
+    (nx, ny) == size(mm1) == size(nn1) == size(eta0) == size(mm0) ==
         size(nn0) == size(hm) == size(hn) == size(fm) == size(fn) == size(fe) ==
-        size(gg)
+        size(gg) || error("""eta1, mm1, nn1, eta0, mm0, nn0, hm, hn, fm, fn, fe, gg should all have the same size, instead
+size(eta1) = $(size(eta1))
+size(mm1) = $(size(mm1))
+size(nn1) = $(size(nn1))
+size(eta0) = $(size(eta0))
+size(mm0) = $(size(mm0))
+size(nn0) = $(size(nn0))
+size(hm) = $(size(hm))
+size(hn) = $(size(hn))
+size(fm) = $(size(fm))
+size(fn) = $(size(fn))
+size(fe) = $(size(fe))
+size(gg) = $(size(gg))
+""")
 
     dxeta = Matrix{T}(undef, nx, ny)
     dyeta = Matrix{T}(undef, nx, ny)
@@ -177,7 +190,10 @@ end
 function initheight!(eta::AbstractMatrix{T},
                      hh::AbstractMatrix{T},
                      dx::Real,dy::Real,source_size::Real) where T
-    @assert size(eta) == size(hh)
+    size(eta) == size(hh) || error("""
+eta and hh should have the same size, instead
+size(eta) = $(size(eta)), size(hh) = $(size(hh))
+    """)
 
     # source size
     aa = source_size

@@ -20,7 +20,11 @@ function get_obs!(obs::AbstractVector{T},
                   nx::Integer,
                   ist::AbstractVector{Int},
                   jst::AbstractVector{Int}) where T
-    @assert length(obs) == length(ist) == length(jst)
+    length(obs) == length(ist) == length(jst) || error("""
+obs, ist and jst should all have the same length, but
+length(obs) = $(length(obs)), length(ist) = $(length(ist)), length(jst) = $(length(jst))
+    """)
+
     nn = length(state)
     
     for i in eachindex(obs)
@@ -39,7 +43,10 @@ function get_obs_covariance(nobs::Int,
                             ist::AbstractVector{Int},
                             jst::AbstractVector{Int})
     
-    @assert nobs == length(ist) == length(jst)
+    nobs == length(ist) == length(jst) || error("""
+nobs should be equal to the lengths of ist and jst, but
+nobs = $(nobs), length(ist) = $(length(ist)), length(jst) = $(length(jst))
+    """)
     mu_boo = Matrix{Float64}(undef, nobs, nobs)
 
     # Estimate background error between stations
