@@ -114,7 +114,7 @@ end
     x0 = x = zeros(nx * ny * 3)
     gg, hh, hm, hn, fm, fn, fe = TDAC.LLW2d.setup(nx,ny,3.0e4)
     @test size(gg) == size(hh) == size(hm) == size(fm) == size(fn) == size(fe) == (nx,ny)
-    TDAC.tsunami_update!(x, nx, ny, dx, dy, dt, hm, hn, fm, fn, fe, gg)
+    TDAC.tsunami_update!(x, nx, ny, nx*ny, dx, dy, dt, hm, hn, fm, fn, fe, gg)
     @test x ≈ x0
 
     # Initialise and update a tsunami on a small grid
@@ -123,7 +123,7 @@ end
     TDAC.LLW2d.initheight!(eta, hh, dx, dy, s)
     @test eta[2,2] ≈ 1.0
     @test sum(eta) ≈ 4.0
-    TDAC.tsunami_update!(x, nx, ny, dx, dy, dt, hm, hn, fm, fn, fe, gg)
+    TDAC.tsunami_update!(x, nx, ny, nx*ny, dx, dy, dt, hm, hn, fm, fn, fe, gg)
     @test sum(eta, dims=1) ≈ [0.9140901416339269 1.7010577375770561 0.9140901416339269 0.06356127284539884 0.0 0.0 0.0 0.0 0.0 0.0]
     @test sum(eta, dims=2) ≈ [0.9068784611641829; 1.6999564781646717; 0.9204175965604575; 0.06554675780099671; 0.0; 0.0; 0.0; 0.0; 0.0; 0.0]
     
