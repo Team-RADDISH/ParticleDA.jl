@@ -1,6 +1,6 @@
 module TDAC
 
-using Random, Distributions, Statistics, Distributed, Base.Threads, YAML, GaussianRandomFields
+using Random, Distributions, Statistics, Distributed, Base.Threads, YAML, GaussianRandomFields, HDF5
 
 export tdac, main
 
