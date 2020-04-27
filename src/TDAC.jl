@@ -287,17 +287,42 @@ function init_tdac(dim_state::Int, nobs::Int, nprt::Int)
     return state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst
 end
 
-function print_output(state_true::AbstractVector{T}, state_avg::AbstractVector{T}, it::Int, params) where T
+function print_output(state_true::AbstractVector{T}, state_avg::AbstractVector{T}, it::Int, params::tdac_params) where T    
 
-    # save tsunami wavefield snapshot for visualization
-    println("Writing output at timestep = ", it)
-    
-    LLW2d.output_snap(reshape(@view(state_true[1:params.dim_grid]),params.nx,params.ny),
-                      floor(Int, (it - 1) / params.ntdec),
-                      params.title_syn, params.dx, params.dy)
-    LLW2d.output_snap(reshape(@view(state_avg[1:params.dim_grid]),params.nx,params.ny),
-                      floor(Int, (it - 1) / params.ntdec),
-                      params.title_da, params.dx, params.dy)
+    println("Writing output at timestep = ", it)    
+
+    timestamp = string(floor(Int, (it - 1) / params.ntdec))
+    group_syn = params.group_prefix * "_" * params.title_syn
+    group_da = params.group_prefix * "_" * params.title_da
+    dataset = "t" * timestamp
+                       
+    h5open(params.output_filename, "cw") do file
+        
+        if !exists(file, group_syn)
+            g_syn = g_create(file, group_syn)
+        else
+            g_syn = file[group_syn]
+        end
+
+        if !exists(file, group_da)
+            g_da = g_create(file, group_da)
+        else
+            g_da = file[group_da]
+        end
+
+        if !has(g_syn, dataset)        
+            g_syn[dataset] = state_true
+        else
+            @warn "write failed, dataset " * dataset * " in " * group_syn *  " already exists!"
+        end
+
+        if !has(g_da, dataset)
+            g_da[dataset] = state_avg
+        else
+            @warn "write failed, dataset " * dataset * " in " * group_da * " already exists!"
+        end
+        
+    end    
 end
 
 function tdac(params::tdac_params)
@@ -373,23 +398,17 @@ end
 
 function get_params(path_to_input_file::String)
 
-    my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
-
     # Read input provided in a yaml file. Overwrite default input parameters with the values provided.
     if isfile(path_to_input_file)
         user_input_dict = YAML.load_file(path_to_input_file)
         user_input = (; (Symbol(k) => v for (k,v) in user_input_dict)...)
         params = tdac_params(;user_input...)
-        if my_rank == params.master_rank
-            println("Read input parameters from ",path_to_input_file)
-        end
+        println("Read input parameters from ",path_to_input_file)
     else
-        if my_rank == params.master_rank
-            if !isempty(path_to_input_file)
-                println("Input file ", path_to_input_file, " not found, using default parameters.")
-            else
-                println("Using default parameters")
-            end
+        if !isempty(path_to_input_file)
+            println("Input file ", path_to_input_file, " not found, using default parameters.")
+        else
+            println("Using default parameters")
         end
         params = tdac_params()
     end
@@ -398,8 +417,6 @@ function get_params(path_to_input_file::String)
 end
 
 function tdac(path_to_input_file::String = "")
-
-    MPI.Init()
 
     params = get_params(path_to_input_file)
 

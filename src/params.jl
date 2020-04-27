@@ -59,6 +59,8 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
     dt::T = 1.0
     verbose::Bool = false
 
+    output_filename::String = "tdac.h5"
+    group_prefix::String = "data"
     title_da::String = "da"
     title_syn::String = "syn"
     ntdec::Int = 50
