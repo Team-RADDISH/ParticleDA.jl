@@ -14,6 +14,16 @@ using .LLW2d
 get_distance(i0, j0, i1, j1, dx, dy) =
     sqrt((float(i0 - i1) * dx) ^ 2 + (float(j0 - j1) * dy) ^ 2)
 
+function get_obs!(obs::AbstractVector{T},
+                  state::AbstractVector{T},
+                  ist::AbstractVector{Int},
+                  jst::AbstractVector{Int},
+                  params::tdac_params) where T
+
+    get_obs!(obs,state,params.nx,ist,jst)
+    
+end
+
 # Return observation data at stations from given model state
 function get_obs!(obs::AbstractVector{T},
                   state::AbstractVector{T},
@@ -29,6 +39,14 @@ function get_obs!(obs::AbstractVector{T},
         iptr = (jj - 1) * nx + ii
         obs[i] = state[iptr]
     end
+end
+
+function get_obs_covariance(ist::AbstractVector{Int},
+                            jst::AbstractVector{Int},
+                            params::tdac_params)
+
+    return get_obs_covariance(params.nobs, params.inv_rr, params.dx, params.dy, ist, jst)
+    
 end
 
 # Observation covariance matrix based on simple exponential decay
@@ -52,10 +70,24 @@ function get_obs_covariance(nobs::Int,
     return mu_boo
 end
 
+function tsunami_update!(state::AbstractVector{T},
+                         hm::AbstractMatrix{T},
+                         hn::AbstractMatrix{T},
+                         fm::AbstractMatrix{T},
+                         fn::AbstractMatrix{T},
+                         fe::AbstractMatrix{T},
+                         gg::AbstractMatrix{T},
+                         params::tdac_params) where T
+
+    tsunami_update!(state, params.nx, params.ny, params.dim_grid, params.dx, params.dy, params.dt, hm, hn, fm, fn, fe, gg)
+
+end
+
 # Update tsunami wavefield with LLW2d in-place.
 function tsunami_update!(state::AbstractVector{T},
                          nx::Int,
                          ny::Int,
+                         nn::Int,
                          dx::Real,
                          dy::Real,
                          dt::Real,
@@ -66,7 +98,7 @@ function tsunami_update!(state::AbstractVector{T},
                          fe::AbstractMatrix{T},
                          gg::AbstractMatrix{T}) where T
 
-    nn = nx * ny
+    @assert nn == nx * ny
     
     eta_a = reshape(@view(state[1:nn]), nx, ny)
     mm_a  = reshape(@view(state[(nn + 1):(2 * nn)]), nx, ny)
@@ -125,12 +157,25 @@ function resample!(state_resampled::AbstractMatrix{T}, state::AbstractMatrix{T},
     
 end
 
+function get_axes(params::tdac_params)
+
+    return get_axes(params.nx, params.ny, params.dx, params.dy)
+    
+end
+
 function get_axes(nx::Int, ny::Int, dx::Real, dy::Real)
 
     x = range(0, length=nx, step=dx)
     y = range(0, length=ny, step=dy)
 
     return x,y
+end
+
+function init_gaussian_random_field_generator(params::tdac_params)
+
+    x, y = get_axes(params)
+    return init_gaussian_random_field_generator(params.lambda,params.nu, params.sigma, x, y, params.padding)
+    
 end
 
 # Initialize a gaussian random field generating function using the Matern covariance kernel
@@ -169,6 +214,15 @@ function sample_gaussian_random_field!(field::AbstractVector{T},
 
 end
 
+function add_random_field!(state::AbstractVector{T},
+                           grf::GaussianRandomFields.GaussianRandomField,
+                           rng::Random.AbstractRNG,
+                           params::tdac_params) where T
+
+    add_random_field!(state, grf, rng, params.n_state_var, params.dim_grid)
+    
+end
+
 # Add a gaussian random field to each variable in the state vector of one particle
 function add_random_field!(state::AbstractVector{T},
                            grf::GaussianRandomFields.GaussianRandomField,
@@ -187,6 +241,12 @@ function add_random_field!(state::AbstractVector{T},
 
 end
 
+function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, params::tdac_params) where T
+
+    add_noise!(vec, rng, params.obs_noise_amplitude)
+    
+end
+
 # Add a (0,1) normal distributed random number, scaled by amplitude, to each element of vec
 function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, amplitude::T) where T
 
@@ -194,7 +254,13 @@ function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, amplitude::
     
 end
 
-function init_tdac(dim_state, nobs, nprt)
+function init_tdac(params::tdac_params)
+
+    return init_tdac(params.dim_state, params.nobs, params.nprt)
+    
+end
+
+function init_tdac(dim_state::Int, nobs::Int, nprt::Int)
 
     # Do memory allocations
     
@@ -221,15 +287,11 @@ function init_tdac(dim_state, nobs, nprt)
     return state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst
 end
 
-function tdac(params)
+function tdac(params::tdac_params)
 
-    state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst = init_tdac(params.dim_state,
-                                                                                                      params.nobs,
-                                                                                                      params.nprt)
-
-    x, y = get_axes(params.nx, params.ny, params.dx, params.dy)
+    state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst = init_tdac(params)
     
-    background_grf = init_gaussian_random_field_generator(params.lambda, params.nu, params.sigma, x, y, params.padding)
+    background_grf = init_gaussian_random_field_generator(params)
 
     rng = Random.MersenneTwister(params.random_seed)
     
@@ -253,7 +315,7 @@ function tdac(params)
                         params.dx,
                         params.dy)
 
-    cov_obs = get_obs_covariance(params.nobs, params.inv_rr, params.dx, params.dy, ist, jst)
+    cov_obs = get_obs_covariance(ist, jst, params)
     
     for it in 1:params.ntmax
 
@@ -270,17 +332,17 @@ function tdac(params)
         end
 
         # integrate true synthetic wavefield and generate observed data
-        tsunami_update!(state_true, params.nx, params.ny, params.dx, params.dy, params.dt, hm, hn, fn, fm, fe, gg)
-        get_obs!(obs_real, state_true, params.nx, ist, jst)
+        tsunami_update!(state_true, hm, hn, fn, fm, fe, gg, params)
+        get_obs!(obs_real, state_true, ist, jst, params)
         
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads. TODO: Consider distributed and/or simd
         Threads.@threads for ip in 1:params.nprt
             
-            tsunami_update!(@view(state[:,ip]), params.nx, params.ny, params.dx, params.dy, params.dt, hm, hn, fn, fm, fe, gg)
-            add_random_field!(@view(state[:,ip]), background_grf, rng, params.n_state_var, params.dim_grid)
-            get_obs!(@view(obs_model[:,ip]), @view(state[:,ip]), params.nx, ist, jst)
-            add_noise!(@view(obs_model[:,ip]), rng, params.obs_noise_amplitude)
+            tsunami_update!(@view(state[:,ip]), hm, hn, fn, fm, fe, gg, params)
+            add_random_field!(@view(state[:,ip]), background_grf, rng, params)
+            get_obs!(@view(obs_model[:,ip]), @view(state[:,ip]), ist, jst, params)
+            add_noise!(@view(obs_model[:,ip]), rng, params)
             
         end
 
