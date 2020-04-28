@@ -325,11 +325,7 @@ function print_output(state_true::AbstractVector{T}, state_avg::AbstractVector{T
     end    
 end
 
-function tdac(params::tdac_params)
-    
-    state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst = init_tdac(params.dim_state,
-                                                                                                      params.nobs,
-                                                                                                      params.nprt)
+function tdac(params::tdac_params)   
 
     state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst = init_tdac(params)
     
