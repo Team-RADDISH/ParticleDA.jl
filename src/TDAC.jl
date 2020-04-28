@@ -118,7 +118,7 @@ function get_weights!(weight::AbstractVector{T},
                       obs::AbstractVector{T},
                       obs_model::AbstractMatrix{T},
                       cov_obs::AbstractMatrix{T}) where T
-        
+    
     weight .= Distributions.pdf(Distributions.MvNormal(obs, cov_obs), obs_model) # TODO: Verify that this works
     
     weight ./= sum(weight)
@@ -187,7 +187,7 @@ function init_gaussian_random_field_generator(lambda::T,
                                               x::AbstractVector{T},
                                               y::AbstractVector{T},
                                               pad::Int) where T
-                                               
+    
     # Let's limit ourselves to two-dimensional fields
     dim = 2
     
@@ -200,7 +200,7 @@ end
 function sample_gaussian_random_field!(field::AbstractVector{T},
                                        grf::GaussianRandomFields.GaussianRandomField,
                                        rng::Random.AbstractRNG) where T
-
+    
     field .= @view(GaussianRandomFields.sample(grf, xi=randn(rng, randdim(grf)))[:])
     
 end
@@ -218,7 +218,7 @@ function add_random_field!(state::AbstractVector{T},
                            grf::GaussianRandomFields.GaussianRandomField,
                            rng::Random.AbstractRNG,
                            params::tdac_params) where T
-
+    
     add_random_field!(state, grf, rng, params.n_state_var, params.dim_grid)
     
 end
@@ -279,7 +279,7 @@ function init_tdac(dim_state::Int, nobs::Int, nprt::Int)
     
     obs_real = Vector{Float64}(undef, nobs)        # observed tsunami height
     obs_model = Matrix{Float64}(undef, nobs, nprt) # forecasted tsunami height
-
+    
     # station location in digital grids
     ist = Vector{Int}(undef, nobs)
     jst = Vector{Int}(undef, nobs)
@@ -287,59 +287,89 @@ function init_tdac(dim_state::Int, nobs::Int, nprt::Int)
     return state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst
 end
 
-function print_output(state_true::AbstractVector{T}, state_avg::AbstractVector{T}, it::Int, params::tdac_params) where T    
-
-    println("Writing output at timestep = ", it)    
-
-    timestamp = string(floor(Int, (it - 1) / params.ntdec))
-    group_syn = params.group_prefix * "_" * params.title_syn
-    group_da = params.group_prefix * "_" * params.title_da
-    dataset = "t" * timestamp
-                       
+function write_grid(params)
+    
     h5open(params.output_filename, "cw") do file
         
-        if !exists(file, group_syn)
-            g_syn = g_create(file, group_syn)
-        else
-            g_syn = file[group_syn]
-        end
-
-        if !exists(file, group_da)
-            g_da = g_create(file, group_da)
-        else
-            g_da = file[group_da]
-        end
-
-        if !has(g_syn, dataset)        
-            g_syn[dataset] = state_true
-        else
-            @warn "write failed, dataset " * dataset * " in " * group_syn *  " already exists!"
-        end
-
-        if !has(g_da, dataset)
-            g_da[dataset] = state_avg
-        else
-            @warn "write failed, dataset " * dataset * " in " * group_da * " already exists!"
-        end
+        # Write grid axes
+        x,y = get_axes(params)
+        group = g_create(file, params.title_grid)
+        ds_x = d_create(group, "x", collect(x))
+        ds_y = d_create(group, "y", collect(y))
+        attrs(ds_x[1])["Unit"] = "m"
+        attrs(ds_y[1])["Unit"] = "m"
         
-    end    
+        #write grid attributes
+        attrs(group)["nx"] = params.nx
+        attrs(group)["ny"] = params.ny
+        attrs(group)["dx"] = params.dx
+        attrs(group)["dy"] = params.dy
+        
+    end
+    
 end
 
-function tdac(params::tdac_params)   
+function write_snapshot(state_true::AbstractVector{T}, state_avg::AbstractVector{T}, it::Int, params::tdac_params) where T    
 
+    println("Writing output at timestep = ", it)
+    
+    h5open(params.output_filename, "cw") do file
+        
+        write_snapshot(file, state_true, params.title_syn, params, it)
+        write_snapshot(file, state_avg, params.title_da, params, it)
+        
+    end
+    
+end
+
+function write_snapshot(file::HDF5File, state::AbstractVector{T}, title::String, params::tdac_params, it::Int) where T
+
+    group_name = params.state_prefix * "_" * title
+    subgroup_name = "t" * string(floor(Int, (it - 1) / params.ntdec))
+    dataset_name = "height"
+    
+    if !exists(file, group_name)
+        group = g_create(file, group_name)
+    else
+        group = g_open(file, group_name)
+    end   
+    
+    if !exists(group, subgroup_name)
+        subgroup = g_create(group, subgroup_name)
+    else
+        subgroup = g_open(group, subgroup_name)
+    end   
+    
+    if !exists(group, dataset_name)
+        ds = d_create(subgroup, dataset_name ,@view(state[1:params.dim_grid]))
+        attrs(ds[1])["Description"] = "Ocean surface height"
+        attrs(ds[1])["Unit"] = "m"
+        attrs(ds[1])["Time_step"] = it
+    else
+        @warn "Write failed, dataset " * group_name * "/" * dataset_name *  " already exists in " * file.filename * "!"
+    end
+    
+end
+
+function tdac(params::tdac_params)
+
+    if(params.verbose)
+        write_grid(params)
+    end
+    
     state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst = init_tdac(params)
     
     background_grf = init_gaussian_random_field_generator(params)
-
+    
     rng = Random.MersenneTwister(params.random_seed)
     
     # Set up tsunami model
     gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx, params.ny, params.bathymetry_setup)
-
+    
     # obtain initial tsunami height
     eta = reshape(@view(state_true[1:params.dim_grid]), params.nx, params.ny)
     LLW2d.initheight!(eta, hh, params.dx, params.dy, params.source_size)
-
+    
     # Initialize all particles to the true initial state
     state .= state_true
     
@@ -358,7 +388,7 @@ function tdac(params::tdac_params)
     for it in 1:params.ntmax
 
         if params.verbose && mod(it - 1, params.ntdec) == 0
-            print_output(state_true, state_avg, it, params)
+            write_snapshot(state_true, state_avg, it, params)
         end
 
         # integrate true synthetic wavefield and generate observed data
@@ -379,7 +409,7 @@ function tdac(params::tdac_params)
         # Weigh and resample particles
         if mod(it - 1, params.da_period) == 0
             
-            get_weights!(weights, obs_real, obs_model, cov_obs)            
+            get_weights!(weights, obs_real, obs_model, cov_obs)
             resample!(state_resampled, state, weights)
             state .= state_resampled
 
