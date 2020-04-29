@@ -294,10 +294,13 @@ function write_grid(params)
         # Write grid axes
         x,y = get_axes(params)
         group = g_create(file, params.title_grid)
-        ds_x = d_create(group, "x", collect(x))
-        ds_y = d_create(group, "y", collect(y))
-        attrs(ds_x[1])["Unit"] = "m"
-        attrs(ds_y[1])["Unit"] = "m"
+        #TODO: use d_write instead of d_create when they fix it in the HDF5 package
+        ds_x,dtype_x = d_create(group, "x", collect(x))
+        ds_y,dtype_x = d_create(group, "y", collect(x))
+        ds_x[1:params.nx] = collect(x)
+        ds_y[1:params.ny] = collect(y)
+        attrs(ds_x)["Unit"] = "m"
+        attrs(ds_y)["Unit"] = "m"
         
         #write grid attributes
         attrs(group)["nx"] = params.nx
@@ -311,18 +314,20 @@ end
 
 function write_snapshot(state_true::AbstractVector{T}, state_avg::AbstractVector{T}, it::Int, params::tdac_params) where T    
 
-    println("Writing output at timestep = ", it)
+    if params.verbose
+        println("Writing output at timestep = ", it)
+    end
     
     h5open(params.output_filename, "cw") do file
         
-        write_snapshot(file, state_true, params.title_syn, params, it)
-        write_snapshot(file, state_avg, params.title_da, params, it)
+        write_surface_height(file, state_true, it, params.title_syn, params)
+        write_surface_height(file, state_avg, it, params.title_da, params)
         
     end
     
 end
 
-function write_snapshot(file::HDF5File, state::AbstractVector{T}, title::String, params::tdac_params, it::Int) where T
+function write_surface_height(file::HDF5File, state::AbstractVector{T}, it::Int, title::String, params::tdac_params) where T
 
     group_name = params.state_prefix * "_" * title
     subgroup_name = "t" * string(floor(Int, (it - 1) / params.ntdec))
@@ -332,19 +337,21 @@ function write_snapshot(file::HDF5File, state::AbstractVector{T}, title::String,
         group = g_create(file, group_name)
     else
         group = g_open(file, group_name)
-    end   
+    end
     
     if !exists(group, subgroup_name)
         subgroup = g_create(group, subgroup_name)
     else
         subgroup = g_open(group, subgroup_name)
-    end   
+    end
     
     if !exists(group, dataset_name)
-        ds = d_create(subgroup, dataset_name ,@view(state[1:params.dim_grid]))
-        attrs(ds[1])["Description"] = "Ocean surface height"
-        attrs(ds[1])["Unit"] = "m"
-        attrs(ds[1])["Time_step"] = it
+        #TODO: use d_write instead of d_create when they fix it in the HDF5 package
+        ds,dtype = d_create(subgroup, dataset_name, @view(state[1:params.dim_grid]))
+        ds[1:params.dim_grid] = @view(state[1:params.dim_grid])
+        attrs(ds)["Description"] = "Ocean surface height"
+        attrs(ds)["Unit"] = "m"
+        attrs(ds)["Time_step"] = it
     else
         @warn "Write failed, dataset " * group_name * "/" * dataset_name *  " already exists in " * file.filename * "!"
     end
@@ -429,7 +436,9 @@ function get_params(path_to_input_file::String)
         user_input_dict = YAML.load_file(path_to_input_file)
         user_input = (; (Symbol(k) => v for (k,v) in user_input_dict)...)
         params = tdac_params(;user_input...)
-        println("Read input parameters from ",path_to_input_file)
+        if params.verbose
+            println("Read input parameters from ",path_to_input_file)
+        end
     else
         if !isempty(path_to_input_file)
             println("Input file ", path_to_input_file, " not found, using default parameters.")

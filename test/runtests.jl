@@ -135,6 +135,33 @@ end
     rnn = [9.,9.,9.,9.]
     TDAC.sample_gaussian_random_field!(f,grf,rnn)
     @test f ≈ [16.2387054353321, 5.115956753643808, 5.115956753643809, 2.8210669567042155]
+
+    # Test IO
+    params = TDAC.get_params("io_unit_test.yaml")
+    rm(params.output_filename, force=true)
+    data1 = ones(params.dim_grid)
+    data2 = ones(params.dim_grid) .* 2
+    tstep = 1
+    TDAC.write_snapshot(data1, data2, tstep, params)
+    @test h5read(params.output_filename, params.state_prefix * "_" * params.title_syn * "/t0/height") ≈ data1
+    @test h5read(params.output_filename, params.state_prefix * "_" * params.title_da * "/t0/height") ≈ data2
+    attr = h5readattr(params.output_filename, params.state_prefix * "_" * params.title_syn * "/t0/height")
+    @test attr["Unit"] == "m"
+    @test attr["Time_step"] == tstep
+    attr = h5readattr(params.output_filename, params.state_prefix * "_" * params.title_da * "/t0/height")
+    @test attr["Unit"] == "m"
+    @test attr["Time_step"] == tstep
+    TDAC.write_grid(params)
+    attr = h5readattr(params.output_filename, params.title_grid)
+    @test attr["nx"] == params.nx
+    @test attr["ny"] == params.ny
+    @test attr["dx"] == params.dx
+    @test attr["dy"] == params.dy
+    attr = h5readattr(params.output_filename, params.title_grid * "/x")
+    @test attr["Unit"] == "m"
+    attr = h5readattr(params.output_filename, params.title_grid * "/y")
+    @test attr["Unit"] == "m"    
+    #rm(params.output_filename, force=true)
 end
 
 @testset "TDAC integration tests" begin
