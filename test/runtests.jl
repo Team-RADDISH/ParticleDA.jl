@@ -139,8 +139,8 @@ end
     # Test IO
     params = TDAC.get_params("io_unit_test.yaml")
     rm(params.output_filename, force=true)
-    data1 = ones(params.dim_grid)
-    data2 = ones(params.dim_grid) .* 2
+    data1 = collect(range(1., length=params.dim_grid))
+    data2 = randn(params.dim_grid)
     tstep = 1
     TDAC.write_snapshot(data1, data2, tstep, params)
     @test h5read(params.output_filename, params.state_prefix * "_" * params.title_syn * "/t0/height") ≈ data1
