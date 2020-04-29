@@ -161,7 +161,7 @@ end
     @test attr["Unit"] == "m"
     attr = h5readattr(params.output_filename, params.title_grid * "/y")
     @test attr["Unit"] == "m"    
-    #rm(params.output_filename, force=true)
+    rm(params.output_filename, force=true)
 end
 
 @testset "TDAC integration tests" begin
