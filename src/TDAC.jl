@@ -542,7 +542,9 @@ end
 
 function tdac(path_to_input_file::String = "")
 
-    MPI.Init()
+    if !MPI.Initialized()
+        MPI.Init()
+    end
 
     # Do I/O on rank 0 only and then broadcast params
     if MPI.Comm_rank(MPI.COMM_WORLD) == 0
