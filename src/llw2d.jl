@@ -216,26 +216,4 @@ function initheight!(eta::AbstractMatrix{T},
     return eta
 end
 
-# export snapshot data for visualization
-function output_snap(eta::AbstractMatrix, isnap::Integer, title::AbstractString, dx::Real, dy::Real)
-    nx, ny = size(eta)
-    outdir = "out"
-    mkpath(outdir)
-    fn_out = joinpath(outdir,
-                      "jl-$(title)__" *
-                      lpad(isnap, 6, '0') *
-                      "__.dat")
-    open(fn_out, "w") do io
-        for j in 1:ny
-            for i in 1:nx
-                println(io, (i - 1) * dx * 1.0e-3,
-                        "\t",
-                        (j - 1) * dy * 1.0e-3,
-                        "\t",
-                        real(eta[i,j]))
-            end
-        end
-    end
-end
-
 end # module

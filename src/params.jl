@@ -21,9 +21,13 @@ Parameters for TDAC run. Arguments:
 * `ntmax` : Number of time steps
 * `dt` : Time step length (unit?)
 * `verbose` : Flag to write output
-* `title_da` : Prefix of the output files of the average particle state
-* `title_ syn` : Prefix of the output files of the true state
-* `ntdec` : Number of time steps between output writes
+* `output_filename` : Name of output file
+* `state_prefix` : Prefix of the time slice data groups in output
+* `title_da` : Suffix of the data assimilated data group in output
+* `title_syn` : Suffix of the true state data group in output
+* `title_grid` : Name of the grid data group in output
+* `title_params` : Name of the parameters data group in output
+* `ntdec` : Number of time steps between output writes in output
 * `nprt` : Number of particles for particle filter
 * `da_period` : Number of time steps between particle resamplings
 * `rr` : Length scale for covariance decay
@@ -37,7 +41,6 @@ Parameters for TDAC run. Arguments:
 * `obs_noise_amplitude`: Multiplier for noise added to observations of the true state
 * `random_seed` : Seed number for the pseudorandom number generator
 * `master_rank` : Id of MPI rank that performs serial computations
-
 """
 Base.@kwdef struct tdac_params{T<:AbstractFloat}
 
@@ -60,8 +63,12 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
     dt::T = 1.0
     verbose::Bool = false
 
+    output_filename::String = "tdac.h5"
+    state_prefix::String = "data"
     title_da::String = "da"
     title_syn::String = "syn"
+    title_grid::String = "grid"
+    title_params::String = "params"
     ntdec::Int = 50
 
     nprt::Int = 4

@@ -114,7 +114,7 @@ end
     x0 = x = zeros(nx * ny * 3)
     gg, hh, hm, hn, fm, fn, fe = TDAC.LLW2d.setup(nx,ny,3.0e4)
     @test size(gg) == size(hh) == size(hm) == size(fm) == size(fn) == size(fe) == (nx,ny)
-    TDAC.tsunami_update!(x, nx, ny, dx, dy, dt, hm, hn, fm, fn, fe, gg)
+    TDAC.tsunami_update!(x, nx, ny, nx*ny, dx, dy, dt, hm, hn, fm, fn, fe, gg)
     @test x ≈ x0
 
     # Initialise and update a tsunami on a small grid
@@ -123,7 +123,7 @@ end
     TDAC.LLW2d.initheight!(eta, hh, dx, dy, s)
     @test eta[2,2] ≈ 1.0
     @test sum(eta) ≈ 4.0
-    TDAC.tsunami_update!(x, nx, ny, dx, dy, dt, hm, hn, fm, fn, fe, gg)
+    TDAC.tsunami_update!(x, nx, ny, nx*ny, dx, dy, dt, hm, hn, fm, fn, fe, gg)
     @test sum(eta, dims=1) ≈ [0.9140901416339269 1.7010577375770561 0.9140901416339269 0.06356127284539884 0.0 0.0 0.0 0.0 0.0 0.0]
     @test sum(eta, dims=2) ≈ [0.9068784611641829; 1.6999564781646717; 0.9204175965604575; 0.06554675780099671; 0.0; 0.0; 0.0; 0.0; 0.0; 0.0]
     
@@ -135,12 +135,43 @@ end
     rnn = [9.,9.,9.,9.]
     TDAC.sample_gaussian_random_field!(f,grf,rnn)
     @test f ≈ [16.2387054353321, 5.115956753643808, 5.115956753643809, 2.8210669567042155]
+
+    # Test IO
+    params = TDAC.get_params(joinpath(@__DIR__, "io_unit_test.yaml"))
+    rm(params.output_filename, force=true)
+    data1 = collect(range(1., length=params.dim_grid))
+    data2 = randn(params.dim_grid)
+    tstep = 1
+    TDAC.write_snapshot(data1, data2, tstep, params)
+    @test h5read(params.output_filename, params.state_prefix * "_" * params.title_syn * "/t0/height") ≈ data1
+    @test h5read(params.output_filename, params.state_prefix * "_" * params.title_da * "/t0/height") ≈ data2
+    attr = h5readattr(params.output_filename, params.state_prefix * "_" * params.title_syn * "/t0/height")
+    @test attr["Unit"] == "m"
+    @test attr["Time_step"] == tstep
+    attr = h5readattr(params.output_filename, params.state_prefix * "_" * params.title_da * "/t0/height")
+    @test attr["Unit"] == "m"
+    @test attr["Time_step"] == tstep
+    TDAC.write_params(params)
+    attr = h5readattr(params.output_filename, params.title_params)
+    @test attr["nx"] == params.nx
+    @test attr["ny"] == params.ny
+    @test attr["dx"] == params.dx
+    @test attr["dy"] == params.dy
+    @test attr["title_da"] == params.title_da
+    @test attr["title_syn"] == params.title_syn
+    @test attr["verbose"] == params.verbose
+    TDAC.write_grid(params)
+    attr = h5readattr(params.output_filename, params.title_grid * "/x")
+    @test attr["Unit"] == "m"
+    attr = h5readattr(params.output_filename, params.title_grid * "/y")
+    @test attr["Unit"] == "m"    
+    rm(params.output_filename, force=true)
 end
 
 @testset "TDAC integration tests" begin
 
-    x_true,x_da = TDAC.tdac("integration_test_1.yaml")
-    data_true = h5read("reference_data.h5", "integration_test_1")
+    x_true,x_da = TDAC.tdac(joinpath(@__DIR__, "integration_test_1.yaml"))
+    data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_1")
     @test x_true ≈ data_true
     
 end
