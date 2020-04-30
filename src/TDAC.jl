@@ -398,6 +398,7 @@ function tdac(params::tdac_params)
     if !MPI.Initialized()
         MPI.Init()
     end
+    
     my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
     my_size = MPI.Comm_size(MPI.COMM_WORLD)
     
@@ -517,8 +518,6 @@ function tdac(params::tdac_params)
 end
 
 function get_params(path_to_input_file::String)
-
-    my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
 
     # Read input provided in a yaml file. Overwrite default input parameters with the values provided.
     if isfile(path_to_input_file)
