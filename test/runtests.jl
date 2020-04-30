@@ -151,12 +151,16 @@ end
     attr = h5readattr(params.output_filename, params.state_prefix * "_" * params.title_da * "/t0/height")
     @test attr["Unit"] == "m"
     @test attr["Time_step"] == tstep
-    TDAC.write_grid(params)
-    attr = h5readattr(params.output_filename, params.title_grid)
+    TDAC.write_params(params)
+    attr = h5readattr(params.output_filename, params.title_params)
     @test attr["nx"] == params.nx
     @test attr["ny"] == params.ny
     @test attr["dx"] == params.dx
     @test attr["dy"] == params.dy
+    @test attr["title_da"] == params.title_da
+    @test attr["title_syn"] == params.title_syn
+    @test attr["verbose"] == params.verbose
+    TDAC.write_grid(params)
     attr = h5readattr(params.output_filename, params.title_grid * "/x")
     @test attr["Unit"] == "m"
     attr = h5readattr(params.output_filename, params.title_grid * "/y")
