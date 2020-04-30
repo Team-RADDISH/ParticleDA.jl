@@ -287,6 +287,32 @@ function init_tdac(dim_state::Int, nobs::Int, nprt::Int)
     return state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst
 end
 
+function write_params(params)
+
+    file = h5open(params.output_filename, "cw")
+        
+    if !exists(file, params.title_params)
+        
+        group = g_create(file, params.title_params)
+        
+        fields = fieldnames(typeof(params));
+        
+        for field in fields
+            
+            attrs(group)[string(field)] = getfield(params, field)
+            
+        end
+        
+    else
+        
+        @warn "Write failed, group " * params.title_params * " already exists in " * file.filename * "!"
+        
+    end
+
+    close(file)
+    
+end
+
 function write_grid(params)
 
     h5open(params.output_filename, "cw") do file
@@ -303,12 +329,6 @@ function write_grid(params)
             ds_y[1:params.ny] = collect(y)
             attrs(ds_x)["Unit"] = "m"
             attrs(ds_y)["Unit"] = "m"
-
-            #write grid attributes
-            attrs(group)["nx"] = params.nx
-            attrs(group)["ny"] = params.ny
-            attrs(group)["dx"] = params.dx
-            attrs(group)["dy"] = params.dy
 
         else
 
@@ -370,6 +390,7 @@ function tdac(params::tdac_params)
 
     if(params.verbose)
         write_grid(params)
+        write_params(params)
     end
 
     state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst = init_tdac(params)
