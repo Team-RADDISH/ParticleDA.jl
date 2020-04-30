@@ -137,7 +137,7 @@ end
     @test f ≈ [16.2387054353321, 5.115956753643808, 5.115956753643809, 2.8210669567042155]
 
     # Test IO
-    params = TDAC.get_params("io_unit_test.yaml")
+    params = TDAC.get_params(joinpath(@__DIR__, "io_unit_test.yaml"))
     rm(params.output_filename, force=true)
     data1 = collect(range(1., length=params.dim_grid))
     data2 = randn(params.dim_grid)
@@ -166,8 +166,8 @@ end
 
 @testset "TDAC integration tests" begin
 
-    x_true,x_da = TDAC.tdac("integration_test_1.yaml")
-    data_true = h5read("reference_data.h5", "integration_test_1")
+    x_true,x_da = TDAC.tdac(joinpath(@__DIR__, "integration_test_1.yaml"))
+    data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_1")
     @test x_true ≈ data_true
     
 end
