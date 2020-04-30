@@ -291,22 +291,30 @@ function write_grid(params)
 
     h5open(params.output_filename, "cw") do file
 
-        # Write grid axes
-        x,y = get_axes(params)
-        group = g_create(file, params.title_grid)
-        #TODO: use d_write instead of d_create when they fix it in the HDF5 package
-        ds_x,dtype_x = d_create(group, "x", collect(x))
-        ds_y,dtype_x = d_create(group, "y", collect(x))
-        ds_x[1:params.nx] = collect(x)
-        ds_y[1:params.ny] = collect(y)
-        attrs(ds_x)["Unit"] = "m"
-        attrs(ds_y)["Unit"] = "m"
+        if !exists(file, params.title_grid)
+        
+            # Write grid axes
+            x,y = get_axes(params)
+            group = g_create(file, params.title_grid)
+            #TODO: use d_write instead of d_create when they fix it in the HDF5 package
+            ds_x,dtype_x = d_create(group, "x", collect(x))
+            ds_y,dtype_x = d_create(group, "y", collect(x))
+            ds_x[1:params.nx] = collect(x)
+            ds_y[1:params.ny] = collect(y)
+            attrs(ds_x)["Unit"] = "m"
+            attrs(ds_y)["Unit"] = "m"
 
-        #write grid attributes
-        attrs(group)["nx"] = params.nx
-        attrs(group)["ny"] = params.ny
-        attrs(group)["dx"] = params.dx
-        attrs(group)["dy"] = params.dy
+            #write grid attributes
+            attrs(group)["nx"] = params.nx
+            attrs(group)["ny"] = params.ny
+            attrs(group)["dx"] = params.dx
+            attrs(group)["dy"] = params.dy
+
+        else
+
+            @warn "Write failed, group " * params.title_grid * " already exists in " * file.filename * "!"
+            
+        end
 
     end
 
@@ -345,7 +353,7 @@ function write_surface_height(file::HDF5File, state::AbstractVector{T}, it::Int,
         subgroup = g_open(group, subgroup_name)
     end
 
-    if !exists(group, dataset_name)
+    if !exists(subgroup, dataset_name)
         #TODO: use d_write instead of d_create when they fix it in the HDF5 package
         ds,dtype = d_create(subgroup, dataset_name, @view(state[1:params.dim_grid]))
         ds[1:params.dim_grid] = @view(state[1:params.dim_grid])
@@ -353,7 +361,7 @@ function write_surface_height(file::HDF5File, state::AbstractVector{T}, it::Int,
         attrs(ds)["Unit"] = "m"
         attrs(ds)["Time_step"] = it
     else
-        @warn "Write failed, dataset " * group_name * "/" * dataset_name *  " already exists in " * file.filename * "!"
+        @warn "Write failed, dataset " * group_name * "/" * subgroup_name * "/" * dataset_name *  " already exists in " * file.filename * "!"
     end
 
 end
