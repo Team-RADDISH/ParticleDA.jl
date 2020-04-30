@@ -48,9 +48,10 @@ TDAC.tdac();
 
 The default parameters can be found in the file [parameters.jl](https://github.com/Team-RADDISH/TDAC.jl/blob/master/src/params.jl).
 The parameter `verbose` is set to `false` to suppress the output. If `verbose` is set to `true`, 
-`TDAC()` will produce two ascii files in the `out/` directory. The file `jl-syn__XXXXXX__.dat` 
-contains the true state vector at time step XXXXXX. The file `jl-da__XXXXXX__.dat` contains the 
-average state vector of all particles in the simualtion.
+`TDAC()` will produce a hdf5 file in the run directory. The file name is `tdac.h5` by default.
+The file contains the true and assimilated ocean height at fixed time intervals. By default the output
+time interval is set to 50 time steps. To read the output file, use the [HDF5 library](https://www.hdfgroup.org/solutions/hdf5/).
+A basic plotting tool is provided with the package, see below.
 
 To change parameters from the defaults, create a text file, and pass the path to it as an argument
 
@@ -64,7 +65,7 @@ Any parameters not specified in the input file will retain their default values.
 
 ## Plotting (Experimental)
 
-To plot data in the ascii files produced by `TDAC.tdac()`, there is a [jupyter notebook](https://github.com/Team-RADDISH/TDAC.jl/blob/master/extra/Plot_tdac_output.ipynb) that plots contours of the tsunami height.
+To plot data produced by `TDAC.tdac()`, there is a [jupyter notebook](https://github.com/Team-RADDISH/TDAC.jl/blob/master/extra/Plot_tdac_output.ipynb) that plots contours of the tsunami height. Change the variable `timestamp` in the third cell to plot different time slices from the output file. More functionality may be added as the package develops.
 
 ## Testing
 
