@@ -18,6 +18,7 @@ YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 Distributions = "0.22, 0.23"
 GaussianRandomFields = "2.1"
 HDF5 = "0.13"
+MPI = "0.14"
 YAML = "0.4"
 julia = "1.3"
 
