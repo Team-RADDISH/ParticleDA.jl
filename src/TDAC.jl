@@ -512,7 +512,10 @@ function tdac(params::tdac_params)
 
     end
 
-    MPI.Finalize()
+    # At this point we should call `MPI.Finalize()`, but this will be
+    # automatically run at the end of the Julia session.  Not having
+    # `MPI.Finalize()` here allows us to call `tdac()` multiple times during the
+    # same session.
 
     return state_true, state_avg
 end
