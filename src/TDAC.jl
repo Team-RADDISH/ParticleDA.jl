@@ -192,7 +192,7 @@ function init_gaussian_random_field_generator(lambda::T,
     dim = 2
 
     cov = CovarianceFunction(dim, Matern(lambda, nu, σ = sigma))
-    grf = GaussianRandomField(cov, CirculantEmbedding(), x, y, minpadding=pad)
+    grf = GaussianRandomField(cov, CirculantEmbedding(), x, y, minpadding=pad, primes=true)
 
 end
 
