@@ -277,14 +277,14 @@ function init_tdac(dim_state::Int, nobs::Int, nprt::Int)
 
     weights = Vector{Float64}(undef, nprt)
 
-    obs_real = Vector{Float64}(undef, nobs)        # observed tsunami height
+    obs_true = Vector{Float64}(undef, nobs)        # observed tsunami height
     obs_model = Matrix{Float64}(undef, nobs, nprt) # forecasted tsunami height
 
     # station location in digital grids
     ist = Vector{Int}(undef, nobs)
     jst = Vector{Int}(undef, nobs)
 
-    return state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst
+    return state, state_true, state_avg, state_resampled, weights, obs_true, obs_model, ist, jst
 end
 
 function write_params(params)
@@ -393,7 +393,7 @@ function tdac(params::tdac_params)
         write_params(params)
     end
 
-    state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst = init_tdac(params)
+    state, state_true, state_avg, state_resampled, weights, obs_true, obs_model, ist, jst = init_tdac(params)
 
     background_grf = init_gaussian_random_field_generator(params)
 
@@ -429,23 +429,27 @@ function tdac(params::tdac_params)
 
         # integrate true synthetic wavefield and generate observed data
         tsunami_update!(state_true, hm, hn, fn, fm, fe, gg, params)
-        get_obs!(obs_real, state_true, ist, jst, params)
 
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads. TODO: Consider distributed and/or simd
         Threads.@threads for ip in 1:params.nprt
 
             tsunami_update!(@view(state[:,ip]), hm, hn, fn, fm, fe, gg, params)
-            add_random_field!(@view(state[:,ip]), background_grf, rng, params)
-            get_obs!(@view(obs_model[:,ip]), @view(state[:,ip]), ist, jst, params)
-            add_noise!(@view(obs_model[:,ip]), rng, params)
 
         end
 
         # Weigh and resample particles
         if mod(it - 1, params.da_period) == 0
 
-            get_weights!(weights, obs_real, obs_model, cov_obs)
+            get_obs!(obs_true, state_true, ist, jst, params)
+            
+            for ip in 1:params.nprt
+                add_random_field!(@view(state[:,ip]), background_grf, rng, params)
+                get_obs!(@view(obs_model[:,ip]), @view(state[:,ip]), ist, jst, params)
+                add_noise!(@view(obs_model[:,ip]), rng, params)
+            end
+            
+            get_weights!(weights, obs_true, obs_model, cov_obs)
             resample!(state_resampled, state, weights)
             state .= state_resampled
 
