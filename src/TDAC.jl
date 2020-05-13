@@ -462,13 +462,20 @@ function tdac(params::tdac_params)
     return state_true, state_avg
 end
 
+# Initialise params struct with user-defined dict of values.
+function get_params(user_input_dict::Dict)
+
+    user_input = (; (Symbol(k) => v for (k,v) in user_input_dict)...)
+    params = tdac_params(;user_input...)
+    
+end
+
 function get_params(path_to_input_file::String)
 
     # Read input provided in a yaml file. Overwrite default input parameters with the values provided.
     if isfile(path_to_input_file)
         user_input_dict = YAML.load_file(path_to_input_file)
-        user_input = (; (Symbol(k) => v for (k,v) in user_input_dict)...)
-        params = tdac_params(;user_input...)
+        params = get_params(user_input_dict)
         if params.verbose
             println("Read input parameters from ",path_to_input_file)
         end
