@@ -280,7 +280,7 @@ function init_tdac(dim_state::Int, nobs::Int, nprt_total::Int, master_rank::Int 
         state_avg = zeros(Float64, dim_state) # average of particle state vectors
         state_resampled = Matrix{Float64}(undef, dim_state, nprt_total) # resampled state vectors
         weights = Vector{Float64}(undef, nprt_total) # particle weights
-        obs_real = Vector{Float64}(undef, nobs) # observed tsunami height
+        obs_true = Vector{Float64}(undef, nobs) # observed tsunami height
     else
         state = zeros(Float64, dim_state, nprt_per_rank) # model state vectors for particles
         obs_model = Matrix{Float64}(undef, nobs, nprt_per_rank) # forecasted tsunami height
@@ -288,10 +288,10 @@ function init_tdac(dim_state::Int, nobs::Int, nprt_total::Int, master_rank::Int 
         state_avg = nothing
         state_resampled = nothing
         weights = nothing
-        obs_real = nothing
+        obs_true = nothing
     end
         
-    return state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst
+    return state, state_true, state_avg, state_resampled, weights, obs_true, obs_model, ist, jst
 end
 
 function write_params(params)
@@ -488,7 +488,7 @@ function tdac(params::tdac_params)
                     add_noise!(@view(obs_model[:,ip]), rng, params)
                 end
                 
-                get_weights!(weights, obs_real, obs_model, cov_obs)
+                get_weights!(weights, obs_true, obs_model, cov_obs)
                 resample!(state_resampled, state, weights)
                 state .= state_resampled
                 
