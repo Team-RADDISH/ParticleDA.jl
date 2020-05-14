@@ -130,7 +130,7 @@ end
     # Test gaussian random field sampling
     x = 1.:2.
     y = 1.:2.
-    grf = TDAC.init_gaussian_random_field_generator(1.0,1.0,1.0,x,y,0)
+    grf = TDAC.init_gaussian_random_field_generator(1.0,1.0,1.0,x,y,0,false)
     f = zeros(4)
     rnn = [9.,9.,9.,9.]
     TDAC.sample_gaussian_random_field!(f,grf,rnn)

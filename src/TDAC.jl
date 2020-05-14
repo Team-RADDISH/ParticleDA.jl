@@ -171,10 +171,16 @@ function get_axes(nx::Int, ny::Int, dx::Real, dy::Real)
     return x,y
 end
 
+struct RandomField{F<:GaussianRandomField,W<:AbstractArray,Z<:AbstractArray}
+    grf::F
+    w::W
+    z::Z
+end
+
 function init_gaussian_random_field_generator(params::tdac_params)
 
     x, y = get_axes(params)
-    return init_gaussian_random_field_generator(params.lambda,params.nu, params.sigma, x, y, params.padding)
+    return init_gaussian_random_field_generator(params.lambda,params.nu, params.sigma, x, y, params.padding, params.primes)
 
 end
 
@@ -186,36 +192,41 @@ function init_gaussian_random_field_generator(lambda::T,
                                               sigma::T,
                                               x::AbstractVector{T},
                                               y::AbstractVector{T},
-                                              pad::Int) where T
+                                              pad::Int,
+                                              primes::Bool) where T
 
     # Let's limit ourselves to two-dimensional fields
     dim = 2
 
     cov = CovarianceFunction(dim, Matern(lambda, nu, σ = sigma))
-    grf = GaussianRandomField(cov, CirculantEmbedding(), x, y, minpadding=pad, primes=true)
+    grf = GaussianRandomField(cov, CirculantEmbedding(), x, y, minpadding=pad, primes=primes)
+    v = grf.data[1]
+    w = Array{complex(float(eltype(v)))}(undef, size(v))
+    z = Array{eltype(grf.cov)}(undef, length.(grf.pts))
 
+    return RandomField(grf, w, z)
 end
 
 # Get a random sample from gaussian random field grf using random number generator rng
 function sample_gaussian_random_field!(field::AbstractVector{T},
-                                       grf::GaussianRandomFields.GaussianRandomField,
+                                       grf::RandomField,
                                        rng::Random.AbstractRNG) where T
 
-    field .= @view(GaussianRandomFields.sample(grf, xi=randn(rng, randdim(grf)))[:])
+    field .= @view(GaussianRandomFields._sample!(grf.w, grf.z, grf.grf, randn(rng, size(grf.grf.data[1])))[:])
 
 end
 
 # Get a random sample from gaussian random field grf using random_numbers
 function sample_gaussian_random_field!(field::AbstractVector{T},
-                                       grf::GaussianRandomFields.GaussianRandomField,
-                                       random_numbers::AbstractVector{T}) where T
+                                       grf::RandomField,
+                                       random_numbers::AbstractArray{T}) where T
 
-    field .= @view(GaussianRandomFields.sample(grf, xi=random_numbers)[:])
+    field .= @view(GaussianRandomFields._sample!(grf.w, grf.z, grf.grf, random_numbers)[:])
 
 end
 
 function add_random_field!(state::AbstractVector{T},
-                           grf::GaussianRandomFields.GaussianRandomField,
+                           grf::RandomField,
                            rng::Random.AbstractRNG,
                            params::tdac_params) where T
 
@@ -225,7 +236,7 @@ end
 
 # Add a gaussian random field to each variable in the state vector of one particle
 function add_random_field!(state::AbstractVector{T},
-                           grf::GaussianRandomFields.GaussianRandomField,
+                           grf::RandomField,
                            rng::Random.AbstractRNG,
                            nvar::Int,
                            dim_grid::Int) where T

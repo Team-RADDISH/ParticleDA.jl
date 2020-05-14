@@ -7,37 +7,39 @@ tdac_params()
 
 Parameters for TDAC run. Arguments:
 
-* `nx` : number of grid points in the x direction
-* `ny` : number of grid points in the y direction
-* `dim_grid` : Grid size
-* `dim_state` : State vector size (height, velocity_x, velocity_y) at each grid point
-* `dx` : Distance (m) between grid points in the x direction
-* `dy` : Distance (m) between grid points in the y direction
-* `nobs` : Number of observation stations
-* `station_separation` : Distance between stations in station_dx/dx grid points
-* `station_boundary` : Distance between bottom left edge of box and first station in station_dx/dx grid points
-* `station_dx` : Scaling factor for distance between stations in the x direction
-* `station_dy` : Scaling factor for distance between stations in the y direction
-* `ntmax` : Number of time steps
-* `dt` : Time step length (unit?)
-* `verbose` : Flag to write output
-* `output_filename` : Name of output file
-* `state_prefix` : Prefix of the time slice data groups in output
-* `title_da` : Suffix of the data assimilated data group in output
-* `title_syn` : Suffix of the true state data group in output
-* `title_grid` : Name of the grid data group in output
-* `title_params` : Name of the parameters data group in output
-* `ntdec` : Number of time steps between output writes in output
-* `nprt` : Number of particles for particle filter
-* `da_period` : Number of time steps between particle resamplings
-* `rr` : Length scale for covariance decay
-* `inv_rr` : Inverse of length scale, stored for performance
-* `source_size` : Initial condition parameter
-* `bathymetry_setup` : Bathymetry set-up.
-* `lambda` : Length scale for Matérn covariance kernel (could be same as rr)
-* `nu` : Smoothess parameter for Matérn covariance kernel
-* `sigma` : Marginal standard deviation for Matérn covariance kernel
-* `padding` : Min padding for circulant embedding gaussian random field generator
+* `nx::Int` : Number of grid points in the x direction
+* `ny::Int` : Number of grid points in the y direction
+* `n_state_var::Int`: Number of variables in the state vector
+* `dim_grid::Int` : Grid size
+* `dim_state::Int` : State vector size (height, velocity_x, velocity_y) at each grid point
+* `dx::AbstractFloat` : Distance (m) between grid points in the x direction
+* `dy::AbstractFloat` : Distance (m) between grid points in the y direction
+* `nobs::Int` : Number of observation stations
+* `station_separation::Int` : Distance between stations in station_dx/dx grid points
+* `station_boundary::Int` : Distance between bottom left edge of box and first station in station_dx/dx grid points
+* `station_dx::AbstractFloat` : Scaling factor for distance between stations in the x direction
+* `station_dy::AbstractFloat` : Scaling factor for distance between stations in the y direction
+* `ntmax::Int` : Number of time steps
+* `dt::AbstractFloat` : Time step length (unit?)
+* `verbose::Bool` : Flag to control whether to write output
+* `output_filename::String` : Name of output file
+* `state_prefix::String` : Prefix of the time slice data groups in output
+* `title_da::String` : Suffix of the data assimilated data group in output
+* `title_syn::String` : Suffix of the true state data group in output
+* `title_grid::String` : Name of the grid data group in output
+* `title_params::String` : Name of the parameters data group in output
+* `ntdec::Int` : Number of time steps between output writes in output
+* `nprt::Int` : Number of particles for particle filter
+* `da_period::Int` : Number of time steps between particle resamplings
+* `rr::AbstractFloat` : Length scale for covariance decay
+* `inv_rr::AbstractFloat` : Inverse of length scale, stored for performance
+* `source_size::AbstractFloat` : Initial condition parameter
+* `bathymetry_setup::AbstractFloat` : Bathymetry set-up.
+* `lambda::AbstractFloat` : Length scale for Matérn covariance kernel (could be same as rr)
+* `nu::AbstractFloat` : Smoothess parameter for Matérn covariance kernel
+* `sigma::AbstractFloat` : Marginal standard deviation for Matérn covariance kernel
+* `padding::Int` : Min padding for circulant embedding gaussian random field generator
+* `primes::Int`: Whether the size of the minimum circulant embedding of the covariance matrix can be written as a product of small primes (2, 3, 5 and 7). Default is `true`.
 * `obs_noise_amplitude`: Multiplier for noise added to observations of the true state
 * `random_seed` : Seed number for the pseudorandom number generator
 """
@@ -82,6 +84,7 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
     nu::T = 2.5
     sigma::T = 1.0
     padding::Int = 100
+    primes::Bool = true
     obs_noise_amplitude::T = 1.0
 
     random_seed::Int = 12345
