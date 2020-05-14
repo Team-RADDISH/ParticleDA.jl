@@ -471,11 +471,7 @@ function get_params(user_input_dict::Dict)
 end
 
 # Initialise params struct with default values
-function get_params()
-
-    params = tdac_params()
-    
-end
+get_params() = tdac_params()
 
 function get_params(path_to_input_file::String)
 
