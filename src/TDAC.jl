@@ -192,7 +192,7 @@ function init_gaussian_random_field_generator(lambda::T,
     dim = 2
 
     cov = CovarianceFunction(dim, Matern(lambda, nu, σ = sigma))
-    grf = GaussianRandomField(cov, CirculantEmbedding(), x, y, minpadding=pad)
+    grf = GaussianRandomField(cov, CirculantEmbedding(), x, y, minpadding=pad, primes=true)
 
 end
 
@@ -409,7 +409,7 @@ function tdac(params::tdac_params)
         write_params(params)
     end
 
-    state, state_true, state_avg, state_resampled, weights, obs_real, obs_model, ist, jst = init_tdac(params)
+    state, state_true, state_avg, state_resampled, weights, obs_true, obs_model, ist, jst = init_tdac(params)
 
     background_grf = init_gaussian_random_field_generator(params)
 
@@ -451,7 +451,6 @@ function tdac(params::tdac_params)
 
             # integrate true synthetic wavefield and generate observed data
             tsunami_update!(state_true, hm, hn, fn, fm, fe, gg, params)
-            get_obs!(obs_real, state_true, ist, jst, params)
 
         end
         
@@ -460,10 +459,7 @@ function tdac(params::tdac_params)
         Threads.@threads for ip in 1:nprt_per_rank
 
             tsunami_update!(@view(state[:,ip]), hm, hn, fn, fm, fe, gg, params)
-            add_random_field!(@view(state[:,ip]), background_grf, rng, params)
-            get_obs!(@view(obs_model[:,ip]), @view(state[:,ip]), ist, jst, params)
-            add_noise!(@view(obs_model[:,ip]), rng, params)
-            
+
         end
                 
         # Weigh and resample particles
@@ -483,6 +479,14 @@ function tdac(params::tdac_params)
             end
             
             if my_rank == params.master_rank
+
+                get_obs!(obs_true, state_true, ist, jst, params)
+                
+                for ip in 1:params.nprt
+                    add_random_field!(@view(state[:,ip]), background_grf, rng, params)
+                    get_obs!(@view(obs_model[:,ip]), @view(state[:,ip]), ist, jst, params)
+                    add_noise!(@view(obs_model[:,ip]), rng, params)
+                end
                 
                 get_weights!(weights, obs_real, obs_model, cov_obs)
                 resample!(state_resampled, state, weights)
@@ -520,24 +524,29 @@ function tdac(params::tdac_params)
     return state_true, state_avg
 end
 
+# Initialise params struct with user-defined dict of values.
+function get_params(user_input_dict::Dict)
+
+    user_input = (; (Symbol(k) => v for (k,v) in user_input_dict)...)
+    params = tdac_params(;user_input...)
+    
+end
+
+# Initialise params struct with default values
+get_params() = tdac_params()
+
 function get_params(path_to_input_file::String)
 
     # Read input provided in a yaml file. Overwrite default input parameters with the values provided.
     if isfile(path_to_input_file)
         user_input_dict = YAML.load_file(path_to_input_file)
-        user_input = (; (Symbol(k) => v for (k,v) in user_input_dict)...)
-        params = tdac_params(;user_input...)
+        params = get_params(user_input_dict)
         if params.verbose
             println("Read input parameters from ",path_to_input_file)
         end
     else
-        if !isempty(path_to_input_file)
-            println("Input file ", path_to_input_file, " not found, using default parameters.")
-        else
-            println("Using default parameters")
-        end
-
-        params = tdac_params()
+        @warn "Input file " * path_to_input_file * " not found, using default parameters"
+        params = get_params()
     end
     return params
 
