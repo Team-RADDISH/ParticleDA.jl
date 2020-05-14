@@ -470,6 +470,9 @@ function get_params(user_input_dict::Dict)
     
 end
 
+# Initialise params struct with default values
+get_params() = tdac_params()
+
 function get_params(path_to_input_file::String)
 
     # Read input provided in a yaml file. Overwrite default input parameters with the values provided.
@@ -480,12 +483,8 @@ function get_params(path_to_input_file::String)
             println("Read input parameters from ",path_to_input_file)
         end
     else
-        if !isempty(path_to_input_file)
-            println("Input file ", path_to_input_file, " not found, using default parameters.")
-        else
-            println("Using default parameters")
-        end
-        params = tdac_params()
+        @warn "Input file " * path_to_input_file * " not found, using default parameters"
+        params = get_params()
     end
     return params
 
