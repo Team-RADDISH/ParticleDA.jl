@@ -440,7 +440,9 @@ function tdac(params::tdac_params)
     
     # Initialize all particles to the true initial state + noise
     state .= state_true
-    [add_random_field!(@view(state[:,ip]), background_grf, rng, params) for ip in 1:params.nprt]
+    for ip in 1:params.nprt
+        add_random_field!(@view(state[:,ip]), background_grf, rng, params)
+    end
     
     # Write initial state
     if params.verbose
