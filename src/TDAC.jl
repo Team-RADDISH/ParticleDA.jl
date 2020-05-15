@@ -479,7 +479,6 @@ function tdac(params::tdac_params)
 
         # Calculate statistical values
         Statistics.mean!(state_avg, state)
-        #Statistics.var!(state_var, state)
 
         # Write output
         if params.verbose
