@@ -143,13 +143,16 @@ end
     data1 = collect(range(1., length=params.dim_grid))
     data2 = randn(params.dim_grid)
     tstep = 0
-    TDAC.write_snapshot(data1, data2, tstep, params)
+    h5open(params.output_filename, "cw") do file 
+        TDAC.write_surface_height(file, data1, tstep, params.title_syn, params)
+        TDAC.write_surface_height(file, data2, tstep, params.title_avg, params)
+    end
     @test h5read(params.output_filename, params.state_prefix * "_" * params.title_syn * "/t0/height") ≈ data1
-    @test h5read(params.output_filename, params.state_prefix * "_" * params.title_da * "/t0/height") ≈ data2
+    @test h5read(params.output_filename, params.state_prefix * "_" * params.title_avg * "/t0/height") ≈ data2
     attr = h5readattr(params.output_filename, params.state_prefix * "_" * params.title_syn * "/t0/height")
     @test attr["Unit"] == "m"
     @test attr["Time_step"] == tstep
-    attr = h5readattr(params.output_filename, params.state_prefix * "_" * params.title_da * "/t0/height")
+    attr = h5readattr(params.output_filename, params.state_prefix * "_" * params.title_avg * "/t0/height")
     @test attr["Unit"] == "m"
     @test attr["Time_step"] == tstep
     TDAC.write_params(params)
@@ -158,7 +161,7 @@ end
     @test attr["ny"] == params.ny
     @test attr["dx"] == params.dx
     @test attr["dy"] == params.dy
-    @test attr["title_da"] == params.title_da
+    @test attr["title_avg"] == params.title_avg
     @test attr["title_syn"] == params.title_syn
     @test attr["verbose"] == params.verbose
     TDAC.write_grid(params)
@@ -171,7 +174,7 @@ end
 
 @testset "TDAC integration tests" begin
 
-    x_true,x_da = TDAC.tdac(joinpath(@__DIR__, "integration_test_1.yaml"))
+    x_true,x_avg,v_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_1.yaml"))
     data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_1")
     @test x_true ≈ data_true
     
