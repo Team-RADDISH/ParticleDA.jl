@@ -92,7 +92,7 @@ function tsunami_update!(state::AbstractVector{T},
                          nt::Int,
                          dx::Real,
                          dy::Real,
-                         timestep::Real,
+                         time_interval::Real,
                          hm::AbstractMatrix{T},
                          hn::AbstractMatrix{T},
                          fm::AbstractMatrix{T},
@@ -109,7 +109,7 @@ function tsunami_update!(state::AbstractVector{T},
     mm_f  = reshape(@view(state[(nn + 1):(2 * nn)]), nx, ny)
     nn_f  = reshape(@view(state[(2 * nn + 1):(3 * nn)]), nx, ny)
 
-    dt = timestep / nt
+    dt = time_interval / nt
     
     for it in 1:nt
         # Parts of model vector are aliased to tsunami heiht and velocities

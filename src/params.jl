@@ -21,9 +21,9 @@ Parameters for TDAC run. Arguments:
 * `station_boundary::Int` : Distance between bottom left edge of box and first station in station_dx/dx grid points
 * `station_dx::AbstractFloat` : Scaling factor for distance between stations in the x direction
 * `station_dy::AbstractFloat` : Scaling factor for distance between stations in the y direction
-* `n_time_step::Int` : Number of time steps
+* `n_time_step::Int` : Number of time steps. On each time step we update the forward model forecast, get model observations, and weight and resample particles.
+* `n_integration_step::Int` : Number of sub-steps to integrate the forward model per time step.
 * `time_step::AbstractFloat` : Time step length (s)
-* `n_integration_step::Int` : Number of steps to integrate the forward model per time step
 * `verbose::Bool` : Flag to control whether to write output
 * `output_filename::String` : Name of output file
 * `state_prefix::String` : Prefix of the time slice data groups in output
