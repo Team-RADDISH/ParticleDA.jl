@@ -66,7 +66,8 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
 
     output_filename::String = "tdac.h5"
     state_prefix::String = "data"
-    title_da::String = "da"
+    title_avg::String = "avg"
+    title_var::String = "var"
     title_syn::String = "syn"
     title_grid::String = "grid"
     title_params::String = "params"
