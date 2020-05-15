@@ -271,24 +271,24 @@ function init_tdac(params::tdac_params)
 
 end
 
-struct state_vectors{T<:AbstractArray, S<:AbstractArray}
+struct StateVectors{T<:AbstractArray, S<:AbstractArray}
 
-    state_particles::T
-    state_true::S
-    state_avg::S
-    state_var::S
-    state_resampled::T
+    particles::T
+    truth::S
+    avg::S
+    var::S
+    resampled::T
     
 end
 
-struct obs_vectors{T<:AbstractArray,S<:AbstractArray}
+struct ObsVectors{T<:AbstractArray,S<:AbstractArray}
 
-    obs_true::T
-    obs_model::S
+    truth::T
+    model::S
 
 end
 
-struct station_vectors{T<:AbstractArray}
+struct StationVectors{T<:AbstractArray}
 
     ist::T
     jst::T
@@ -303,13 +303,13 @@ function init_tdac(dim_state::Int, nobs::Int, nprt::Int)
     #   state*(        1:  Nx*Ny): tsunami height eta(nx,ny)
     #   state*(  Nx*Ny+1:2*Nx*Ny): vertically integrated velocity Mx(nx,ny)
     #   state*(2*Nx*Ny+1:3*Nx*Ny): vertically integrated velocity Mx(nx,ny)
-    state = zeros(Float64, dim_state, nprt) # model state vectors for particles
-    state_true = zeros(Float64, dim_state) # model vector: true wavefield (observation)
+    state_particles = zeros(Float64, dim_state, nprt) # model state vectors for particles
+    state_truth = zeros(Float64, dim_state) # model vector: true wavefield (observation)
     state_avg = zeros(Float64, dim_state) # average of particle state vectors
     state_var = zeros(Float64, dim_state) # variance of particle state vectors
     state_resampled = Matrix{Float64}(undef, dim_state, nprt)
 
-    obs_true = Vector{Float64}(undef, nobs)        # observed tsunami height
+    obs_truth = Vector{Float64}(undef, nobs)        # observed tsunami height
     obs_model = Matrix{Float64}(undef, nobs, nprt) # forecasted tsunami height
 
     # station location in digital grids
@@ -318,7 +318,7 @@ function init_tdac(dim_state::Int, nobs::Int, nprt::Int)
 
     weights = Vector{Float64}(undef, nprt)
     
-    return state_vectors(state, state_true, state_avg, state_var, state_resampled), obs_vectors(obs_true, obs_model), station_vectors(ist, jst), weights
+    return StateVectors(state_particles, state_truth, state_avg, state_var, state_resampled), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), weights
 end
 
 function write_params(params)
@@ -374,7 +374,7 @@ function write_grid(params)
 
 end
 
-function write_snapshot(states::state_vectors, it::Int, params::tdac_params) where T
+function write_snapshot(states::StateVectors, it::Int, params::tdac_params) where T
 
     if params.verbose
         println("Writing output at timestep = ", it)
@@ -382,9 +382,9 @@ function write_snapshot(states::state_vectors, it::Int, params::tdac_params) whe
 
     h5open(params.output_filename, "cw") do file
 
-        write_surface_height(file, states.state_true, it, params.title_syn, params)
-        write_surface_height(file, states.state_avg, it, params.title_avg, params)
-        write_surface_height(file, states.state_var, it, params.title_var, params)
+        write_surface_height(file, states.truth, it, params.title_syn, params)
+        write_surface_height(file, states.avg, it, params.title_avg, params)
+        write_surface_height(file, states.var, it, params.title_var, params)
 
     end
 
@@ -438,11 +438,11 @@ function tdac(params::tdac_params)
     gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx, params.ny, params.bathymetry_setup)
 
     # obtain initial tsunami height
-    eta = reshape(@view(states.state_true[1:params.dim_grid]), params.nx, params.ny)
+    eta = reshape(@view(states.truth[1:params.dim_grid]), params.nx, params.ny)
     LLW2d.initheight!(eta, hh, params.dx, params.dy, params.source_size)
 
     # Initialize all particles to the true initial state
-    states.state_particles .= states.state_true
+    states.particles .= states.truth
 
     # set station positions
     LLW2d.set_stations!(stations.ist,
@@ -463,44 +463,44 @@ function tdac(params::tdac_params)
         end
 
         # integrate true synthetic wavefield and generate observed data
-        tsunami_update!(states.state_true, hm, hn, fn, fm, fe, gg, params)
+        tsunami_update!(states.truth, hm, hn, fn, fm, fe, gg, params)
 
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads. TODO: Consider distributed and/or simd
         Threads.@threads for ip in 1:params.nprt
 
-            tsunami_update!(@view(states.state_particles[:,ip]), hm, hn, fn, fm, fe, gg, params)
+            tsunami_update!(@view(states.particles[:,ip]), hm, hn, fn, fm, fe, gg, params)
 
         end
 
         # Weigh and resample particles
         if mod(it - 1, params.da_period) == 0
 
-            get_obs!(observations.obs_true, states.state_true, stations.ist, stations.jst, params)
+            get_obs!(observations.truth, states.truth, stations.ist, stations.jst, params)
             
             for ip in 1:params.nprt
-                add_random_field!(@view(states.state_particles[:,ip]), background_grf, rng, params)
-                get_obs!(@view(observations.obs_model[:,ip]),
-                         @view(states.state_particles[:,ip]),
+                add_random_field!(@view(states.particles[:,ip]), background_grf, rng, params)
+                get_obs!(@view(observations.model[:,ip]),
+                         @view(states.particles[:,ip]),
                          stations.ist,
                          stations.jst,
                          params)
-                add_noise!(@view(observations.obs_model[:,ip]), rng, params)
+                add_noise!(@view(observations.model[:,ip]), rng, params)
             end
             
-            get_weights!(weights, observations.obs_true, observations.obs_model, cov_obs)
-            resample!(states.state_resampled, states.state_particles, weights)
-            states.state_particles .= states.state_resampled
+            get_weights!(weights, observations.truth, observations.model, cov_obs)
+            resample!(states.resampled, states.particles, weights)
+            states.particles .= states.resampled
 
         end
 
-        Statistics.mean!(states.state_avg, states.state_particles)
+        Statistics.mean!(states.avg, states.particles)
 
-        states.state_var .= @view(Statistics.var(states.state_particles; dims=2)[:])
+        states.var .= @view(Statistics.var(states.particles; dims=2)[:])
 
     end
 
-    return states.state_true, states.state_avg, states.state_var
+    return states.truth, states.avg, states.var
 end
 
 # Initialise params struct with user-defined dict of values.
