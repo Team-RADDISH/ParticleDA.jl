@@ -1,5 +1,5 @@
 nprt: 1
-da_period: 10000
+n_time_step: 1
+n_integration_step: 251
+time_step: 251.0
 nobs: 4
-ntmax: 251
-ntdec: 250

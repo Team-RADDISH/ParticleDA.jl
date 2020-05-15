@@ -79,7 +79,8 @@ function tsunami_update!(state::AbstractVector{T},
                          gg::AbstractMatrix{T},
                          params::tdac_params) where T
 
-    tsunami_update!(state, params.nx, params.ny, params.dim_grid, params.dx, params.dy, params.dt, hm, hn, fm, fn, fe, gg)
+    tsunami_update!(state, params.nx, params.ny, params.dim_grid, params.n_integration_step,
+                    params.dx, params.dy, params.time_step, hm, hn, fm, fn, fe, gg)
 
 end
 
@@ -88,9 +89,10 @@ function tsunami_update!(state::AbstractVector{T},
                          nx::Int,
                          ny::Int,
                          nn::Int,
+                         nt::Int,
                          dx::Real,
                          dy::Real,
-                         dt::Real,
+                         timestep::Real,
                          hm::AbstractMatrix{T},
                          hn::AbstractMatrix{T},
                          fm::AbstractMatrix{T},
@@ -107,8 +109,12 @@ function tsunami_update!(state::AbstractVector{T},
     mm_f  = reshape(@view(state[(nn + 1):(2 * nn)]), nx, ny)
     nn_f  = reshape(@view(state[(2 * nn + 1):(3 * nn)]), nx, ny)
 
-    # Parts of model vector are aliased to tsunami heiht and velocities
-    LLW2d.timestep!(eta_f, mm_f, nn_f, eta_a, mm_a, nn_a, hm, hn, fn, fm, fe, gg, dx, dy, dt)
+    dt = timestep / nt
+    
+    for it in 1:nt
+        # Parts of model vector are aliased to tsunami heiht and velocities
+        LLW2d.timestep!(eta_f, mm_f, nn_f, eta_a, mm_a, nn_a, hm, hn, fn, fm, fe, gg, dx, dy, dt)
+    end
 
 end
 
@@ -369,7 +375,7 @@ end
 function write_surface_height(file::HDF5File, state::AbstractVector{T}, it::Int, title::String, params::tdac_params) where T
 
     group_name = params.state_prefix * "_" * title
-    subgroup_name = "t" * string(floor(Int, (it - 1) / params.ntdec))
+    subgroup_name = "t" * string(it)
     dataset_name = "height"
 
     if !exists(file, group_name)
@@ -391,6 +397,7 @@ function write_surface_height(file::HDF5File, state::AbstractVector{T}, it::Int,
         attrs(ds)["Description"] = "Ocean surface height"
         attrs(ds)["Unit"] = "m"
         attrs(ds)["Time_step"] = it
+        attrs(ds)["Time (s)"] = it * params.time_step
     else
         @warn "Write failed, dataset " * group_name * "/" * subgroup_name * "/" * dataset_name *  " already exists in " * file.filename * "!"
     end
@@ -404,21 +411,22 @@ function tdac(params::tdac_params)
         write_params(params)
     end
 
+    #TODO: Put these in a data structure
     state, state_true, state_avg, state_resampled, weights, obs_true, obs_model, ist, jst = init_tdac(params)
 
     background_grf = init_gaussian_random_field_generator(params)
 
     rng = Random.MersenneTwister(params.random_seed)
 
+    #TODO: Put all llw2d setup in one function
     # Set up tsunami model
+    #TODO: Put these in a data structure
     gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx, params.ny, params.bathymetry_setup)
 
     # obtain initial tsunami height
     eta = reshape(@view(state_true[1:params.dim_grid]), params.nx, params.ny)
     LLW2d.initheight!(eta, hh, params.dx, params.dy, params.source_size)
 
-    # Initialize all particles to the true initial state
-    state .= state_true
 
     # set station positions
     LLW2d.set_stations!(ist,
@@ -429,45 +437,55 @@ function tdac(params::tdac_params)
                         params.station_dy,
                         params.dx,
                         params.dy)
-
+    
+    # Initialize all particles to the true initial state + noise
+    state .= state_true
+    [add_random_field!(@view(state[:,ip]), background_grf, rng, params) for ip in 1:params.nprt]
+    
+    # Write initial state
+    if params.verbose
+        write_snapshot(state_true, state_avg, 0, params)
+    end
+    
     cov_obs = get_obs_covariance(ist, jst, params)
 
-    for it in 1:params.ntmax
+    for it in 1:params.n_time_step
 
-        if params.verbose && mod(it - 1, params.ntdec) == 0
-            write_snapshot(state_true, state_avg, it, params)
-        end
-
-        # integrate true synthetic wavefield and generate observed data
+        # integrate true synthetic wavefield
         tsunami_update!(state_true, hm, hn, fn, fm, fe, gg, params)
 
         # Forecast: Update tsunami forecast and get observations from it
-        # Parallelised with threads. TODO: Consider distributed and/or simd
+        # Parallelised with threads. 
         Threads.@threads for ip in 1:params.nprt
 
             tsunami_update!(@view(state[:,ip]), hm, hn, fn, fm, fe, gg, params)
 
         end
 
-        # Weigh and resample particles
-        if mod(it - 1, params.da_period) == 0
+        # Get observation from true synthetic wavefield
+        get_obs!(obs_true, state_true, ist, jst, params)
 
-            get_obs!(obs_true, state_true, ist, jst, params)
-            
-            for ip in 1:params.nprt
-                add_random_field!(@view(state[:,ip]), background_grf, rng, params)
-                get_obs!(@view(obs_model[:,ip]), @view(state[:,ip]), ist, jst, params)
-                add_noise!(@view(obs_model[:,ip]), rng, params)
-            end
-            
-            get_weights!(weights, obs_true, obs_model, cov_obs)
-            resample!(state_resampled, state, weights)
-            state .= state_resampled
-
+        # Add process noise, get observations, add observation noise (to particles)
+        for ip in 1:params.nprt
+            add_random_field!(@view(state[:,ip]), background_grf, rng, params)
+            get_obs!(@view(obs_model[:,ip]), @view(state[:,ip]), ist, jst, params)
+            add_noise!(@view(obs_model[:,ip]), rng, params)
         end
 
-        Statistics.mean!(state_avg, state)
+        # Weigh and resample particles
+        get_weights!(weights, obs_true, obs_model, cov_obs)
+        resample!(state_resampled, state, weights)
+        state .= state_resampled
 
+        # Calculate statistical values
+        Statistics.mean!(state_avg, state)
+        #Statistics.var!(state_var, state)
+
+        # Write output
+        if params.verbose
+            write_snapshot(state_true, state_avg, it, params)
+        end
+        
     end
 
     return state_true, state_avg

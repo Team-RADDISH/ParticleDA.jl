@@ -19,8 +19,9 @@ Parameters for TDAC run. Arguments:
 * `station_boundary::Int` : Distance between bottom left edge of box and first station in station_dx/dx grid points
 * `station_dx::AbstractFloat` : Scaling factor for distance between stations in the x direction
 * `station_dy::AbstractFloat` : Scaling factor for distance between stations in the y direction
-* `ntmax::Int` : Number of time steps
-* `dt::AbstractFloat` : Time step length (unit?)
+* `n_time_step::Int` : Number of time steps
+* `time_step::AbstractFloat` : Time step length (s)
+* `n_integration_step::Int` : Number of steps to integrate the forward model per time step
 * `verbose::Bool` : Flag to control whether to write output
 * `output_filename::String` : Name of output file
 * `state_prefix::String` : Prefix of the time slice data groups in output
@@ -28,9 +29,7 @@ Parameters for TDAC run. Arguments:
 * `title_syn::String` : Suffix of the true state data group in output
 * `title_grid::String` : Name of the grid data group in output
 * `title_params::String` : Name of the parameters data group in output
-* `ntdec::Int` : Number of time steps between output writes in output
 * `nprt::Int` : Number of particles for particle filter
-* `da_period::Int` : Number of time steps between particle resamplings
 * `rr::AbstractFloat` : Length scale for covariance decay
 * `inv_rr::AbstractFloat` : Inverse of length scale, stored for performance
 * `source_size::AbstractFloat` : Initial condition parameter
@@ -60,8 +59,9 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
     station_dx::T = 1.0e3
     station_dy::T = 1.0e3
     
-    ntmax::Int = 500
-    dt::T = 1.0
+    n_time_step::Int = 20
+    n_integration_step::Int = 50
+    time_step::T = 50.0
     verbose::Bool = false
 
     output_filename::String = "tdac.h5"
@@ -70,10 +70,8 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
     title_syn::String = "syn"
     title_grid::String = "grid"
     title_params::String = "params"
-    ntdec::Int = 50
 
     nprt::Int = 4
-    da_period::Int = 50
     rr::T = 2.0e4
     inv_rr::T = 1.0/rr
 
