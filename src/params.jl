@@ -14,8 +14,6 @@ Parameters for TDAC run. Arguments:
 * `dx::AbstractFloat` : Distance (m) between grid points in the x direction
 * `dy::AbstractFloat` : Distance (m) between grid points in the y direction
 * `n_state_var::Int`: Number of variables in the state vector
-* `dim_grid::Int` : Grid size
-* `dim_state::Int` : State vector size (height, velocity_x, velocity_y) at each grid point
 * `nobs::Int` : Number of observation stations
 * `station_separation::Int` : Distance between stations in station_dx/dx grid points
 * `station_boundary::Int` : Distance between bottom left edge of box and first station in station_dx/dx grid points
@@ -55,8 +53,6 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
     dy::T = y_length / ny
     
     n_state_var::Int = 3
-    dim_grid::Int = nx * ny
-    dim_state::Int = n_state_var * dim_grid
 
     nobs::Int = 4
     station_separation::Int = 20
