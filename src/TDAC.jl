@@ -519,8 +519,8 @@ function tdac(params::tdac_params)
         @timeit_debug timer "State Copy" states.particles .= states.resampled
 
         # Calculate statistical values
-        @timeit_debug timer "Particle Stats" Statistics.mean!(states.avg, states.particles)
-        @timeit_debug timer "Particle Stats" states.var .= @view(Statistics.var(states.particles; dims=2)[:])
+        @timeit_debug timer "Particle Mean" Statistics.mean!(states.avg, states.particles)
+        @timeit_debug timer "Particle Variance" states.var .= @view(Statistics.var(states.particles; dims=2)[:])
 
         # Write output
         if params.verbose
