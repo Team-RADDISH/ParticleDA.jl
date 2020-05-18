@@ -431,10 +431,10 @@ end
 
 function tdac(params::tdac_params)
 
-    timer = TimerOutput()
     if params.enable_timers
         TimerOutputs.enable_debug_timings(TDAC)
     end
+    timer = TimerOutput()
     
     if(params.verbose)
         @timeit_debug timer "IO" write_grid(params)
@@ -491,12 +491,11 @@ function tdac(params::tdac_params)
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads.
 
-        @timeit_debug timer "Particle State Update" begin
-            Threads.@threads for ip in 1:params.nprt
 
-                tsunami_update!(@view(states.particles[:,ip]), hm, hn, fn, fm, fe, gg, params)
-                
-            end
+        @timeit_debug timer "Particle State Update" Threads.@threads for ip in 1:params.nprt
+            
+            tsunami_update!(@view(states.particles[:,ip]), hm, hn, fn, fm, fe, gg, params)
+            
         end
 
         # Get observation from true synthetic wavefield
