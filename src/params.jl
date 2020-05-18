@@ -91,6 +91,7 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
     obs_noise_amplitude::T = 1.0
 
     random_seed::Int = 12345
+    enable_timers::Bool = false
 end
 
 end
