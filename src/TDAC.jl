@@ -530,7 +530,7 @@ function tdac(params::tdac_params)
 
     if params.enable_timers
         print_timer(timer)
-        if verbose
+        if params.verbose
             h5write(params.output_filename, "timer/rank0", string(timer))
         end
     end
