@@ -333,7 +333,7 @@ function init_tdac(dim_state::Int, nobs::Int, nprt_total::Int, master_rank::Int 
         # data structures, we define them as 0-size Vectors
         state_avg = Vector{Float64}(undef, 0)
         state_var = Vector{Float64}(undef, 0)
-        state_resampled = Vector{Float64}(undef, 0)
+        state_resampled = Matrix{Float64}(undef, 0, 0)
         obs_truth = Vector{Float64}(undef, 0)
         weights = Vector{Float64}(undef, 0)
     end
@@ -442,9 +442,25 @@ function write_surface_height(file::HDF5File, state::AbstractVector{T}, it::Int,
 
 end
 
+
+
+function write_timers(length::Int, size::Int, chars::AbstractVector{Char}, params::tdac_params)
+
+    write_timers(length, size, chars, params.output_filename)
+    
+end
+
+function write_timers(length::Int, size::Int, chars::AbstractVector{Char}, filename::String)
+
+    for i in 1:size
+        timer_string = String(chars[(i - 1) * length + 1 : i * length])
+        h5write(filename, "timer/rank" * string(i-1), timer_string)
+    end
+
+end
+
 function tdac(params::tdac_params)
-
-
+    
     if !MPI.Initialized()
         MPI.Init()
     end
@@ -456,9 +472,9 @@ function tdac(params::tdac_params)
 
     if params.enable_timers
         TimerOutputs.enable_debug_timings(TDAC)
-    end    
+    end
     timer = TimerOutput()
-
+    
     @timeit_debug timer "Initialization" begin
     
         states, observations, stations, weights = init_tdac(params)
@@ -490,7 +506,7 @@ function tdac(params::tdac_params)
     
         # Initialize all particles to the true initial state + noise
         states.particles .= states.truth
-        for ip in 1:params.nprt
+        for ip in 1:nprt_per_rank
             add_random_field!(@view(states.particles[:,ip]), background_grf, rng, params)
         end
 
@@ -503,7 +519,7 @@ function tdac(params::tdac_params)
         @timeit_debug timer "IO" write_grid(params)
         @timeit_debug timer "IO" write_params(params)
         @timeit_debug timer "IO" write_snapshot(states, 0, params)
-    end   
+    end
 
     for it in 1:params.n_time_step
 
@@ -601,11 +617,31 @@ function tdac(params::tdac_params)
                                                            params.dim_state * nprt_per_rank,
                                                            params.master_rank,
                                                            MPI.COMM_WORLD)
-        end        
+        end
     end
 
     if my_rank == params.master_rank && params.enable_timers
         print_timer(timer)
+    end
+
+    # Gather string representations of timers from all ranks and write them on master
+    str_timer = string(timer)
+    
+    # Assume the length of the timer string on master is the longest (because master does more stuff)
+    if my_rank == params.master_rank
+        length_timer = length(string(timer))
+    else
+        length_timer = nothing
+    end
+
+    length_timer = MPI.bcast(length_timer, params.master_rank, MPI.COMM_WORLD)
+    
+    chr_timer = Vector{Char}(rpad(str_timer,length_timer))
+    
+    timer_chars = MPI.Gather(chr_timer, params.master_rank, MPI.COMM_WORLD)
+    
+    if params.verbose && my_rank == params.master_rank
+        write_timers(length_timer, my_size, timer_chars, params)
     end
     
     return states.truth, states.avg, states.var
