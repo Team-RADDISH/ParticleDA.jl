@@ -529,7 +529,10 @@ function tdac(params::tdac_params)
     end
 
     if params.enable_timers
-        h5write(params.output_filename, "timer/rank0", string(timer))
+        print_timer(timer)
+        if verbose
+            h5write(params.output_filename, "timer/rank0", string(timer))
+        end
     end
 
     return states.truth, states.avg, states.var
