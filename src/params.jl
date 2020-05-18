@@ -42,7 +42,8 @@ Parameters for TDAC run. Arguments:
 * `padding::Int` : Min padding for circulant embedding gaussian random field generator
 * `primes::Int`: Whether the size of the minimum circulant embedding of the covariance matrix can be written as a product of small primes (2, 3, 5 and 7). Default is `true`.
 * `obs_noise_amplitude`: Multiplier for noise added to observations of the true state
-* `random_seed` : Seed number for the pseudorandom number generator
+* `random_seed::Int` : Seed number for the pseudorandom number generator
+* `enable_timers::Bool` : Flag to control run time measurements
 """
 Base.@kwdef struct tdac_params{T<:AbstractFloat}
 
@@ -91,6 +92,7 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
     obs_noise_amplitude::T = 1.0
 
     random_seed::Int = 12345
+    enable_timers::Bool = false
 end
 
 end

@@ -1,6 +1,7 @@
 module TDAC
 
 using Random, Distributions, Statistics, Distributed, Base.Threads, YAML, GaussianRandomFields, HDF5
+using TimerOutputs
 
 export tdac, main
 
@@ -430,90 +431,106 @@ end
 
 function tdac(params::tdac_params)
 
+    timer = TimerOutput()
+    if params.enable_timers
+        TimerOutputs.enable_debug_timings(TDAC)
+    end
+    
     if(params.verbose)
-        write_grid(params)
-        write_params(params)
+        @timeit_debug timer "IO" write_grid(params)
+        @timeit_debug timer "IO" write_params(params)
     end
 
-    states, observations, stations, weights = init_tdac(params)
-
-    background_grf = init_gaussian_random_field_generator(params)
-
-    rng = Random.MersenneTwister(params.random_seed)
-
-    #TODO: Put all llw2d setup in one function
-    # Set up tsunami model
-    #TODO: Put these in a data structure
-    gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx, params.ny, params.bathymetry_setup)
-
-    # obtain initial tsunami height
-    eta = reshape(@view(states.truth[1:params.dim_grid]), params.nx, params.ny)
-    LLW2d.initheight!(eta, hh, params.dx, params.dy, params.source_size)
-
-    # set station positions
-    LLW2d.set_stations!(stations.ist,
-                        stations.jst,
-                        params.station_separation,
-                        params.station_boundary,
-                        params.station_dx,
-                        params.station_dy,
-                        params.dx,
-                        params.dy)
+    @timeit_debug timer "Initialization" begin
     
-    # Initialize all particles to the true initial state + noise
-    states.particles .= states.truth
-    for ip in 1:params.nprt
-        add_random_field!(@view(states.particles[:,ip]), background_grf, rng, params)
+        states, observations, stations, weights = init_tdac(params)
+        
+        background_grf = init_gaussian_random_field_generator(params)
+
+        rng = Random.MersenneTwister(params.random_seed)
+        
+        #TODO: Put all llw2d setup in one function
+        # Set up tsunami model
+        #TODO: Put these in a data structure
+        gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx, params.ny, params.bathymetry_setup)
+        
+        # obtain initial tsunami height
+        eta = reshape(@view(states.truth[1:params.dim_grid]), params.nx, params.ny)
+        LLW2d.initheight!(eta, hh, params.dx, params.dy, params.source_size)
+        
+        # set station positions
+        LLW2d.set_stations!(stations.ist,
+                            stations.jst,
+                            params.station_separation,
+                            params.station_boundary,
+                            params.station_dx,
+                            params.station_dy,
+                            params.dx,
+                            params.dy)
+    
+        # Initialize all particles to the true initial state + noise
+        states.particles .= states.truth
+        for ip in 1:params.nprt
+            add_random_field!(@view(states.particles[:,ip]), background_grf, rng, params)
+        end
+
+        cov_obs = get_obs_covariance(stations.ist, stations.jst, params)
+        
     end
-    
+        
     # Write initial state
     if params.verbose
-        write_snapshot(states, 0, params)
-    end
-    
-    cov_obs = get_obs_covariance(stations.ist, stations.jst, params)
+        @timeit_debug timer "IO" write_snapshot(states, 0, params)
+    end   
 
     for it in 1:params.n_time_step
 
         # integrate true synthetic wavefield
-        tsunami_update!(states.truth, hm, hn, fn, fm, fe, gg, params)
+        @timeit_debug timer "True State Update" tsunami_update!(states.truth, hm, hn, fn, fm, fe, gg, params)
 
         # Forecast: Update tsunami forecast and get observations from it
-        # Parallelised with threads. 
-        Threads.@threads for ip in 1:params.nprt
+        # Parallelised with threads.
 
-            tsunami_update!(@view(states.particles[:,ip]), hm, hn, fn, fm, fe, gg, params)
+        @timeit_debug timer "Particle State Update" begin
+            Threads.@threads for ip in 1:params.nprt
 
+                tsunami_update!(@view(states.particles[:,ip]), hm, hn, fn, fm, fe, gg, params)
+                
+            end
         end
 
         # Get observation from true synthetic wavefield
-        get_obs!(observations.truth, states.truth, stations.ist, stations.jst, params)
+        @timeit_debug timer "Observations" get_obs!(observations.truth, states.truth, stations.ist, stations.jst, params)
 
         # Add process noise, get observations, add observation noise (to particles)
         for ip in 1:params.nprt
-            add_random_field!(@view(states.particles[:,ip]), background_grf, rng, params)
-            get_obs!(@view(observations.model[:,ip]),
-                     @view(states.particles[:,ip]),
-                     stations.ist,
-                     stations.jst,
-                     params)
-            add_noise!(@view(observations.model[:,ip]), rng, params)
+            @timeit_debug timer "Process Noise" add_random_field!(@view(states.particles[:,ip]), background_grf, rng, params)
+            @timeit_debug timer "Observations" get_obs!(@view(observations.model[:,ip]),
+                                                        @view(states.particles[:,ip]),
+                                                        stations.ist,
+                                                        stations.jst,
+                                                        params)
+            @timeit_debug timer "Observation Noise" add_noise!(@view(observations.model[:,ip]), rng, params)
         end
 
         # Weigh and resample particles
-        get_weights!(weights, observations.truth, observations.model, cov_obs)
-        resample!(states.resampled, states.particles, weights)
-        states.particles .= states.resampled
+        @timeit_debug timer "Weights" get_weights!(weights, observations.truth, observations.model, cov_obs)
+        @timeit_debug timer "Resample" resample!(states.resampled, states.particles, weights)
+        @timeit_debug timer "State Copy" states.particles .= states.resampled
 
         # Calculate statistical values
-        Statistics.mean!(states.avg, states.particles)
-        states.var .= @view(Statistics.var(states.particles; dims=2)[:])
+        @timeit_debug timer "Particle Mean" Statistics.mean!(states.avg, states.particles)
+        @timeit_debug timer "Particle Variance" states.var .= @view(Statistics.var(states.particles; dims=2)[:])
 
         # Write output
         if params.verbose
-            write_snapshot(states, it, params)
+            @timeit_debug timer "IO" write_snapshot(states, it, params)
         end
         
+    end
+
+    if params.enable_timers
+        h5write(params.output_filename, "timer/rank0", string(timer))
     end
 
     return states.truth, states.avg, states.var
