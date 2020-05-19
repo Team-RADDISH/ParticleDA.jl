@@ -217,7 +217,7 @@ function sample_gaussian_random_field!(field::AbstractMatrix{T},
                                        grf::RandomField,
                                        rng::Random.AbstractRNG) where T
 
-    field .= GaussianRandomFields._sample!(grf.w, grf.z, grf.grf, randn(rng, size(grf.grf.data[1])))
+    sample_gaussian_random_field!(field, grf, randn(rng, size(grf.grf.data[1])))
 
 end
 
@@ -231,28 +231,28 @@ function sample_gaussian_random_field!(field::AbstractMatrix{T},
 end
 
 function add_random_field!(state::AbstractArray{T,3},
+                           field_buffer::AbstractMatrix{T},
                            grf::RandomField,
                            rng::Random.AbstractRNG,
                            params::tdac_params) where T
 
-    add_random_field!(state, grf, rng, params.n_state_var, params.nx, params.ny)
+    add_random_field!(state, field_buffer, grf, rng, params.n_state_var, params.nx, params.ny)
 
 end
 
 # Add a gaussian random field to each variable in the state vector of one particle
 function add_random_field!(state::AbstractArray{T,3},
+                           field_buffer::AbstractMatrix{T},
                            grf::RandomField,
                            rng::Random.AbstractRNG,
                            nvar::Int,
                            nx::Int,
                            ny::Int) where T
 
-    random_field = Matrix{Float64}(undef, nx, ny)
-
     for ivar in 1:nvar
 
-        sample_gaussian_random_field!(random_field, grf, rng)
-        @view(state[:, :, nvar]) .+= random_field
+        sample_gaussian_random_field!(field_buffer, grf, rng)
+        @view(state[:, :, nvar]) .+= field_buffer
 
     end
 
@@ -467,17 +467,17 @@ function tdac(params::tdac_params)
                             params.dx,
                             params.dy)
 
-        # Initialize all particles to the true initial state + noise
-        states.particles .= states.truth
-        for ip in 1:params.nprt
-            add_random_field!(@view(states.particles[:, :, :, ip]), background_grf, rng, params)
-        end
-
         cov_obs = get_obs_covariance(stations.ist, stations.jst, params)
 
         # Buffer arrays to be used in the tsunami update
-        dx_buffer = Array{Float64}(undef, params.nx, params.ny, nthreads())
-        dy_buffer = Array{Float64}(undef, params.nx, params.ny, nthreads())
+        field_buffer_1 = Array{Float64}(undef, params.nx, params.ny, nthreads())
+        field_buffer_2 = Array{Float64}(undef, params.nx, params.ny, nthreads())
+
+        # Initialize all particles to the true initial state + noise
+        states.particles .= states.truth
+        for ip in 1:params.nprt
+            add_random_field!(@view(states.particles[:, :, :, ip]), @view(field_buffer_1[:,:,1]), background_grf, rng, params)
+        end
 
     end
 
@@ -488,7 +488,7 @@ function tdac(params::tdac_params)
     for it in 1:params.n_time_step
 
         # integrate true synthetic wavefield
-        @timeit_debug timer "True State Update" tsunami_update!(@view(dx_buffer[:, :, 1]), @view(dy_buffer[:, :, 1]),
+        @timeit_debug timer "True State Update" tsunami_update!(@view(field_buffer_1[:, :, 1]), @view(field_buffer_2[:, :, 1]),
                                                                 states.truth, hm, hn, fn, fm, fe, gg, params)
 
         # Forecast: Update tsunami forecast and get observations from it
@@ -497,7 +497,7 @@ function tdac(params::tdac_params)
 
         @timeit_debug timer "Particle State Update" Threads.@threads for ip in 1:params.nprt
 
-            tsunami_update!(@view(dx_buffer[:, :, threadid()]), @view(dx_buffer[:, :, threadid()]),
+            tsunami_update!(@view(field_buffer_1[:, :, threadid()]), @view(field_buffer_2[:, :, threadid()]),
                             @view(states.particles[:, :, :, ip]), hm, hn, fn, fm, fe, gg, params)
 
         end
@@ -507,7 +507,11 @@ function tdac(params::tdac_params)
 
         # Add process noise, get observations, add observation noise (to particles)
         for ip in 1:params.nprt
-            @timeit_debug timer "Process Noise" add_random_field!(@view(states.particles[:, :, :, ip]), background_grf, rng, params)
+            @timeit_debug timer "Process Noise" add_random_field!(@view(states.particles[:, :, :, ip]),
+                                                                  @view(field_buffer_1[:,:,1]),
+                                                                  background_grf,
+                                                                  rng,
+                                                                  params)
             @timeit_debug timer "Observations" get_obs!(@view(observations.model[:,ip]),
                                                         @view(states.particles[:, :, :, ip]),
                                                         stations.ist,
