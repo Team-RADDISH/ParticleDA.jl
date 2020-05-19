@@ -412,8 +412,8 @@ function write_surface_height(file::HDF5File, state::AbstractArray{T,3}, it::Int
 
     if !exists(subgroup, dataset_name)
         #TODO: use d_write instead of d_create when they fix it in the HDF5 package
-        ds,dtype = d_create(subgroup, dataset_name, state)
-        ds[:, :, 1] = @view(state[:, :, 1])
+        ds,dtype = d_create(subgroup, dataset_name, @view(state[:, :, 1]))
+        ds[:, :] = @view(state[:, :, 1])
         attrs(ds)["Description"] = "Ocean surface height"
         attrs(ds)["Unit"] = "m"
         attrs(ds)["Time_step"] = it
