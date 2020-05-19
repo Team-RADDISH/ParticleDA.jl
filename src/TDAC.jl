@@ -70,7 +70,9 @@ function get_obs_covariance(nobs::Int,
     return mu_boo
 end
 
-function tsunami_update!(state::AbstractArray{T,3},
+function tsunami_update!(dx_buffer::AbstractMatrix{T},
+                         dy_buffer::AbstractMatrix{T},
+                         state::AbstractArray{T,3},
                          hm::AbstractMatrix{T},
                          hn::AbstractMatrix{T},
                          fm::AbstractMatrix{T},
@@ -79,13 +81,15 @@ function tsunami_update!(state::AbstractArray{T,3},
                          gg::AbstractMatrix{T},
                          params::tdac_params) where T
 
-    tsunami_update!(state, params.n_integration_step,
+    tsunami_update!(dx_buffer, dy_buffer, state, params.n_integration_step,
                     params.dx, params.dy, params.time_step, hm, hn, fm, fn, fe, gg)
 
 end
 
 # Update tsunami wavefield with LLW2d in-place.
-function tsunami_update!(state::AbstractArray{T,3},
+function tsunami_update!(dx_buffer::AbstractMatrix{T},
+                         dy_buffer::AbstractMatrix{T},
+                         state::AbstractArray{T,3},
                          nt::Int,
                          dx::Real,
                          dy::Real,
@@ -105,10 +109,10 @@ function tsunami_update!(state::AbstractArray{T,3},
     nn_f  = @view(state[:, :, 3])
 
     dt = time_interval / nt
-    
+
     for it in 1:nt
         # Parts of model vector are aliased to tsunami heiht and velocities
-        LLW2d.timestep!(eta_f, mm_f, nn_f, eta_a, mm_a, nn_a, hm, hn, fn, fm, fe, gg, dx, dy, dt)
+        LLW2d.timestep!(dx_buffer, dy_buffer, eta_f, mm_f, nn_f, eta_a, mm_a, nn_a, hm, hn, fn, fm, fe, gg, dx, dy, dt)
     end
 
 end
@@ -280,7 +284,7 @@ struct StateVectors{T<:AbstractArray, S<:AbstractArray}
     avg::S
     var::S
     resampled::T
-    
+
 end
 
 struct ObsVectors{T<:AbstractArray,S<:AbstractArray}
@@ -294,7 +298,7 @@ struct StationVectors{T<:AbstractArray}
 
     ist::T
     jst::T
-    
+
 end
 
 function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt::Int)
@@ -319,34 +323,34 @@ function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt::Int)
     jst = Vector{Int}(undef, nobs)
 
     weights = Vector{Float64}(undef, nprt)
-    
+
     return StateVectors(state_particles, state_truth, state_avg, state_var, state_resampled), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), weights
 end
 
 function write_params(params)
 
     file = h5open(params.output_filename, "cw")
-        
+
     if !exists(file, params.title_params)
-        
+
         group = g_create(file, params.title_params)
-        
+
         fields = fieldnames(typeof(params));
-        
+
         for field in fields
-            
+
             attrs(group)[string(field)] = getfield(params, field)
-            
+
         end
-        
+
     else
-        
+
         @warn "Write failed, group " * params.title_params * " already exists in " * file.filename * "!"
-        
+
     end
 
     close(file)
-    
+
 end
 
 function write_grid(params)
@@ -354,7 +358,7 @@ function write_grid(params)
     h5open(params.output_filename, "cw") do file
 
         if !exists(file, params.title_grid)
-        
+
             # Write grid axes
             x,y = get_axes(params)
             group = g_create(file, params.title_grid)
@@ -369,7 +373,7 @@ function write_grid(params)
         else
 
             @warn "Write failed, group " * params.title_grid * " already exists in " * file.filename * "!"
-            
+
         end
 
     end
@@ -430,29 +434,29 @@ function tdac(params::tdac_params)
         TimerOutputs.enable_debug_timings(TDAC)
     end
     timer = TimerOutput()
-    
+
     if(params.verbose)
         @timeit_debug timer "IO" write_grid(params)
         @timeit_debug timer "IO" write_params(params)
     end
 
     @timeit_debug timer "Initialization" begin
-    
+
         states, observations, stations, weights = init_tdac(params)
-        
+
         background_grf = init_gaussian_random_field_generator(params)
 
         rng = Random.MersenneTwister(params.random_seed)
-        
+
         #TODO: Put all llw2d setup in one function
         # Set up tsunami model
         #TODO: Put these in a data structure
         gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx, params.ny, params.bathymetry_setup)
-        
+
         # obtain initial tsunami height
         eta = @view(states.truth[:, :, 1])
         LLW2d.initheight!(eta, hh, params.dx, params.dy, params.source_size)
-        
+
         # set station positions
         LLW2d.set_stations!(stations.ist,
                             stations.jst,
@@ -462,7 +466,7 @@ function tdac(params::tdac_params)
                             params.station_dy,
                             params.dx,
                             params.dy)
-    
+
         # Initialize all particles to the true initial state + noise
         states.particles .= states.truth
         for ip in 1:params.nprt
@@ -470,27 +474,32 @@ function tdac(params::tdac_params)
         end
 
         cov_obs = get_obs_covariance(stations.ist, stations.jst, params)
-        
+
+        # Buffer arrays to be used in the tsunami update
+        dx_buffer = Array{Float64}(undef, params.nx, params.ny, nthreads())
+        dy_buffer = Array{Float64}(undef, params.nx, params.ny, nthreads())
+
     end
-        
+
     # Write initial state
     if params.verbose
         @timeit_debug timer "IO" write_snapshot(states, 0, params)
-    end   
-
+    end
     for it in 1:params.n_time_step
 
         # integrate true synthetic wavefield
-        @timeit_debug timer "True State Update" tsunami_update!(states.truth, hm, hn, fn, fm, fe, gg, params)
+        @timeit_debug timer "True State Update" tsunami_update!(@view(dx_buffer[:, :, 1]), @view(dy_buffer[:, :, 1]),
+                                                                states.truth, hm, hn, fn, fm, fe, gg, params)
 
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads.
 
 
         @timeit_debug timer "Particle State Update" Threads.@threads for ip in 1:params.nprt
-            
-            tsunami_update!(@view(states.particles[:, :, :, ip]), hm, hn, fn, fm, fe, gg, params)
-            
+
+            tsunami_update!(@view(dx_buffer[:, :, threadid()]), @view(dx_buffer[:, :, threadid()]),
+                            @view(states.particles[:, :, :, ip]), hm, hn, fn, fm, fe, gg, params)
+
         end
 
         # Get observation from true synthetic wavefield
@@ -520,7 +529,7 @@ function tdac(params::tdac_params)
         if params.verbose
             @timeit_debug timer "IO" write_snapshot(states, it, params)
         end
-        
+
     end
 
     if params.enable_timers
@@ -538,7 +547,7 @@ function get_params(user_input_dict::Dict)
 
     user_input = (; (Symbol(k) => v for (k,v) in user_input_dict)...)
     params = tdac_params(;user_input...)
-    
+
 end
 
 # Initialise params struct with default values
