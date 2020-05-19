@@ -5,7 +5,7 @@ using LinearAlgebra, Test, HDF5, Random
     using TDAC.LLW2d
 
     dx = dy = 2e3
-    
+
     ### set_stations!
     ist = Vector{Int}(undef, 4)
     jst = Vector{Int}(undef, 4)
@@ -45,7 +45,9 @@ using LinearAlgebra, Test, HDF5, Random
     fn = rand(n, n)
     fe = rand(n,n)
     gg = rand(n,n)
-    LLW2d.timestep!(eta1, mm1, nn1, eta0, mm0, nn0, hm, hn, fm, fn, fe, gg, dx, dy, 1)
+    dxeta = Matrix{Float64}(undef, n, n)
+    dyeta = Matrix{Float64}(undef, n, n)
+    LLW2d.timestep!(dxeta, dyeta, eta1, mm1, nn1, eta0, mm0, nn0, hm, hn, fm, fn, fe, gg, dx, dy, 1)
 
     # setup.  TODO: add real tests.  So far we're just making sure code won't
     # crash
@@ -54,7 +56,7 @@ end
 
 @testset "TDAC unit tests" begin
     dx = dy = 2e3
-    
+
     @test TDAC.get_distance(3/2000, 4/2000, 0, 0, dx, dy) == 5
     @test TDAC.get_distance(10, 23, 5, 11, dx, dy) == 26000.0
 
@@ -106,7 +108,7 @@ end
     w[4] = .6
     TDAC.resample!(xrs,x,w)
     @test sum(xrs, dims=4) ≈ 2 .* x[:, :, :, 2] + 3 .* x[:, :, :, 4]
-    
+
     nx = 10
     ny = 10
     dt = 1.0
@@ -115,7 +117,9 @@ end
     x0 = x = zeros(nx, ny, 3)
     gg, hh, hm, hn, fm, fn, fe = TDAC.LLW2d.setup(nx,ny,3.0e4)
     @test size(gg) == size(hh) == size(hm) == size(fm) == size(fn) == size(fe) == (nx,ny)
-    TDAC.tsunami_update!(x, nt, dx, dy, dt, hm, hn, fm, fn, fe, gg)
+    dxeta = Matrix{Float64}(undef, nx, ny)
+    dyeta = Matrix{Float64}(undef, nx, ny)
+    TDAC.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, hm, hn, fm, fn, fe, gg)
     @test x ≈ x0
 
     # Initialise and update a tsunami on a small grid
@@ -124,10 +128,10 @@ end
     TDAC.LLW2d.initheight!(eta, hh, dx, dy, s)
     @test eta[2,2] ≈ 1.0
     @test sum(eta) ≈ 4.0
-    TDAC.tsunami_update!(x, nt, dx, dy, dt, hm, hn, fm, fn, fe, gg)
+    TDAC.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, hm, hn, fm, fn, fe, gg)
     @test sum(eta, dims=1) ≈ [0.9140901416339269 1.7010577375770561 0.9140901416339269 0.06356127284539884 0.0 0.0 0.0 0.0 0.0 0.0]
     @test sum(eta, dims=2) ≈ [0.9068784611641829; 1.6999564781646717; 0.9204175965604575; 0.06554675780099671; 0.0; 0.0; 0.0; 0.0; 0.0; 0.0]
-    
+
     # Test gaussian random field sampling
     x = 1.:2.
     y = 1.:2.
@@ -177,5 +181,5 @@ end
     x_true,x_avg,v_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_1.yaml"))
     data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_1")
     @test x_true[:] ≈ data_true
-    
+
 end

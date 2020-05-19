@@ -15,12 +15,12 @@ function set_stations!(ist::AbstractVector{Int},
                        station_separation::Int, station_boundary::Int, station_dx::Real, station_dy::Real, dx::Real, dy::Real)
     # synthetic station locations
     nst = 0
-    
+
     # let's check ist and jst have a square number of elements before computing n
     @assert mod(sqrt(length(ist)),1.0) ≈ 0
     @assert mod(sqrt(length(jst)),1.0) ≈ 0
     n = floor(Int, sqrt(length(ist)))
-    
+
     @inbounds for i in 1:n, j in 1:n
         nst += 1
         ist[nst] = floor(Int, ((i - 1) * station_separation + station_boundary )
@@ -31,7 +31,9 @@ function set_stations!(ist::AbstractVector{Int},
 end
 
 
-function timestep!(eta1::AbstractMatrix{T},
+function timestep!(dx_buffer::AbstractMatrix{T},
+                   dy_buffer::AbstractMatrix{T},
+                   eta1::AbstractMatrix{T},
                    mm1::AbstractMatrix{T},
                    nn1::AbstractMatrix{T},
                    eta0::AbstractMatrix{T},
@@ -49,29 +51,24 @@ function timestep!(eta1::AbstractMatrix{T},
         size(nn0) == size(hm) == size(hn) == size(fm) == size(fn) == size(fe) ==
         size(gg)
 
-    dxeta = Matrix{T}(undef, nx, ny)
-    dyeta = Matrix{T}(undef, nx, ny)
-    dxM   = Matrix{T}(undef, nx, ny)
-    dyN   = Matrix{T}(undef, nx, ny)
-
     # diffs
     for j in 1:ny
         for i in 2:nx
-            @inbounds dxeta[i,j] = (eta0[i,j] - eta0[i - 1,j]) / dx
+            @inbounds dx_buffer[i,j] = (eta0[i,j] - eta0[i - 1,j]) / dx
         end
-        @inbounds dxeta[1,j] = (eta0[1,j] - 0) / dx
+        @inbounds dx_buffer[1,j] = (eta0[1,j] - 0) / dx
     end
     for i in 1:nx
         for j in 2:ny
-            @inbounds dyeta[i,j] = (eta0[i,j] - eta0[i, j - 1]) / dy
+            @inbounds dy_buffer[i,j] = (eta0[i,j] - eta0[i, j - 1]) / dy
         end
-        @inbounds dyeta[i,1] = (eta0[i,1] - 0) / dy
+        @inbounds dy_buffer[i,1] = (eta0[i,1] - 0) / dy
     end
 
     # Update Velocity
     for j in 1:ny, i in 1:nx
-        @inbounds mm1[i,j] = mm0[i, j] - g_n * hm[i, j] * dxeta[i, j] * dt
-        @inbounds nn1[i,j] = nn0[i, j] - g_n * hn[i, j] * dyeta[i, j] * dt
+        @inbounds mm1[i,j] = mm0[i, j] - g_n * hm[i, j] * dx_buffer[i, j] * dt
+        @inbounds nn1[i,j] = nn0[i, j] - g_n * hn[i, j] * dy_buffer[i, j] * dt
     end
 
     # boundary condition
@@ -82,21 +79,21 @@ function timestep!(eta1::AbstractMatrix{T},
 
     # diffs
     for j in 1:ny
-        @inbounds dxM[nx, j] = (-mm1[nx, j]) / dx
+        @inbounds dx_buffer[nx, j] = (-mm1[nx, j]) / dx
         for i in 1:(nx-1)
-            @inbounds dxM[i, j] = (mm1[i + 1, j] - mm1[i, j]) / dx
+            @inbounds dx_buffer[i, j] = (mm1[i + 1, j] - mm1[i, j]) / dx
         end
     end
     for i in 1:nx
-        @inbounds dyN[i, ny] = (-nn1[i, ny]) / dy
+        @inbounds dy_buffer[i, ny] = (-nn1[i, ny]) / dy
         for j in 1:(ny-1)
-            @inbounds dyN[i, j] = (nn1[i,j + 1] - nn1[i, j]) / dy
+            @inbounds dy_buffer[i, j] = (nn1[i,j + 1] - nn1[i, j]) / dy
         end
     end
 
     # Update Wave Heigt
     for j in 1:ny, i in 1:nx
-        @inbounds eta1[i, j] = eta0[i, j] - (dxM[i, j] + dyN[i, j]) * dt
+        @inbounds eta1[i, j] = eta0[i, j] - (dx_buffer[i, j] + dy_buffer[i, j]) * dt
     end
 
     # boundary condition
