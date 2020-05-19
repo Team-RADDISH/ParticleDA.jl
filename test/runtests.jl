@@ -58,7 +58,7 @@ end
     @test TDAC.get_distance(3/2000, 4/2000, 0, 0, dx, dy) == 5
     @test TDAC.get_distance(10, 23, 5, 11, dx, dy) == 26000.0
 
-    x = Vector(1.:9.)
+    x = collect(reshape(1.0:9.0, 3, 3, 1))
     # stations at (1,1) (2,2) and (3,3) return diagonal of x[3,3]
     ist = [1,2,3]
     jst = [1,2,3]
@@ -84,7 +84,7 @@ end
     @test weights[1] > weights[2] > weights[3]
     # TODO: test with cov != I
 
-    x = reshape(Vector(1.:10.),2,5)
+    x = reshape(Vector(1.:10.), 1, 1, 2, 5)
     xrs = zero(x)
     # equal weights return the same particles
     w = ones(5) * .2
@@ -94,28 +94,28 @@ end
     w = zeros(5)
     w[1] = 1.0
     TDAC.resample!(xrs,x,w)
-    @test xrs ≈ ones(2,5) .* x[:,1]
+    @test xrs ≈ ones(size(x)) .* x[:, :, :, 1]
     # weight of 1.0 on last particle returns only copies of that particle
     w = zeros(5)
     w[end] = 1.0
     TDAC.resample!(xrs,x,w)
-    @test xrs ≈ ones(2,5) .* x[:,end]
+    @test xrs ≈ ones(size(x)) .* x[:, :, :, end]
     # weights of .4 and .6 on particles 2 and 4 return a 40/60 mix of those particles
     w = zeros(5)
     w[2] = .4
     w[4] = .6
     TDAC.resample!(xrs,x,w)
-    @test sum(xrs, dims=2)[:] ≈ 2 .* x[:,2] + 3 .* x[:,4]
+    @test sum(xrs, dims=4) ≈ 2 .* x[:, :, :, 2] + 3 .* x[:, :, :, 4]
     
     nx = 10
     ny = 10
     dt = 1.0
     nt = 1
     # 0 input gives 0 output
-    x0 = x = zeros(nx * ny * 3)
+    x0 = x = zeros(nx, ny, 3)
     gg, hh, hm, hn, fm, fn, fe = TDAC.LLW2d.setup(nx,ny,3.0e4)
     @test size(gg) == size(hh) == size(hm) == size(fm) == size(fn) == size(fe) == (nx,ny)
-    TDAC.tsunami_update!(x, nx, ny, nx*ny, nt, dx, dy, dt, hm, hn, fm, fn, fe, gg)
+    TDAC.tsunami_update!(x, nt, dx, dy, dt, hm, hn, fm, fn, fe, gg)
     @test x ≈ x0
 
     # Initialise and update a tsunami on a small grid
@@ -124,7 +124,7 @@ end
     TDAC.LLW2d.initheight!(eta, hh, dx, dy, s)
     @test eta[2,2] ≈ 1.0
     @test sum(eta) ≈ 4.0
-    TDAC.tsunami_update!(x, nx, ny, nx*ny, nt, dx, dy, dt, hm, hn, fm, fn, fe, gg)
+    TDAC.tsunami_update!(x, nt, dx, dy, dt, hm, hn, fm, fn, fe, gg)
     @test sum(eta, dims=1) ≈ [0.9140901416339269 1.7010577375770561 0.9140901416339269 0.06356127284539884 0.0 0.0 0.0 0.0 0.0 0.0]
     @test sum(eta, dims=2) ≈ [0.9068784611641829; 1.6999564781646717; 0.9204175965604575; 0.06554675780099671; 0.0; 0.0; 0.0; 0.0; 0.0; 0.0]
     
@@ -132,16 +132,16 @@ end
     x = 1.:2.
     y = 1.:2.
     grf = TDAC.init_gaussian_random_field_generator(1.0,1.0,1.0,x,y,0,false)
-    f = zeros(4)
+    f = zeros(2, 2)
     rnn = [9.,9.,9.,9.]
     TDAC.sample_gaussian_random_field!(f,grf,rnn)
-    @test f ≈ [16.2387054353321, 5.115956753643808, 5.115956753643809, 2.8210669567042155]
+    @test f ≈ [16.2387054353321 5.115956753643808; 5.115956753643809 2.8210669567042155]
 
     # Test IO
     params = TDAC.get_params(joinpath(@__DIR__, "io_unit_test.yaml"))
     rm(params.output_filename, force=true)
-    data1 = collect(range(1., length=params.dim_grid))
-    data2 = randn(params.dim_grid)
+    data1 = collect(reshape(1.0:(params.nx * params.ny), params.nx, params.ny, 1))
+    data2 = randn(params.nx, params.ny, 1)
     tstep = 0
     h5open(params.output_filename, "cw") do file 
         TDAC.write_surface_height(file, data1, tstep, params.title_syn, params)
@@ -176,6 +176,6 @@ end
 
     x_true,x_avg,v_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_1.yaml"))
     data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_1")
-    @test x_true ≈ data_true
+    @test x_true[:] ≈ data_true
     
 end
