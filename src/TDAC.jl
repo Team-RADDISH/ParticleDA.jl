@@ -239,23 +239,21 @@ function add_random_field!(state::AbstractArray{T,3},
                            rng::Random.AbstractRNG,
                            params::tdac_params) where T
 
-    add_random_field!(state, field_buffer, grf, rng, params.n_state_var, params.nx, params.ny)
+    add_random_field!(state, field_buffer, grf, rng, params.nprt)
 
 end
 
-# Add a gaussian random field to each variable in the state vector of one particle
+# Add a gaussian random field to the height in the state vector of all particles
 function add_random_field!(state::AbstractArray{T,3},
                            field_buffer::AbstractMatrix{T},
                            grf::RandomField,
                            rng::Random.AbstractRNG,
-                           nvar::Int,
-                           nx::Int,
-                           ny::Int) where T
+                           nprt::Int) where T
 
-    for ivar in 1:nvar
+    for ip in 1:nprt
 
         sample_gaussian_random_field!(field_buffer, grf, rng)
-        @view(state[:, :, nvar]) .+= field_buffer
+        @view(state[:, :, ip]) .+= field_buffer
 
     end
 
@@ -510,13 +508,14 @@ function tdac(params::tdac_params)
         # Get observation from true synthetic wavefield
         @timeit_debug timer "Observations" get_obs!(observations.truth, states.truth, stations.ist, stations.jst, params)
 
+        @timeit_debug timer "Process Noise" add_random_field!(@view(states.particles[:, :, 1, :]),
+                                                              @view(field_buffer[:, :, 1, 1]),
+                                                              background_grf,
+                                                              rng,
+                                                              params)
+
         # Add process noise, get observations, add observation noise (to particles)
         for ip in 1:params.nprt
-            @timeit_debug timer "Process Noise" add_random_field!(@view(states.particles[:, :, :, ip]),
-                                                                  @view(field_buffer[:, :, 1, 1]),
-                                                                  background_grf,
-                                                                  rng,
-                                                                  params)
             @timeit_debug timer "Observations" get_obs!(@view(observations.model[:,ip]),
                                                         @view(states.particles[:, :, :, ip]),
                                                         stations.ist,
