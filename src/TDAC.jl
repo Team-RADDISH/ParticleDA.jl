@@ -331,11 +331,10 @@ function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt::Int)
 
     weights = Vector{T}(undef, nprt)
 
-    # Buffer arrays to be used in the tsunami update
-    field_buffer_1 = Array{T}(undef, nx, ny, nthreads())
-    field_buffer_2 = Array{T}(undef, nx, ny, nthreads())
+    # Buffer array to be used in the tsunami update
+    field_buffer = Array{T}(undef, nx, ny, 2, nthreads())
 
-    return StateVectors(state_particles, state_truth, state_avg, state_var, state_resampled), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), weights, field_buffer_1, field_buffer_2
+    return StateVectors(state_particles, state_truth, state_avg, state_var, state_resampled), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), weights, field_buffer
 end
 
 function write_params(params)
@@ -453,7 +452,7 @@ function tdac(params::tdac_params)
 
     @timeit_debug timer "Initialization" begin
 
-        states, observations, stations, weights, field_buffer_1, field_buffer_2 = init_tdac(params)
+        states, observations, stations, weights, field_buffer = init_tdac(params)
 
         background_grf = init_gaussian_random_field_generator(params)
 
@@ -483,7 +482,7 @@ function tdac(params::tdac_params)
         # Initialize all particles to the true initial state + noise
         states.particles .= states.truth
         for ip in 1:params.nprt
-            add_random_field!(@view(states.particles[:, :, :, ip]), @view(field_buffer_1[:,:,1]), background_grf, rng, params)
+            add_random_field!(@view(states.particles[:, :, :, ip]), @view(field_buffer[:, :, 1, 1]), background_grf, rng, params)
         end
 
     end
@@ -495,7 +494,7 @@ function tdac(params::tdac_params)
     for it in 1:params.n_time_step
 
         # integrate true synthetic wavefield
-        @timeit_debug timer "True State Update" tsunami_update!(@view(field_buffer_1[:, :, 1]), @view(field_buffer_2[:, :, 1]),
+        @timeit_debug timer "True State Update" tsunami_update!(@view(field_buffer[:, :, 1, 1]), @view(field_buffer[:, :, 2, 1]),
                                                                 states.truth, hm, hn, fn, fm, fe, gg, params)
 
         # Forecast: Update tsunami forecast and get observations from it
@@ -503,7 +502,7 @@ function tdac(params::tdac_params)
 
         @timeit_debug timer "Particle State Update" Threads.@threads for ip in 1:params.nprt
 
-            tsunami_update!(@view(field_buffer_1[:, :, threadid()]), @view(field_buffer_2[:, :, threadid()]),
+            tsunami_update!(@view(field_buffer[:, :, 1, threadid()]), @view(field_buffer[:, :, 2, threadid()]),
                             @view(states.particles[:, :, :, ip]), hm, hn, fn, fm, fe, gg, params)
 
         end
@@ -514,7 +513,7 @@ function tdac(params::tdac_params)
         # Add process noise, get observations, add observation noise (to particles)
         for ip in 1:params.nprt
             @timeit_debug timer "Process Noise" add_random_field!(@view(states.particles[:, :, :, ip]),
-                                                                  @view(field_buffer_1[:,:,1]),
+                                                                  @view(field_buffer[:, :, 1, 1]),
                                                                   background_grf,
                                                                   rng,
                                                                   params)
