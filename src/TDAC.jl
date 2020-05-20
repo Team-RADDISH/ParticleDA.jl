@@ -219,7 +219,7 @@ function sample_gaussian_random_field!(field::AbstractMatrix{T},
                                        grf::RandomField,
                                        rng::Random.AbstractRNG) where T
 
-    @. grf.xi = rand((rng,), T)
+    @. grf.xi = randn((rng,), T)
     sample_gaussian_random_field!(field, grf, grf.xi)
 
 end
