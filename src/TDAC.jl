@@ -306,28 +306,36 @@ end
 
 function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt::Int)
 
+    # TODO: ideally this will be an argument of the function, to choose a
+    # different datatype.
+    T = Float64
+
     # Do memory allocations
 
     # Model vector for data assimilation
     #   state[:, 1]: tsunami height eta(nx,ny)
     #   state[:, 2]: vertically integrated velocity Mx(nx,ny)
     #   state[:, 3]: vertically integrated velocity Mx(nx,ny)
-    state_particles = zeros(Float64, nx, ny, n_state_var, nprt) # model state vectors for particles
-    state_truth = zeros(Float64, nx, ny, n_state_var) # model vector: true wavefield (observation)
-    state_avg = zeros(Float64, nx, ny, n_state_var) # average of particle state vectors
-    state_var = zeros(Float64, nx, ny, n_state_var) # variance of particle state vectors
-    state_resampled = Array{Float64,4}(undef, nx, ny, n_state_var, nprt)
+    state_particles = zeros(T, nx, ny, n_state_var, nprt) # model state vectors for particles
+    state_truth = zeros(T, nx, ny, n_state_var) # model vector: true wavefield (observation)
+    state_avg = zeros(T, nx, ny, n_state_var) # average of particle state vectors
+    state_var = zeros(T, nx, ny, n_state_var) # variance of particle state vectors
+    state_resampled = Array{T,4}(undef, nx, ny, n_state_var, nprt)
 
-    obs_truth = Vector{Float64}(undef, nobs)        # observed tsunami height
-    obs_model = Matrix{Float64}(undef, nobs, nprt) # forecasted tsunami height
+    obs_truth = Vector{T}(undef, nobs)        # observed tsunami height
+    obs_model = Matrix{T}(undef, nobs, nprt) # forecasted tsunami height
 
     # station location in digital grids
     ist = Vector{Int}(undef, nobs)
     jst = Vector{Int}(undef, nobs)
 
-    weights = Vector{Float64}(undef, nprt)
+    weights = Vector{T}(undef, nprt)
 
-    return StateVectors(state_particles, state_truth, state_avg, state_var, state_resampled), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), weights
+    # Buffer arrays to be used in the tsunami update
+    field_buffer_1 = Array{T}(undef, nx, ny, nthreads())
+    field_buffer_2 = Array{T}(undef, nx, ny, nthreads())
+
+    return StateVectors(state_particles, state_truth, state_avg, state_var, state_resampled), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), weights, field_buffer_1, field_buffer_2
 end
 
 function write_params(params)
@@ -445,7 +453,7 @@ function tdac(params::tdac_params)
 
     @timeit_debug timer "Initialization" begin
 
-        states, observations, stations, weights = init_tdac(params)
+        states, observations, stations, weights, field_buffer_1, field_buffer_2 = init_tdac(params)
 
         background_grf = init_gaussian_random_field_generator(params)
 
@@ -472,10 +480,6 @@ function tdac(params::tdac_params)
 
         cov_obs = get_obs_covariance(stations.ist, stations.jst, params)
 
-        # Buffer arrays to be used in the tsunami update
-        field_buffer_1 = Array{Float64}(undef, params.nx, params.ny, nthreads())
-        field_buffer_2 = Array{Float64}(undef, params.nx, params.ny, nthreads())
-
         # Initialize all particles to the true initial state + noise
         states.particles .= states.truth
         for ip in 1:params.nprt
@@ -496,7 +500,6 @@ function tdac(params::tdac_params)
 
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads.
-
 
         @timeit_debug timer "Particle State Update" Threads.@threads for ip in 1:params.nprt
 
