@@ -524,13 +524,13 @@ function tdac(params::tdac_params)
                                                               params)
 
         # Add process noise, get observations, add observation noise (to particles)
-        for ip in 1:params.nprt
-            @timeit_debug timer "Observations" get_obs!(@view(observations.model[:,ip]),
+        @timeit_debug timer "Observations" for ip in 1:params.nprt
+            get_obs!(@view(observations.model[:,ip]),
                                                         @view(states.particles[:, :, :, ip]),
                                                         stations.ist,
                                                         stations.jst,
                                                         params)
-            @timeit_debug timer "Observation Noise" add_noise!(@view(observations.model[:,ip]), rng, params)
+            add_noise!(@view(observations.model[:,ip]), rng, params)
         end
 
         # Weigh and resample particles
