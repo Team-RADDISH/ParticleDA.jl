@@ -436,6 +436,23 @@ function write_surface_height(file::HDF5File, state::AbstractArray{T,3}, it::Int
 
 end
 
+function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buffer::AbstractMatrix, rng::Random.AbstractRNG, params::tdac_params)
+
+    # Set true initial state
+    LLW2d.initheight!(@view(states.truth[:, :, 1]), hh, params.dx, params.dy, params.source_size)
+
+    # Create generator for the initial random field
+    initial_grf = init_gaussian_random_field_generator(tdac_params(;
+                                                                   sigma = params.sigma_initial_state,
+                                                                   lambda = params.lambda_initial_state,
+                                                                   nu = params.nu_initial_state))
+
+    # Initialize all particles to samples of the initial random field
+    # Since states.particles is initially created as `zeros` we don't need to set it to 0 here
+    add_random_field!(@view(states.particles[:, :, 1, :]), field_buffer, initial_grf, rng, params)
+
+end
+
 function tdac(params::tdac_params)
 
     if params.enable_timers
@@ -461,10 +478,6 @@ function tdac(params::tdac_params)
         #TODO: Put these in a data structure
         gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx, params.ny, params.bathymetry_setup)
 
-        # obtain initial tsunami height
-        eta = @view(states.truth[:, :, 1])
-        LLW2d.initheight!(eta, hh, params.dx, params.dy, params.source_size)
-
         # set station positions
         LLW2d.set_stations!(stations.ist,
                             stations.jst,
@@ -477,11 +490,7 @@ function tdac(params::tdac_params)
 
         cov_obs = get_obs_covariance(stations.ist, stations.jst, params)
 
-        # Initialize all particles to the true initial state + noise
-        states.particles .= states.truth
-        for ip in 1:params.nprt
-            add_random_field!(@view(states.particles[:, :, :, ip]), @view(field_buffer[:, :, 1, 1]), background_grf, rng, params)
-        end
+        set_initial_state!(states, hh, @view(field_buffer[:,:,1,1]), rng, params)
 
     end
 
