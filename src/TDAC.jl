@@ -176,8 +176,9 @@ function get_axes(nx::Int, ny::Int, dx::Real, dy::Real)
     return x,y
 end
 
-struct RandomField{F<:GaussianRandomField,W<:AbstractArray,Z<:AbstractArray}
+struct RandomField{F<:GaussianRandomField,X<:AbstractArray,W<:AbstractArray,Z<:AbstractArray}
     grf::F
+    xi::X
     w::W
     z::Z
 end
@@ -206,10 +207,11 @@ function init_gaussian_random_field_generator(lambda::T,
     cov = CovarianceFunction(dim, Matern(lambda, nu, σ = sigma))
     grf = GaussianRandomField(cov, CirculantEmbedding(), x, y, minpadding=pad, primes=primes)
     v = grf.data[1]
+    xi = Array{eltype(grf.cov)}(undef, size(v))
     w = Array{complex(float(eltype(v)))}(undef, size(v))
     z = Array{eltype(grf.cov)}(undef, length.(grf.pts))
 
-    return RandomField(grf, w, z)
+    return RandomField(grf, xi, w, z)
 end
 
 # Get a random sample from gaussian random field grf using random number generator rng
@@ -217,7 +219,8 @@ function sample_gaussian_random_field!(field::AbstractMatrix{T},
                                        grf::RandomField,
                                        rng::Random.AbstractRNG) where T
 
-    sample_gaussian_random_field!(field, grf, randn(rng, size(grf.grf.data[1])))
+    @. grf.xi = rand((rng,), T)
+    sample_gaussian_random_field!(field, grf, grf.xi)
 
 end
 
