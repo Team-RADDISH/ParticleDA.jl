@@ -309,10 +309,8 @@ function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::In
     # different datatype.
     T = Float64
 
-    # For now, assume that the particles can be evenly divided between ranks
-    @assert mod(nprt_total, MPI.Comm_size(MPI.COMM_WORLD)) == 0
     nprt_per_rank = Int(nprt_total / MPI.Comm_size(MPI.COMM_WORLD))
-    
+
     # Do memory allocations
 
     if MPI.Comm_rank(MPI.COMM_WORLD) == master_rank
@@ -327,7 +325,7 @@ function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::In
         state_resampled = Array{T,4}(undef, nx, ny, n_state_var, nprt_total)
         weights = Vector{T}(undef, nprt_total)
         obs_truth = Vector{T}(undef, nobs)        # observed tsunami height
-        obs_model = Matrix{T}(undef, nobs, nprt) # forecasted tsunami height
+        obs_model = Matrix{T}(undef, nobs, nprt_total) # forecasted tsunami height
     else
         state_particles = zeros(T, nx, ny, n_state_var, nprt_per_rank)
         obs_model = Matrix{T}(undef, nobs, nprt_per_rank)
@@ -335,11 +333,11 @@ function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::In
 
         # The below arrays are not needed on non-master ranks. However, to fit them in the
         # data structures, we define them as 0-size Vectors
-        state_avg = Vector{Float64}(undef, 0)
-        state_var = Vector{Float64}(undef, 0)
-        state_resampled = Matrix{Float64}(undef, 0, 0)
-        obs_truth = Vector{Float64}(undef, 0)
-        weights = Vector{Float64}(undef, 0)
+        state_avg = Array{T,3}(undef, 0, 0, 0)
+        state_var = Array{T,3}(undef, 0, 0, 0)
+        state_resampled = Array{T,4}(undef, 0, 0, 0, 0)
+        weights = Vector{T}(undef, 0)
+        obs_truth = Vector{T}(undef, 0)
     end
 
     # station location in digital grids
@@ -458,7 +456,7 @@ end
 function write_timers(length::Int, size::Int, chars::AbstractVector{Char}, params::tdac_params)
 
     write_timers(length, size, chars, params.output_filename)
-    
+
 end
 
 function write_timers(length::Int, size::Int, chars::AbstractVector{Char}, filename::String)
@@ -469,7 +467,7 @@ function write_timers(length::Int, size::Int, chars::AbstractVector{Char}, filen
     end
 end
 
-function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buffer::AbstractMatrix, rng::Random.AbstractRNG, params::tdac_params)
+function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buffer::AbstractMatrix, rng::Random.AbstractRNG, nprt_per_rank::Int, params::tdac_params)
 
     # Set true initial state
     LLW2d.initheight!(@view(states.truth[:, :, 1]), hh, params.dx, params.dy, params.source_size)
@@ -482,26 +480,29 @@ function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buff
 
     # Initialize all particles to samples of the initial random field
     # Since states.particles is initially created as `zeros` we don't need to set it to 0 here
-    add_random_field!(states.particles, field_buffer, initial_grf, rng, params)
+    add_random_field!(states.particles, field_buffer, initial_grf, rng, nprt_per_rank)
 
 end
 
 function tdac(params::tdac_params)
-    
+
     if !MPI.Initialized()
         MPI.Init()
     end
-    
+
     my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
     my_size = MPI.Comm_size(MPI.COMM_WORLD)
-    
+
+    # For now, assume that the particles can be evenly divided between ranks
+    @assert mod(params.nprt, my_size) == 0
+
     nprt_per_rank = Int(params.nprt / my_size)
 
     if params.enable_timers
         TimerOutputs.enable_debug_timings(TDAC)
     end
     timer = TimerOutput()
-    
+
     @timeit_debug timer "Initialization" begin
 
         states, observations, stations, weights, field_buffer = init_tdac(params)
@@ -527,37 +528,37 @@ function tdac(params::tdac_params)
 
         cov_obs = get_obs_covariance(stations.ist, stations.jst, params)
 
-        set_initial_state!(states, hh, @view(field_buffer[:,:,1,1]), rng, params)
+        set_initial_state!(states, hh, @view(field_buffer[:,:,1,1]), rng, nprt_per_rank, params)
 
     end
-        
+
     # Write initial state + metadata
     if(params.verbose && my_rank == params.master_rank)
         @timeit_debug timer "Particle Mean" Statistics.mean!(states.avg, states.particles)
         @timeit_debug timer "Particle Variance" states.var .= dropdims(Statistics.var(states.particles; dims=4), dims=4)
-        
+
         @timeit_debug timer "IO" write_grid(params)
         @timeit_debug timer "IO" write_params(params)
         @timeit_debug timer "IO" write_snapshot(states, 0, params)
     end
 
     for it in 1:params.n_time_step
-        
+
         if my_rank == params.master_rank
             # integrate true synthetic wavefield
             @timeit_debug timer "True State Update" tsunami_update!(@view(field_buffer[:, :, 1, 1]),
                                                                     @view(field_buffer[:, :, 2, 1]),
                                                                     states.truth, hm, hn, fn, fm, fe, gg, params)
-            
+
             # Get observation from true synthetic wavefield
             @timeit_debug timer "Observations" get_obs!(observations.truth, states.truth, stations.ist, stations.jst, params)
-            
+
         end
-                
+
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads.
 
-        @timeit_debug timer "Particle State Update" Threads.@threads for ip in 1:params.nprt
+        @timeit_debug timer "Particle State Update" Threads.@threads for ip in 1:nprt_per_rank
 
             tsunami_update!(@view(field_buffer[:, :, 1, threadid()]), @view(field_buffer[:, :, 2, threadid()]),
                             @view(states.particles[:, :, :, ip]), hm, hn, fn, fm, fe, gg, params)
@@ -569,10 +570,10 @@ function tdac(params::tdac_params)
                                                               @view(field_buffer[:, :, 1, 1]),
                                                               background_grf,
                                                               rng,
-                                                              params)
+                                                              nprt_per_rank)
 
         # Add process noise, get observations, add observation noise (to particles)
-        @timeit_debug timer "Observations" for ip in 1:params.nprt
+        @timeit_debug timer "Observations" for ip in 1:nprt_per_rank
             get_obs!(@view(observations.model[:,ip]),
                                                         @view(states.particles[:, :, :, ip]),
                                                         stations.ist,
@@ -589,7 +590,7 @@ function tdac(params::tdac_params)
         if my_rank == params.master_rank
             @timeit_debug timer "MPI Gather" MPI.Gather!(nothing,
                                                          @view(states.particles[:]),
-                                                         params.dim_state * nprt_per_rank,
+                                                         params.nx * params.ny * params.n_state_var * nprt_per_rank,
                                                          params.master_rank,
                                                          MPI.COMM_WORLD)
             @timeit_debug timer "MPI Gather" MPI.Gather!(nothing,
@@ -600,7 +601,7 @@ function tdac(params::tdac_params)
         else
             @timeit_debug timer "MPI Gather" MPI.Gather!(@view(states.particles[:]),
                                                          nothing,
-                                                         params.dim_state * nprt_per_rank,
+                                                         params.nx * params.ny * params.n_state_var * nprt_per_rank,
                                                          params.master_rank,
                                                          MPI.COMM_WORLD)
             @timeit_debug timer "MPI Gather" MPI.Gather!(@view(observations.model[:]),
@@ -611,7 +612,7 @@ function tdac(params::tdac_params)
         end
 
         if my_rank == params.master_rank
-            
+
             # Weigh and resample particles
             @timeit_debug timer "Weights" get_weights!(weights, observations.truth, observations.model, cov_obs)
             @timeit_debug timer "Resample" resample!(states.resampled, states.particles, weights)
@@ -620,55 +621,61 @@ function tdac(params::tdac_params)
             # Scatter the new particles to all ranks. In place similar to gather above.
             @timeit_debug timer "MPI Scatter" MPI.Scatter!(@view(states.particles[:]),
                                                            nothing,
-                                                           params.dim_state * nprt_per_rank,
+                                                           params.nx * params.ny * params.n_state_var * nprt_per_rank,
                                                            params.master_rank,
                                                            MPI.COMM_WORLD)
-            
+
             # Calculate statistical quantities
             @timeit_debug timer "Particle Mean" Statistics.mean!(states.avg, states.particles)
-            @timeit_debug timer "Particle Variance" states.var .= @view(Statistics.var(states.particles; dims=2)[:])
+            @timeit_debug timer "Particle Variance" states.var .= dropdims(Statistics.var(states.particles; dims=4), dims=4)
 
             # Write output
             if params.verbose
                 @timeit_debug timer "IO" write_snapshot(states, it, params)
             end
-            
+
         else
             @timeit_debug timer "MPI Scatter" MPI.Scatter!(nothing,
                                                            @view(states.particles[:]),
-                                                           params.dim_state * nprt_per_rank,
+                                                           params.nx * params.ny * params.n_state_var * nprt_per_rank,
                                                            params.master_rank,
                                                            MPI.COMM_WORLD)
         end
     end
 
     if my_rank == params.master_rank && params.enable_timers
-        print_timer(timer)
+
+    end
+
+    if params.enable_timers
+
+        if my_rank == params.master_rank
+            print_timer(timer)
+        end
+
         if params.verbose
-            h5write(params.output_filename, "timer/rank0", string(timer))
+            # Gather string representations of timers from all ranks and write them on master
+            str_timer = string(timer)
+
+            # Assume the length of the timer string on master is the longest (because master does more stuff)
+            if my_rank == params.master_rank
+                length_timer = length(string(timer))
+            else
+                length_timer = nothing
+            end
+
+            length_timer = MPI.bcast(length_timer, params.master_rank, MPI.COMM_WORLD)
+
+            chr_timer = Vector{Char}(rpad(str_timer,length_timer))
+
+            timer_chars = MPI.Gather(chr_timer, params.master_rank, MPI.COMM_WORLD)
+
+            if my_rank == params.master_rank
+                write_timers(length_timer, my_size, timer_chars, params)
+            end
         end
     end
 
-    # Gather string representations of timers from all ranks and write them on master
-    str_timer = string(timer)
-    
-    # Assume the length of the timer string on master is the longest (because master does more stuff)
-    if my_rank == params.master_rank
-        length_timer = length(string(timer))
-    else
-        length_timer = nothing
-    end
-
-    length_timer = MPI.bcast(length_timer, params.master_rank, MPI.COMM_WORLD)
-    
-    chr_timer = Vector{Char}(rpad(str_timer,length_timer))
-    
-    timer_chars = MPI.Gather(chr_timer, params.master_rank, MPI.COMM_WORLD)
-    
-    if params.verbose && my_rank == params.master_rank
-        write_timers(length_timer, my_size, timer_chars, params)
-    end
-    
     return states.truth, states.avg, states.var
 end
 
