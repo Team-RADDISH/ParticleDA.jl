@@ -495,8 +495,12 @@ function tdac(params::tdac_params)
 
     end
 
-    # Write initial state
     if params.verbose
+        # Calculate statistical quantities
+        @timeit_debug timer "Particle Mean" Statistics.mean!(states.avg, states.particles)
+        @timeit_debug timer "Particle Variance" states.var .= dropdims(Statistics.var(states.particles; dims=4), dims=4)
+
+        # Write initial state
         @timeit_debug timer "IO" write_snapshot(states, 0, params)
     end
     for it in 1:params.n_time_step
@@ -539,7 +543,7 @@ function tdac(params::tdac_params)
         @timeit_debug timer "Resample" resample!(states.resampled, states.particles, weights)
         @timeit_debug timer "State Copy" states.particles .= states.resampled
 
-        # Calculate statistical values
+        # Calculate statistical quantities
         @timeit_debug timer "Particle Mean" Statistics.mean!(states.avg, states.particles)
         @timeit_debug timer "Particle Variance" states.var .= dropdims(Statistics.var(states.particles; dims=4), dims=4)
 
