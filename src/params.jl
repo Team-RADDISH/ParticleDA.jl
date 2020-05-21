@@ -34,9 +34,12 @@ Parameters for TDAC run. Arguments:
 * `inv_rr::AbstractFloat` : Inverse of length scale, stored for performance
 * `source_size::AbstractFloat` : Initial condition parameter
 * `bathymetry_setup::AbstractFloat` : Bathymetry set-up.
-* `lambda::AbstractFloat` : Length scale for Matérn covariance kernel (could be same as rr)
-* `nu::AbstractFloat` : Smoothess parameter for Matérn covariance kernel
-* `sigma::AbstractFloat` : Marginal standard deviation for Matérn covariance kernel
+* `lambda::AbstractFloat` : Length scale for Matérn covariance kernel in background noise (could be same as rr)
+* `nu::AbstractFloat` : Smoothess parameter for Matérn covariance kernel in background noise
+* `sigma::AbstractFloat` : Marginal standard deviation for Matérn covariance kernel in background noise
+* `lambda_initial_state::AbstractFloat` : Length scale for Matérn covariance kernel in initial state of particles
+* `nu_initial_state::AbstractFloat` : Smoothess parameter for Matérn covariance kernel in initial state of particles
+* `sigma_initial_state::AbstractFloat` : Marginal standard deviation for Matérn covariance kernel in initial state of particles
 * `padding::Int` : Min padding for circulant embedding gaussian random field generator
 * `primes::Int`: Whether the size of the minimum circulant embedding of the covariance matrix can be written as a product of small primes (2, 3, 5 and 7). Default is `true`.
 * `obs_noise_amplitude`: Multiplier for noise added to observations of the true state
@@ -83,9 +86,14 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
     lambda::T = 1.0e4
     nu::T = 2.5
     sigma::T = 1.0
+
     padding::Int = 100
     primes::Bool = true
     obs_noise_amplitude::T = 1.0
+
+    lambda_initial_state::T = 1.0e4
+    nu_initial_state::T = 2.5
+    sigma_initial_state::T = 10.0
 
     random_seed::Int = 12345
     enable_timers::Bool = false

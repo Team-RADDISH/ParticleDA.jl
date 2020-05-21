@@ -233,29 +233,28 @@ function sample_gaussian_random_field!(field::AbstractMatrix{T},
 
 end
 
-function add_random_field!(state::AbstractArray{T,3},
+function add_random_field!(state::AbstractArray{T,4},
                            field_buffer::AbstractMatrix{T},
                            grf::RandomField,
                            rng::Random.AbstractRNG,
                            params::tdac_params) where T
 
-    add_random_field!(state, field_buffer, grf, rng, params.n_state_var, params.nx, params.ny)
+    add_random_field!(state, field_buffer, grf, rng, params.nprt)
 
 end
 
-# Add a gaussian random field to each variable in the state vector of one particle
-function add_random_field!(state::AbstractArray{T,3},
+# Add a gaussian random field to the height in the state vector of all particles
+function add_random_field!(state::AbstractArray{T,4},
                            field_buffer::AbstractMatrix{T},
                            grf::RandomField,
                            rng::Random.AbstractRNG,
-                           nvar::Int,
-                           nx::Int,
-                           ny::Int) where T
+                           nprt::Int) where T
 
-    for ivar in 1:nvar
+    for ip in 1:nprt
 
         sample_gaussian_random_field!(field_buffer, grf, rng)
-        @view(state[:, :, nvar]) .+= field_buffer
+        # Add the random field only to the height component.
+        @view(state[:, :, 1, ip]) .+= field_buffer
 
     end
 
@@ -438,6 +437,23 @@ function write_surface_height(file::HDF5File, state::AbstractArray{T,3}, it::Int
 
 end
 
+function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buffer::AbstractMatrix, rng::Random.AbstractRNG, params::tdac_params)
+
+    # Set true initial state
+    LLW2d.initheight!(@view(states.truth[:, :, 1]), hh, params.dx, params.dy, params.source_size)
+
+    # Create generator for the initial random field
+    initial_grf = init_gaussian_random_field_generator(tdac_params(;
+                                                                   sigma = params.sigma_initial_state,
+                                                                   lambda = params.lambda_initial_state,
+                                                                   nu = params.nu_initial_state))
+
+    # Initialize all particles to samples of the initial random field
+    # Since states.particles is initially created as `zeros` we don't need to set it to 0 here
+    add_random_field!(states.particles, field_buffer, initial_grf, rng, params)
+
+end
+
 function tdac(params::tdac_params)
 
     if params.enable_timers
@@ -463,10 +479,6 @@ function tdac(params::tdac_params)
         #TODO: Put these in a data structure
         gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx, params.ny, params.bathymetry_setup)
 
-        # obtain initial tsunami height
-        eta = @view(states.truth[:, :, 1])
-        LLW2d.initheight!(eta, hh, params.dx, params.dy, params.source_size)
-
         # set station positions
         LLW2d.set_stations!(stations.ist,
                             stations.jst,
@@ -479,11 +491,7 @@ function tdac(params::tdac_params)
 
         cov_obs = get_obs_covariance(stations.ist, stations.jst, params)
 
-        # Initialize all particles to the true initial state + noise
-        states.particles .= states.truth
-        for ip in 1:params.nprt
-            add_random_field!(@view(states.particles[:, :, :, ip]), @view(field_buffer[:, :, 1, 1]), background_grf, rng, params)
-        end
+        set_initial_state!(states, hh, @view(field_buffer[:,:,1,1]), rng, params)
 
     end
 
@@ -510,19 +518,20 @@ function tdac(params::tdac_params)
         # Get observation from true synthetic wavefield
         @timeit_debug timer "Observations" get_obs!(observations.truth, states.truth, stations.ist, stations.jst, params)
 
+        @timeit_debug timer "Process Noise" add_random_field!(states.particles,
+                                                              @view(field_buffer[:, :, 1, 1]),
+                                                              background_grf,
+                                                              rng,
+                                                              params)
+
         # Add process noise, get observations, add observation noise (to particles)
-        for ip in 1:params.nprt
-            @timeit_debug timer "Process Noise" add_random_field!(@view(states.particles[:, :, :, ip]),
-                                                                  @view(field_buffer[:, :, 1, 1]),
-                                                                  background_grf,
-                                                                  rng,
-                                                                  params)
-            @timeit_debug timer "Observations" get_obs!(@view(observations.model[:,ip]),
+        @timeit_debug timer "Observations" for ip in 1:params.nprt
+            get_obs!(@view(observations.model[:,ip]),
                                                         @view(states.particles[:, :, :, ip]),
                                                         stations.ist,
                                                         stations.jst,
                                                         params)
-            @timeit_debug timer "Observation Noise" add_noise!(@view(observations.model[:,ip]), rng, params)
+            add_noise!(@view(observations.model[:,ip]), rng, params)
         end
 
         # Weigh and resample particles
