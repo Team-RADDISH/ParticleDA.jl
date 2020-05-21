@@ -419,7 +419,7 @@ function write_snapshot(states::StateVectors, weights::AbstractVector{T}, it::In
 
 end
 
-function write_weights(file::HDF5File, weights::AbstractVector, it, params::tdac_params)
+function write_weights(file::HDF5File, weights::AbstractVector, unit::String, it::Int, params::tdac_params)
 
     group_name = "weights"
     dataset_name = "t" * string(it)
