@@ -154,8 +154,8 @@ end
     data2 = randn(params.nx, params.ny, 1)
     tstep = 0
     h5open(params.output_filename, "cw") do file 
-        TDAC.write_surface_height(file, data1, tstep, params.title_syn, params)
-        TDAC.write_surface_height(file, data2, tstep, params.title_avg, params)
+        TDAC.write_surface_height(file, data1, "m", tstep, params.title_syn, params)
+        TDAC.write_surface_height(file, data2, "inch", tstep, params.title_avg, params)
     end
     @test h5read(params.output_filename, params.state_prefix * "_" * params.title_syn * "/t0/height") ≈ data1
     @test h5read(params.output_filename, params.state_prefix * "_" * params.title_avg * "/t0/height") ≈ data2
@@ -163,7 +163,7 @@ end
     @test attr["Unit"] == "m"
     @test attr["Time_step"] == tstep
     attr = h5readattr(params.output_filename, params.state_prefix * "_" * params.title_avg * "/t0/height")
-    @test attr["Unit"] == "m"
+    @test attr["Unit"] == "inch"
     @test attr["Time_step"] == tstep
     TDAC.write_params(params)
     attr = h5readattr(params.output_filename, params.title_params)

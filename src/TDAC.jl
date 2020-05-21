@@ -389,7 +389,7 @@ function write_grid(params)
 
 end
 
-function write_snapshot(states::StateVectors, it::Int, params::tdac_params) where T
+function write_snapshot(states::StateVectors, weights::AbstractVector{T}, it::Int, params::tdac_params) where T
 
     if params.verbose
         println("Writing output at timestep = ", it)
@@ -397,15 +397,40 @@ function write_snapshot(states::StateVectors, it::Int, params::tdac_params) wher
 
     h5open(params.output_filename, "cw") do file
 
-        write_surface_height(file, states.truth, it, params.title_syn, params)
-        write_surface_height(file, states.avg, it, params.title_avg, params)
-        write_surface_height(file, states.var, it, params.title_var, params)
-
+        write_surface_height(file, states.truth, "m", it, params.title_syn, params)
+        write_surface_height(file, states.avg, "m", it, params.title_avg, params)
+        write_surface_height(file, states.var, "m^2", it, params.title_var, params)
+        write_weights(file, weights, "", it, params)
     end
 
 end
 
-function write_surface_height(file::HDF5File, state::AbstractArray{T,3}, it::Int, title::String, params::tdac_params) where T
+function write_weights(file::HDF5File, weights::AbstractVector, it, params::tdac_params)
+
+    group_name = "weights"
+    dataset_name = "t" * string(it)
+
+    if !exists(file, group_name)
+        group = g_create(file, group_name)
+    else
+        group = g_open(file, group_name)
+    end
+
+    if !exists(group, dataset_name)
+        #TODO: use d_write instead of d_create when they fix it in the HDF5 package
+        ds,dtype = d_create(group, dataset_name, weights)
+        ds[:] = weights
+        attrs(ds)["Description"] = "Particle Weights"
+        attrs(ds)["Unit"] = unit
+        attrs(ds)["Time_step"] = it
+        attrs(ds)["Time (s)"] = it * params.time_step
+    else
+        @warn "Write failed, dataset " * group_name * "/" * dataset_name *  " already exists in " * file.filename * "!"
+    end
+
+end
+
+function write_surface_height(file::HDF5File, state::AbstractArray{T,3}, unit::String, it::Int, title::String, params::tdac_params) where T
 
     group_name = params.state_prefix * "_" * title
     subgroup_name = "t" * string(it)
@@ -428,7 +453,7 @@ function write_surface_height(file::HDF5File, state::AbstractArray{T,3}, it::Int
         ds,dtype = d_create(subgroup, dataset_name, @view(state[:, :, 1]))
         ds[:, :] = @view(state[:, :, 1])
         attrs(ds)["Description"] = "Ocean surface height"
-        attrs(ds)["Unit"] = "m"
+        attrs(ds)["Unit"] = unit
         attrs(ds)["Time_step"] = it
         attrs(ds)["Time (s)"] = it * params.time_step
     else
@@ -501,7 +526,7 @@ function tdac(params::tdac_params)
         @timeit_debug timer "Particle Variance" states.var .= dropdims(Statistics.var(states.particles; dims=4), dims=4)
 
         # Write initial state
-        @timeit_debug timer "IO" write_snapshot(states, 0, params)
+        @timeit_debug timer "IO" write_snapshot(states, weights, 0, params)
     end
     for it in 1:params.n_time_step
 
@@ -549,7 +574,7 @@ function tdac(params::tdac_params)
 
         # Write output
         if params.verbose
-            @timeit_debug timer "IO" write_snapshot(states, it, params)
+            @timeit_debug timer "IO" write_snapshot(states, weights, it, params)
         end
 
     end
