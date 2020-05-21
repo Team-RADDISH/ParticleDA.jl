@@ -233,7 +233,7 @@ function sample_gaussian_random_field!(field::AbstractMatrix{T},
 
 end
 
-function add_random_field!(state::AbstractArray{T,3},
+function add_random_field!(state::AbstractArray{T,4},
                            field_buffer::AbstractMatrix{T},
                            grf::RandomField,
                            rng::Random.AbstractRNG,
@@ -244,7 +244,7 @@ function add_random_field!(state::AbstractArray{T,3},
 end
 
 # Add a gaussian random field to the height in the state vector of all particles
-function add_random_field!(state::AbstractArray{T,3},
+function add_random_field!(state::AbstractArray{T,4},
                            field_buffer::AbstractMatrix{T},
                            grf::RandomField,
                            rng::Random.AbstractRNG,
@@ -253,7 +253,8 @@ function add_random_field!(state::AbstractArray{T,3},
     for ip in 1:nprt
 
         sample_gaussian_random_field!(field_buffer, grf, rng)
-        @view(state[:, :, ip]) .+= field_buffer
+        # Add the random field only to the height component.
+        @view(state[:, :, 1, ip]) .+= field_buffer
 
     end
 
@@ -449,7 +450,7 @@ function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buff
 
     # Initialize all particles to samples of the initial random field
     # Since states.particles is initially created as `zeros` we don't need to set it to 0 here
-    add_random_field!(@view(states.particles[:, :, 1, :]), field_buffer, initial_grf, rng, params)
+    add_random_field!(states.particles, field_buffer, initial_grf, rng, params)
 
 end
 
@@ -517,7 +518,7 @@ function tdac(params::tdac_params)
         # Get observation from true synthetic wavefield
         @timeit_debug timer "Observations" get_obs!(observations.truth, states.truth, stations.ist, stations.jst, params)
 
-        @timeit_debug timer "Process Noise" add_random_field!(@view(states.particles[:, :, 1, :]),
+        @timeit_debug timer "Process Noise" add_random_field!(states.particles,
                                                               @view(field_buffer[:, :, 1, 1]),
                                                               background_grf,
                                                               rng,
