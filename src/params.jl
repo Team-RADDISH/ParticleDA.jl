@@ -43,10 +43,13 @@ Parameters for TDAC run. Arguments:
 * `padding::Int` : Min padding for circulant embedding gaussian random field generator
 * `primes::Int`: Whether the size of the minimum circulant embedding of the covariance matrix can be written as a product of small primes (2, 3, 5 and 7). Default is `true`.
 * `obs_noise_amplitude`: Multiplier for noise added to observations of the true state
+* `master_rank` : Id of MPI rank that performs serial computations
 * `random_seed::Int` : Seed number for the pseudorandom number generator
 * `enable_timers::Bool` : Flag to control run time measurements
 """
 Base.@kwdef struct tdac_params{T<:AbstractFloat}
+
+    master_rank::Int = 0
 
     nx::Int = 200
     ny::Int = 200
@@ -54,7 +57,7 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
     y_length::T = 4.0e5
     dx::T = x_length / nx
     dy::T = y_length / ny
-    
+
     n_state_var::Int = 3
 
     nobs::Int = 4
@@ -62,7 +65,7 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
     station_boundary::Int = 150
     station_dx::T = 1.0e3
     station_dy::T = 1.0e3
-    
+
     n_time_step::Int = 20
     n_integration_step::Int = 50
     time_step::T = 50.0

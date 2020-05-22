@@ -1,5 +1,6 @@
 using TDAC
 using LinearAlgebra, Test, HDF5, Random
+using MPI
 using FFTW
 
 # Disable FFTW threads: they don't seem to help much in our case.  Also, they
@@ -188,4 +189,15 @@ end
     data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_1")
     @test x_true[:] ≈ data_true
 
+end
+
+@testset "MPI" begin
+    script = joinpath(@__DIR__, "mpi.jl")
+    mktempdir() do dir
+        cd(dir) do
+            mpiexec() do cmd
+                @test success(`$(cmd) -n 2 $(Base.julia_cmd()) $(script)`)
+            end
+        end
+    end
 end
