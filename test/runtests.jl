@@ -200,7 +200,18 @@ end
     mktempdir() do dir
         cd(dir) do
             mpiexec() do cmd
-                @test success(`$(cmd) -n 2 $(Base.julia_cmd()) $(script)`)
+                run(`$(cmd) -n 2 $(Base.julia_cmd()) $(script)`)
+                # This is a dummy test.  If `run` exitsts successfully, this
+                # testset will be successful as well, if `run` errors out this
+                # testset will error out as well, and the next `@test` will not
+                # be executed.  The advantage over doing something like
+                #     @test success(`...`)
+                # is that with
+                #    run(`...`)
+                #    @test true
+                # we can directly see the output of the spawned command, which
+                # would be suppressed if using `success`.
+                @test true
             end
         end
     end
