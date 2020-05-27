@@ -516,10 +516,14 @@ function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buff
     LLW2d.initheight!(@view(states.truth[:, :, 1]), hh, params.dx, params.dy, params.source_size)
 
     # Create generator for the initial random field
-    initial_grf = init_gaussian_random_field_generator(tdac_params(;
-                                                                   sigma = params.sigma_initial_state,
-                                                                   lambda = params.lambda_initial_state,
-                                                                   nu = params.nu_initial_state))
+    x,y = get_axes(params)
+    initial_grf = init_gaussian_random_field_generator(params.lambda_initial_state,
+                                                       params.nu_initial_state,
+                                                       params.sigma_initial_state,
+                                                       x,
+                                                       y,
+                                                       params.padding,
+                                                       params.primes)
 
     # Initialize all particles to samples of the initial random field
     # Since states.particles is initially created as `zeros` we don't need to set it to 0 here
