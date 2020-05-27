@@ -1,0 +1,9 @@
+nprt: 1
+n_time_step: 1
+n_integration_step: 50
+time_step: 10.0
+nobs: 4
+nx: 50
+ny: 50
+x_length: 1.0e6
+y_length: 1.0e6
