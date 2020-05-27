@@ -75,11 +75,6 @@ end
     TDAC.get_obs!(obs,x,3,ist,jst)
     @test obs ≈ [1.,5.,9.]
 
-    # Observation covariances are ~exp(-sqrt(dx^2+dy^2)/r)
-    d11 = exp(-(sqrt(0.8e7) * 5e-5) ^ 2)
-    d22 = exp(-(sqrt(3.2e7) * 5e-5) ^ 2)
-    @test TDAC.get_obs_covariance(3,5.0e-5,dx,dy,ist,jst) ≈ [1.0 d11 d22; d11 1.0 d11; d22 d11 1.0]
-
     y = [1.0, 2.0]
     cov_obs = float(I(2))
     weights = Vector{Float64}(undef, 3)
@@ -91,7 +86,11 @@ end
     hx = [0.9 0.5 1.5; 2.1 2.5 3.5]
     TDAC.get_weights!(weights, y, hx, cov_obs)
     @test weights[1] > weights[2] > weights[3]
-    # TODO: test with cov != I
+
+    # multivariate and independent methods give same weights when covariance matrix is diagonal
+    weights2 = Vector{Float64}(undef, 3)
+    TDAC.get_weights!(weights2, y, hx, 1.0)
+    @test weights2 ≈ weights
 
     x = reshape(Vector(1.:10.), 1, 1, 2, 5)
     xrs = zero(x)

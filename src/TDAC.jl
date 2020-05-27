@@ -3,7 +3,7 @@ module TDAC
 using Random, Distributions, Statistics, MPI, Base.Threads, YAML, GaussianRandomFields, HDF5
 using TimerOutputs
 
-export tdac, main
+export tdac
 
 include("params.jl")
 include("llw2d.jl")
@@ -39,35 +39,6 @@ function get_obs!(obs::AbstractVector{T},
         iptr = (jj - 1) * nx + ii
         obs[i] = state[iptr]
     end
-end
-
-function get_obs_covariance(ist::AbstractVector{Int},
-                            jst::AbstractVector{Int},
-                            params::tdac_params)
-
-    return get_obs_covariance(params.nobs, params.inv_rr, params.dx, params.dy, ist, jst)
-
-end
-
-# Observation covariance matrix based on simple exponential decay
-function get_obs_covariance(nobs::Int,
-                            inv_rr::Real,
-                            dx::Real,
-                            dy::Real,
-                            ist::AbstractVector{Int},
-                            jst::AbstractVector{Int})
-
-    @assert nobs == length(ist) == length(jst)
-    mu_boo = Matrix{Float64}(undef, nobs, nobs)
-
-    # Estimate background error between stations
-    for j in 1:nobs, i in 1:nobs
-        # Gaussian correlation function
-        dist = get_distance(ist[i], jst[i], ist[j], jst[j], dx, dy)
-        mu_boo[i, j] = exp(-(dist * inv_rr) ^ 2)
-    end
-
-    return mu_boo
 end
 
 function tsunami_update!(dx_buffer::AbstractMatrix{T},
@@ -118,14 +89,39 @@ function tsunami_update!(dx_buffer::AbstractMatrix{T},
 end
 
 # Get weights for particles by evaluating the probability of the observations predicted by the model
-# from a multivariate normal pdf with mean equal to real observations and covariance equal to observation covariance
+# from independent normal pdfs for each observation.
+function get_weights!(weight::AbstractVector{T},
+                      obs::AbstractVector{T},
+                      obs_model::AbstractMatrix{T},
+                      obs_noise_std::T) where T
+
+    nobs = size(obs_model,1)
+    nprt = size(obs_model,2)
+    @assert size(obs,1) == nobs
+    @assert size(weight,1) == nprt
+
+    weight .= 1.0
+
+    for iobs = 1:nobs
+        for iprt = 1:nprt
+            weight[iprt] += logpdf(Normal(obs[iobs], obs_noise_std), obs_model[iobs,iprt])
+        end
+    end
+
+    @. weight = exp(weight)
+    weight ./= sum(weight)
+
+end
+
+# Get weights for particles by evaluating the probability of the observations predicted by the model
+# from a multivariate normal pdf with mean equal to real observations and covariance equal to cov_obs
 function get_weights!(weight::AbstractVector{T},
                       obs::AbstractVector{T},
                       obs_model::AbstractMatrix{T},
                       cov_obs::AbstractMatrix{T}) where T
 
-    weight .= Distributions.pdf(Distributions.MvNormal(obs, cov_obs), obs_model) # TODO: Verify that this works
-
+    weight .= Distributions.logpdf(Distributions.MvNormal(obs, cov_obs), obs_model)
+    @. weight = exp(weight)
     weight ./= sum(weight)
 
 end
@@ -262,14 +258,15 @@ end
 
 function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, params::tdac_params) where T
 
-    add_noise!(vec, rng, params.obs_noise_amplitude)
+    add_noise!(vec, rng, 0.0, params.obs_noise_std)
 
 end
 
-# Add a (0,1) normal distributed random number, scaled by amplitude, to each element of vec
-function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, amplitude::T) where T
+# Add a (mean, std) normal distributed random number to each element of vec
+function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, mean::T, std::T) where T
 
-    @. vec += amplitude * randn((rng,), T)
+    d = truncated(Normal(mean, std), 0.0, Inf)
+    @. vec += rand((rng,), d)
 
 end
 
@@ -573,8 +570,6 @@ function tdac(params::tdac_params)
                             params.dx,
                             params.dy)
 
-        cov_obs = get_obs_covariance(stations.ist, stations.jst, params)
-
         set_initial_state!(states, hh, @view(field_buffer[:,:,1,1]), rng, nprt_per_rank, params)
 
     end
@@ -661,7 +656,7 @@ function tdac(params::tdac_params)
         if my_rank == params.master_rank
 
             # Weigh and resample particles
-            @timeit_debug timer "Weights" get_weights!(weights, observations.truth, observations.model, cov_obs)
+            @timeit_debug timer "Weights" get_weights!(weights, observations.truth, observations.model, params.obs_noise_std)
             @timeit_debug timer "Resample" resample!(states.resampled, states.particles, weights)
             @timeit_debug timer "State Copy" states.particles .= states.resampled
 
