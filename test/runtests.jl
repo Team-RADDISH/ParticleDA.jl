@@ -16,7 +16,7 @@ FFTW.set_num_threads(1)
     ### set_stations!
     ist = Vector{Int}(undef, 4)
     jst = Vector{Int}(undef, 4)
-    LLW2d.set_stations!(ist, jst, 20, 150, 1e3, 1e3, dx, dy)                         
+    LLW2d.set_stations!(ist, jst, 20, 150, 1e3, 1e3, dx, dy)
     @test ist == [75, 75, 85, 85]
     @test jst == [75, 85, 75, 85]
     ist = rand(Int, 9)
@@ -75,7 +75,7 @@ end
     TDAC.get_obs!(obs,x,3,ist,jst)
     @test obs ≈ [1.,5.,9.]
 
-    # Observation covariances are ~exp(-sqrt(dx^2+dy^2)/r) 
+    # Observation covariances are ~exp(-sqrt(dx^2+dy^2)/r)
     d11 = exp(-(sqrt(0.8e7) * 5e-5) ^ 2)
     d22 = exp(-(sqrt(3.2e7) * 5e-5) ^ 2)
     @test TDAC.get_obs_covariance(3,5.0e-5,dx,dy,ist,jst) ≈ [1.0 d11 d22; d11 1.0 d11; d22 d11 1.0]
@@ -154,7 +154,7 @@ end
     data1 = collect(reshape(1.0:(params.nx * params.ny), params.nx, params.ny, 1))
     data2 = randn(params.nx, params.ny, 1)
     tstep = 0
-    h5open(params.output_filename, "cw") do file 
+    h5open(params.output_filename, "cw") do file
         TDAC.write_surface_height(file, data1, "m", tstep, params.title_syn, params)
         TDAC.write_surface_height(file, data2, "inch", tstep, params.title_avg, params)
     end
@@ -179,7 +179,7 @@ end
     attr = h5readattr(params.output_filename, params.title_grid * "/x")
     @test attr["Unit"] == "m"
     attr = h5readattr(params.output_filename, params.title_grid * "/y")
-    @test attr["Unit"] == "m"    
+    @test attr["Unit"] == "m"
     rm(params.output_filename, force=true)
 end
 
@@ -188,6 +188,10 @@ end
     x_true,x_avg,v_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_1.yaml"))
     data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_1")
     @test x_true[:] ≈ data_true
+
+    x_true,x_avg,v_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_2.yaml"))
+    data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_2")
+    @test x_true ≈ data_true
 
 end
 
