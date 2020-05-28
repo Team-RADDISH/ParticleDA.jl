@@ -88,6 +88,15 @@ function tsunami_update!(dx_buffer::AbstractMatrix{T},
 
 end
 
+#
+function normalized_exp!(weight::AbstractVector)
+
+    weight .-= maximum(weight)
+    @. weight = exp(weight)
+    weight ./= sum(weight)
+
+end
+
 # Get weights for particles by evaluating the probability of the observations predicted by the model
 # from independent normal pdfs for each observation.
 function get_weights!(weight::AbstractVector{T},
@@ -96,9 +105,7 @@ function get_weights!(weight::AbstractVector{T},
                       obs_noise_std::T) where T
 
     nobs = size(obs_model,1)
-    nprt = size(obs_model,2)
     @assert size(obs,1) == nobs
-    @assert size(weight,1) == nprt
 
     weight .= 1.0
 
@@ -106,8 +113,7 @@ function get_weights!(weight::AbstractVector{T},
         weight .+= logpdf.(Normal(obs[iobs], obs_noise_std), @view(obs_model[iobs,:]))
     end
 
-    @. weight = exp(weight)
-    weight ./= sum(weight)
+    normalized_exp!(weight)
 
 end
 
@@ -119,8 +125,8 @@ function get_weights!(weight::AbstractVector{T},
                       cov_obs::AbstractMatrix{T}) where T
 
     weight .= Distributions.logpdf(Distributions.MvNormal(obs, cov_obs), obs_model)
-    @. weight = exp(weight)
-    weight ./= sum(weight)
+
+    normalized_exp!(weight)
 
 end
 
