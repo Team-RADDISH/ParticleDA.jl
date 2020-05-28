@@ -103,9 +103,7 @@ function get_weights!(weight::AbstractVector{T},
     weight .= 1.0
 
     for iobs = 1:nobs
-        for iprt = 1:nprt
-            weight[iprt] += logpdf(Normal(obs[iobs], obs_noise_std), obs_model[iobs,iprt])
-        end
+        weight .+= logpdf.(Normal(obs[iobs], obs_noise_std), @view(obs_model[iobs,:]))
     end
 
     @. weight = exp(weight)
