@@ -30,11 +30,9 @@ Parameters for TDAC run. Arguments:
 * `title_grid::String` : Name of the grid data group in output
 * `title_params::String` : Name of the parameters data group in output
 * `nprt::Int` : Number of particles for particle filter
-* `rr::AbstractFloat` : Length scale for covariance decay
-* `inv_rr::AbstractFloat` : Inverse of length scale, stored for performance
 * `source_size::AbstractFloat` : Initial condition parameter
 * `bathymetry_setup::AbstractFloat` : Bathymetry set-up.
-* `lambda::AbstractFloat` : Length scale for Matérn covariance kernel in background noise (could be same as rr)
+* `lambda::AbstractFloat` : Length scale for Matérn covariance kernel in background noise
 * `nu::AbstractFloat` : Smoothess parameter for Matérn covariance kernel in background noise
 * `sigma::AbstractFloat` : Marginal standard deviation for Matérn covariance kernel in background noise
 * `lambda_initial_state::AbstractFloat` : Length scale for Matérn covariance kernel in initial state of particles
@@ -42,7 +40,7 @@ Parameters for TDAC run. Arguments:
 * `sigma_initial_state::AbstractFloat` : Marginal standard deviation for Matérn covariance kernel in initial state of particles
 * `padding::Int` : Min padding for circulant embedding gaussian random field generator
 * `primes::Int`: Whether the size of the minimum circulant embedding of the covariance matrix can be written as a product of small primes (2, 3, 5 and 7). Default is `true`.
-* `obs_noise_amplitude`: Multiplier for noise added to observations of the true state
+* `obs_noise_std`: Standard deviation of noise added to observations of the true state
 * `master_rank` : Id of MPI rank that performs serial computations
 * `random_seed::Int` : Seed number for the pseudorandom number generator
 * `enable_timers::Bool` : Flag to control run time measurements
@@ -80,8 +78,6 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
     title_params::String = "params"
 
     nprt::Int = 4
-    rr::T = 2.0e4
-    inv_rr::T = 1.0/rr
 
     source_size::T = 3.0e4
     bathymetry_setup::T = 3.0e4
@@ -92,7 +88,7 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
 
     padding::Int = 100
     primes::Bool = true
-    obs_noise_amplitude::T = 1.0
+    obs_noise_std::T = 1.0
 
     lambda_initial_state::T = 1.0e4
     nu_initial_state::T = 2.5
