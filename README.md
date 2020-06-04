@@ -63,6 +63,18 @@ The input file is in the yaml format. Each row contains `<parameter name> : <par
 For an example input file, see the [input file for the first integration test](https://github.com/Team-RADDISH/TDAC.jl/blob/master/test/integration_test_1.yaml). 
 Any parameters not specified in the input file will retain their default values.
 
+The particle state update is parallelised using both MPI and threading. According to our preliminary tests both methods work well at small scale. To use the threading, set the environment variable `JULIA_NUM_THREADS` to the number of threads you want to use before starting julia and then call the `tdac()` function normally. You can check the number of threads julia has available by calling in the julia REPL
+
+```julia
+Threads.nthreads()
+```
+
+To use the MPI parallelisation, write a julia script that calls the `tdac() ` function and run it in an unix shell with 
+
+```bash
+mpirun -np <your_number_of_processes> julia <your_julia_script>
+```
+
 ## Plotting (Experimental)
 
 To plot data produced by `TDAC.tdac()`, there is a [jupyter notebook](https://github.com/Team-RADDISH/TDAC.jl/blob/master/extra/Plot_tdac_output.ipynb) that plots contours of the tsunami height. Change the variable `timestamp` in the third cell to plot different time slices from the output file. More functionality may be added as the package develops.
