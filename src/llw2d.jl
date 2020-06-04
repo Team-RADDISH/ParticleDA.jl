@@ -9,10 +9,15 @@ const CUTOFF_DEPTH = 10   # shallowest water depth
 
 const g_n = 9.80665
 
-# Set station locations. Users may need to modify it
+# Set station locations.
 function set_stations!(ist::AbstractVector{Int},
                        jst::AbstractVector{Int},
-                       station_separation::Int, station_boundary::Int, station_dx::Real, station_dy::Real, dx::Real, dy::Real)
+                       station_distance_x::T,
+                       station_distance_y::T,
+                       station_boundary_x::T,
+                       station_boundary_y::T,
+                       dx::T,
+                       dy::T) where T
     # synthetic station locations
     nst = 0
 
@@ -23,10 +28,8 @@ function set_stations!(ist::AbstractVector{Int},
 
     @inbounds for i in 1:n, j in 1:n
         nst += 1
-        ist[nst] = floor(Int, ((i - 1) * station_separation + station_boundary )
-                         * station_dx / dx + 0.5)
-        jst[nst] = floor(Int, ((j - 1) * station_separation + station_boundary )
-                         * station_dy / dy + 0.5)
+        ist[nst] = floor(Int, (station_boundary_x + (i - 1) * station_distance_x) / dx)
+        jst[nst] = floor(Int, (station_boundary_y + (j - 1) * station_distance_y) / dy)
     end
 end
 

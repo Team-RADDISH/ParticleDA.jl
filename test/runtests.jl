@@ -16,12 +16,12 @@ FFTW.set_num_threads(1)
     ### set_stations!
     ist = Vector{Int}(undef, 4)
     jst = Vector{Int}(undef, 4)
-    LLW2d.set_stations!(ist, jst, 20, 150, 1e3, 1e3, dx, dy)
+    LLW2d.set_stations!(ist, jst, 20e3, 20e3, 150e3, 150e3, dx, dy)
     @test ist == [75, 75, 85, 85]
     @test jst == [75, 85, 75, 85]
     ist = rand(Int, 9)
     jst = rand(Int, 9)
-    LLW2d.set_stations!(ist, jst, 20, 150, 1e3, 1e3, dx, dy)
+    LLW2d.set_stations!(ist, jst, 20e3, 20e3, 150e3, 150e3, dx, dy)
 
     @test ist == [75, 75, 75, 85, 85, 85, 95, 95, 95]
     @test jst == [75, 85, 95, 75, 85, 95, 75, 85, 95]

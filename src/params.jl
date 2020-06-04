@@ -15,10 +15,10 @@ Parameters for TDAC run. Arguments:
 * `dy::AbstractFloat` : Distance (m) between grid points in the y direction
 * `n_state_var::Int`: Number of variables in the state vector
 * `nobs::Int` : Number of observation stations
-* `station_separation::Int` : Distance between stations in station_dx/dx grid points
-* `station_boundary::Int` : Distance between bottom left edge of box and first station in station_dx/dx grid points
-* `station_dx::AbstractFloat` : Scaling factor for distance between stations in the x direction
-* `station_dy::AbstractFloat` : Scaling factor for distance between stations in the y direction
+* `station_distance_x::Float` : Distance between stations in the x direction [m]
+* `station_distance_y::Float` : Distance between stations in the y direction [m]
+* `station_boundary_x::Float` : Distance between bottom left edge of box and first station in the x direction [m]
+* `station_boundary_y::Float` : Distance between bottom left edge of box and first station in the y direction [m]
 * `n_time_step::Int` : Number of time steps. On each time step we update the forward model forecast, get model observations, and weight and resample particles.
 * `n_integration_step::Int` : Number of sub-steps to integrate the forward model per time step.
 * `time_step::AbstractFloat` : Time step length (s)
@@ -51,18 +51,18 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
 
     nx::Int = 200
     ny::Int = 200
-    x_length::T = 4.0e5
-    y_length::T = 4.0e5
+    x_length::T = 400.0e3
+    y_length::T = 400.0e3
     dx::T = x_length / nx
     dy::T = y_length / ny
 
     n_state_var::Int = 3
 
     nobs::Int = 4
-    station_separation::Int = 20
-    station_boundary::Int = 150
-    station_dx::T = 1.0e3
-    station_dy::T = 1.0e3
+    station_distance_x::T = 20.0e3
+    station_distance_y::T = 20.0e3
+    station_boundary_x::T = 150.0e3
+    station_boundary_y::T = 150.0e3
 
     n_time_step::Int = 20
     n_integration_step::Int = 50

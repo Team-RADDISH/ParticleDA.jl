@@ -567,10 +567,10 @@ function tdac(params::tdac_params)
         # set station positions
         LLW2d.set_stations!(stations.ist,
                             stations.jst,
-                            params.station_separation,
-                            params.station_boundary,
-                            params.station_dx,
-                            params.station_dy,
+                            params.station_distance_x,
+                            params.station_distance_y,
+                            params.station_boundary_x,
+                            params.station_boundary_y,
                             params.dx,
                             params.dy)
 
@@ -621,10 +621,10 @@ function tdac(params::tdac_params)
         # Add process noise, get observations, add observation noise (to particles)
         @timeit_debug timer "Observations" for ip in 1:nprt_per_rank
             get_obs!(@view(observations.model[:,ip]),
-                                                        @view(states.particles[:, :, :, ip]),
-                                                        stations.ist,
-                                                        stations.jst,
-                                                        params)
+                     @view(states.particles[:, :, :, ip]),
+                     stations.ist,
+                     stations.jst,
+                     params)
             add_noise!(@view(observations.model[:,ip]), rng, params)
         end
 
