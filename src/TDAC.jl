@@ -2,6 +2,7 @@ module TDAC
 
 using Random, Distributions, Statistics, MPI, Base.Threads, YAML, GaussianRandomFields, HDF5
 using TimerOutputs
+using DelimitedFiles
 
 export tdac
 
@@ -404,6 +405,26 @@ function write_grid(params)
 
 end
 
+function write_stations(stations::StationVectors, params::tdac_params) where T
+
+    h5open(params.output_filename, "cw") do file
+
+        if !exists(file, params.title_stations)
+            group = g_create(file, params.title_stations)
+
+            for (dataset_name, index, d) in zip(("x", "y"), (stations.ist, stations.jst), (params.dx, params.dy))
+                ds, dtype = d_create(group, dataset_name, index)
+                ds[:] = index .* d
+                attrs(ds)["Description"] = "Station coordinates"
+                attrs(ds)["Unit"] = "m"
+            end
+        else
+            @warn "Write failed, group " * params.title_stations * " already exists in " * file.filename * "!"
+        end
+    end
+end
+
+
 function write_snapshot(states::StateVectors, weights::AbstractVector{T}, it::Int, params::tdac_params) where T
 
     if params.verbose
@@ -532,6 +553,42 @@ function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buff
 
 end
 
+function set_stations!(stations::StationVectors, params::tdac_params) where T
+
+    set_stations!(stations.ist,
+                  stations.jst,
+                  params.station_filename,
+                  params.station_distance_x,
+                  params.station_distance_y,
+                  params.station_boundary_x,
+                  params.station_boundary_y,
+                  params.dx,
+                  params.dy)
+
+end
+
+function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::String, distance_x::T, distance_y::T, boundary_x::T, boundary_y::T, dx::T, dy::T) where T
+
+    read_stations = filename != ""
+    station_read_success = false
+
+    if read_stations
+        try
+            coords = readdlm(filename, ',', Float64, '\n'; comments=true, comment_char='#')
+            ist .= floor.(Int, coords[:,1] / dx)
+            jst .= floor.(Int, coords[:,2] / dy)
+            station_read_success = true
+        catch err
+            @warn "Could not read stations from " * filename * ". Station locations will be generated using parameters."
+        end
+    end
+
+    if !read_stations || !station_read_success
+        LLW2d.set_stations!(ist,jst,distance_x,distance_y,boundary_x,boundary_y,dx,dy)
+    end
+
+end
+
 function tdac(params::tdac_params)
 
     if !MPI.Initialized()
@@ -559,20 +616,11 @@ function tdac(params::tdac_params)
 
         rng = Random.MersenneTwister(params.random_seed)
 
-        #TODO: Put all llw2d setup in one function
         # Set up tsunami model
         #TODO: Put these in a data structure
         gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx, params.ny, params.bathymetry_setup)
 
-        # set station positions
-        LLW2d.set_stations!(stations.ist,
-                            stations.jst,
-                            params.station_distance_x,
-                            params.station_distance_y,
-                            params.station_boundary_x,
-                            params.station_boundary_y,
-                            params.dx,
-                            params.dy)
+        set_stations!(stations, params)
 
         set_initial_state!(states, hh, @view(field_buffer[:,:,1,1]), rng, nprt_per_rank, params)
 
@@ -585,6 +633,7 @@ function tdac(params::tdac_params)
 
         @timeit_debug timer "IO" write_grid(params)
         @timeit_debug timer "IO" write_params(params)
+        @timeit_debug timer "IO" write_stations(stations, params)
         @timeit_debug timer "IO" write_snapshot(states, weights, 0, params)
     end
 

@@ -15,6 +15,7 @@ Parameters for TDAC run. Arguments:
 * `dy::AbstractFloat` : Distance (m) between grid points in the y direction
 * `n_state_var::Int`: Number of variables in the state vector
 * `nobs::Int` : Number of observation stations
+* `station_filename::String` : Name of input file for station coordinates
 * `station_distance_x::Float` : Distance between stations in the x direction [m]
 * `station_distance_y::Float` : Distance between stations in the y direction [m]
 * `station_boundary_x::Float` : Distance between bottom left edge of box and first station in the x direction [m]
@@ -28,6 +29,7 @@ Parameters for TDAC run. Arguments:
 * `title_da::String` : Suffix of the data assimilated data group in output
 * `title_syn::String` : Suffix of the true state data group in output
 * `title_grid::String` : Name of the grid data group in output
+* `title_stations::String` : Name of the station coordinates data group in output
 * `title_params::String` : Name of the parameters data group in output
 * `nprt::Int` : Number of particles for particle filter
 * `source_size::AbstractFloat` : Initial condition parameter
@@ -58,6 +60,7 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
 
     n_state_var::Int = 3
 
+    station_filename::String = ""
     nobs::Int = 4
     station_distance_x::T = 20.0e3
     station_distance_y::T = 20.0e3
@@ -75,6 +78,7 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
     title_var::String = "var"
     title_syn::String = "syn"
     title_grid::String = "grid"
+    title_stations::String = "stations"
     title_params::String = "params"
 
     nprt::Int = 4
