@@ -16,12 +16,12 @@ FFTW.set_num_threads(1)
     ### set_stations!
     ist = Vector{Int}(undef, 4)
     jst = Vector{Int}(undef, 4)
-    LLW2d.set_stations!(ist, jst, 20, 150, 1e3, 1e3, dx, dy)
+    LLW2d.set_stations!(ist, jst, 20e3, 20e3, 150e3, 150e3, dx, dy)
     @test ist == [75, 75, 85, 85]
     @test jst == [75, 85, 75, 85]
     ist = rand(Int, 9)
     jst = rand(Int, 9)
-    LLW2d.set_stations!(ist, jst, 20, 150, 1e3, 1e3, dx, dy)
+    LLW2d.set_stations!(ist, jst, 20e3, 20e3, 150e3, 150e3, dx, dy)
 
     @test ist == [75, 75, 75, 85, 85, 85, 95, 95, 95]
     @test jst == [75, 85, 95, 75, 85, 95, 75, 85, 95]
@@ -179,7 +179,20 @@ end
     @test attr["Unit"] == "m"
     attr = h5readattr(params.output_filename, params.title_grid * "/y")
     @test attr["Unit"] == "m"
-    rm(params.output_filename, force=true)
+
+    stations = TDAC.StationVectors(zeros(Int,4), zeros(Int,4))
+    TDAC.set_stations!(stations, params)
+    @test stations.ist == [5, 5, 10, 10]
+    @test stations.jst == [5, 10, 5, 10]
+    TDAC.write_stations(stations, params)
+    @test h5read(params.output_filename, params.title_stations * "/x") ≈ stations.ist .* params.dx
+    @test h5read(params.output_filename, params.title_stations * "/y") ≈ stations.jst .* params.dy
+    attr = h5readattr(params.output_filename, params.title_stations * "/x")
+    @test attr["Unit"] == "m"
+    attr = h5readattr(params.output_filename, params.title_stations * "/y")
+    @test attr["Unit"] == "m"
+
+    rm(params.output_filename, force=true)    
 end
 
 @testset "TDAC integration tests" begin
