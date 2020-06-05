@@ -179,7 +179,20 @@ end
     @test attr["Unit"] == "m"
     attr = h5readattr(params.output_filename, params.title_grid * "/y")
     @test attr["Unit"] == "m"
-    rm(params.output_filename, force=true)
+
+    stations = TDAC.StationVectors(zeros(Int,4), zeros(Int,4))
+    TDAC.set_stations!(stations, params)
+    @test stations.ist == [5, 5, 10, 10]
+    @test stations.jst == [5, 10, 5, 10]
+    TDAC.write_stations(stations, params)
+    @test h5read(params.output_filename, params.title_stations * "/x") ≈ stations.ist .* params.dx
+    @test h5read(params.output_filename, params.title_stations * "/y") ≈ stations.jst .* params.dy
+    attr = h5readattr(params.output_filename, params.title_stations * "/x")
+    @test attr["Unit"] == "m"
+    attr = h5readattr(params.output_filename, params.title_stations * "/y")
+    @test attr["Unit"] == "m"
+
+    rm(params.output_filename, force=true)    
 end
 
 @testset "TDAC integration tests" begin

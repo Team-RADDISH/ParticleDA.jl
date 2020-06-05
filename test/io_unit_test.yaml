@@ -1,2 +1,3 @@
 output_filename: unit_test.h5
+station_filename: station_test.txt
 verbose: false
