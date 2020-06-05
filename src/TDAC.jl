@@ -569,22 +569,11 @@ end
 
 function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::String, distance_x::T, distance_y::T, boundary_x::T, boundary_y::T, dx::T, dy::T) where T
 
-    read_stations = filename != ""
-    station_read_success = false
-
-    if read_stations
-        try
-            coords = readdlm(filename, ',', Float64, '\n'; comments=true, comment_char='#')
-            ist .= floor.(Int, coords[:,1] / dx)
-            jst .= floor.(Int, coords[:,2] / dy)
-            station_read_success = true
-        catch err
-            @show err
-            @warn "Could not read stations from " * filename * ". Station locations will be generated using parameters."
-        end
-    end
-
-    if !read_stations || !station_read_success
+    if filename != ""
+        coords = readdlm(filename, ',', Float64, '\n'; comments=true, comment_char='#')
+        ist .= floor.(Int, coords[:,1] / dx)
+        jst .= floor.(Int, coords[:,2] / dy)
+    else
         LLW2d.set_stations!(ist,jst,distance_x,distance_y,boundary_x,boundary_y,dx,dy)
     end
 
