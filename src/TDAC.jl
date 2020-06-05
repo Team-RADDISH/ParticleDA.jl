@@ -579,6 +579,7 @@ function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::Strin
             jst .= floor.(Int, coords[:,2] / dy)
             station_read_success = true
         catch err
+            @show err
             @warn "Could not read stations from " * filename * ". Station locations will be generated using parameters."
         end
     end
