@@ -235,7 +235,7 @@ function sample_gaussian_random_field!(field::AbstractMatrix{T},
 end
 
 function add_random_field!(state::AbstractArray{T,4},
-                           field_buffer::AbstractMatrix{T},
+                           field_buffer::AbstractArray{T,3},
                            grf::RandomField,
                            rng::Random.AbstractRNG,
                            params::tdac_params) where T
@@ -246,16 +246,16 @@ end
 
 # Add a gaussian random field to the height in the state vector of all particles
 function add_random_field!(state::AbstractArray{T,4},
-                           field_buffer::AbstractMatrix{T},
+                           field_buffer::AbstractArray{T,3},
                            grf::RandomField,
                            rng::Random.AbstractRNG,
                            nprt::Int) where T
 
-    for ip in 1:nprt
+    Threads.@threads for ip in 1:nprt
 
-        sample_gaussian_random_field!(field_buffer, grf, rng)
+        sample_gaussian_random_field!(@view(field_buffer[:, :, threadid()]), grf, rng)
         # Add the random field only to the height component.
-        @view(state[:, :, 1, ip]) .+= field_buffer
+        @view(state[:, :, 1, ip]) .+= @view(field_buffer[:, :, threadid()])
 
     end
 
@@ -347,7 +347,7 @@ function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::In
     jst = Vector{Int}(undef, nobs)
 
     # Buffer array to be used in the tsunami update
-    field_buffer = Array{T}(undef, nx, ny, 2, nthreads())
+    field_buffer = Array{T}(undef, nx, ny, nthreads(), 2)
 
     return StateVectors(state_particles, state_truth, state_avg, state_var, state_resampled), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), weights, field_buffer
 end
@@ -532,7 +532,7 @@ function write_timers(length::Int, size::Int, chars::AbstractVector{Char}, filen
     end
 end
 
-function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buffer::AbstractMatrix, rng::Random.AbstractRNG, nprt_per_rank::Int, params::tdac_params)
+function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buffer::AbstractArray{T, 3}, rng::Random.AbstractRNG, nprt_per_rank::Int, params::tdac_params) where T
 
     # Set true initial state
     LLW2d.initheight!(@view(states.truth[:, :, 1]), hh, params.dx, params.dy, params.source_size)
@@ -612,7 +612,7 @@ function tdac(params::tdac_params)
 
         set_stations!(stations, params)
 
-        set_initial_state!(states, hh, @view(field_buffer[:,:,1,1]), rng, nprt_per_rank, params)
+        set_initial_state!(states, hh, @view(field_buffer[:,:,:,1]), rng, nprt_per_rank, params)
 
     end
 
@@ -632,7 +632,7 @@ function tdac(params::tdac_params)
         if my_rank == params.master_rank
             # integrate true synthetic wavefield
             @timeit_debug timer "True State Update" tsunami_update!(@view(field_buffer[:, :, 1, 1]),
-                                                                    @view(field_buffer[:, :, 2, 1]),
+                                                                    @view(field_buffer[:, :, 1, 2]),
                                                                     states.truth, hm, hn, fn, fm, fe, gg, params)
 
             # Get observation from true synthetic wavefield
@@ -645,14 +645,14 @@ function tdac(params::tdac_params)
 
         @timeit_debug timer "Particle State Update" Threads.@threads for ip in 1:nprt_per_rank
 
-            tsunami_update!(@view(field_buffer[:, :, 1, threadid()]), @view(field_buffer[:, :, 2, threadid()]),
+            tsunami_update!(@view(field_buffer[:, :, threadid(), 1]), @view(field_buffer[:, :, threadid(), 2]),
                             @view(states.particles[:, :, :, ip]), hm, hn, fn, fm, fe, gg, params)
 
         end
 
 
         @timeit_debug timer "Process Noise" add_random_field!(states.particles,
-                                                              @view(field_buffer[:, :, 1, 1]),
+                                                              @view(field_buffer[:, :, :, 1]),
                                                               background_grf,
                                                               rng,
                                                               nprt_per_rank)
