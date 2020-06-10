@@ -132,18 +132,16 @@ function get_weights!(weight::AbstractVector{T},
 end
 
 # Resample particles from given weights using Stochastic Universal Sampling
-function resample!(state_resampled::AbstractArray{T,4}, state::AbstractArray{T,4}, weight::AbstractVector{S}) where {T,S}
+function resample!(resampled_indices::AbstractVector{Int}, weight::AbstractVector{T}) where T
 
-    nprt = size(state, 4)
-    @assert length(weight) == nprt
-
+    nprt = length(weight)
     nprt_inv = 1.0 / nprt
     k = 1
 
     #TODO: Do we need to sort state by weight here?
 
     weight_cdf = cumsum(weight)
-    u0 = nprt_inv * Random.rand(S)
+    u0 = nprt_inv * Random.rand(T)
 
     # Note: To parallelise this loop, updates to k and u have to be atomic.
     # TODO: search for better parallel implementations
@@ -155,11 +153,24 @@ function resample!(state_resampled::AbstractArray{T,4}, state::AbstractArray{T,4
             k += 1
         end
 
-        for is in CartesianIndices(@view(state[:, :, :, 1]))
-            state_resampled[CartesianIndex(is, ip)] = state[CartesianIndex(is, k)]
-        end
+        resampled_indices[ip] = k
 
     end
+
+end
+
+function copy_resampled_state!(state::AbstractArray{T,4}, state_buffer::AbstractArray{T,4}, indices::AbstractVector{Int}) where T
+
+    nprt = size(state, 4)
+    @assert length(indices) == nprt
+
+    for ip in 1:nprt
+        for is in CartesianIndices(@view(state[:, :, :, 1]))
+            state_buffer[CartesianIndex(is, ip)] = state[CartesianIndex(is, indices[ip])]
+        end
+    end
+
+    state = state_buffer
 
 end
 
@@ -284,10 +295,10 @@ end
 struct StateVectors{T<:AbstractArray, S<:AbstractArray}
 
     particles::T
+    buffer::T
     truth::S
     avg::S
     var::S
-    resampled::T
 
 end
 
@@ -349,7 +360,7 @@ function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::In
     # Buffer array to be used in the tsunami update
     field_buffer = Array{T}(undef, nx, ny, 2, nthreads())
 
-    return StateVectors(state_particles, state_truth, state_avg, state_var, state_resampled), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), weights, field_buffer
+    return StateVectors(state_particles, state_resampled, state_truth, state_avg, state_var), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), weights, field_buffer
 end
 
 function write_params(params)
@@ -614,6 +625,8 @@ function tdac(params::tdac_params)
 
         set_initial_state!(states, hh, @view(field_buffer[:,:,1,1]), rng, nprt_per_rank, params)
 
+        resampling_indices = Vector{Int}(undef,params.nprt)
+
     end
 
     # Write initial state + metadata
@@ -700,8 +713,8 @@ function tdac(params::tdac_params)
 
             # Weigh and resample particles
             @timeit_debug timer "Weights" get_weights!(weights, observations.truth, observations.model, params.obs_noise_std)
-            @timeit_debug timer "Resample" resample!(states.resampled, states.particles, weights)
-            @timeit_debug timer "State Copy" states.particles .= states.resampled
+            @timeit_debug timer "Resample" resample!(resampling_indices, weights)
+            @timeit_debug timer "State Copy" copy_resampled_state!(states.particles, states.buffer, resampling_indices)
 
             # Scatter the new particles to all ranks. In place similar to gather above.
             @timeit_debug timer "MPI Scatter" MPI.Scatter!(@view(states.particles[:]),

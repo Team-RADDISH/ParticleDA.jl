@@ -92,28 +92,27 @@ end
     TDAC.get_weights!(weights2, y, hx, 1.0)
     @test weights2 ≈ weights
 
-    x = reshape(Vector(1.:10.), 1, 1, 2, 5)
-    xrs = zero(x)
+    id = zeros(Int, 5)
     # equal weights return the same particles
     w = ones(5) * .2
-    TDAC.resample!(xrs,x,w)
-    @test xrs ≈ x
+    TDAC.resample!(id,w)
+    @test sort(id) == [1,2,3,4,5]
     # weight of 1.0 on first particle returns only copies of that particle
     w = zeros(5)
     w[1] = 1.0
-    TDAC.resample!(xrs,x,w)
-    @test xrs ≈ ones(size(x)) .* x[:, :, :, 1]
+    TDAC.resample!(id,w)
+    @test id == [1,1,1,1,1]
     # weight of 1.0 on last particle returns only copies of that particle
     w = zeros(5)
     w[end] = 1.0
-    TDAC.resample!(xrs,x,w)
-    @test xrs ≈ ones(size(x)) .* x[:, :, :, end]
+    TDAC.resample!(id,w)
+    @test id == [5,5,5,5,5]
     # weights of .4 and .6 on particles 2 and 4 return a 40/60 mix of those particles
     w = zeros(5)
     w[2] = .4
     w[4] = .6
-    TDAC.resample!(xrs,x,w)
-    @test sum(xrs, dims=4) ≈ 2 .* x[:, :, :, 2] + 3 .* x[:, :, :, 4]
+    TDAC.resample!(id,w)
+    @test sort(id) == [2,2,4,4,4]
 
     nx = 10
     ny = 10
