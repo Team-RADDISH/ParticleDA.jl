@@ -1,6 +1,7 @@
 module TDAC
 
 using Random, Distributions, Statistics, MPI, Base.Threads, YAML, GaussianRandomFields, HDF5
+import Future
 using TimerOutputs
 using DelimitedFiles
 
@@ -237,7 +238,7 @@ end
 function add_random_field!(state::AbstractArray{T,4},
                            field_buffer::AbstractArray{T,4},
                            grf::RandomField,
-                           rng::Random.AbstractRNG,
+                           rng::AbstractVector{<:Random.AbstractRNG},
                            params::tdac_params) where T
 
     add_random_field!(state, field_buffer, grf, rng, params.nprt)
@@ -248,12 +249,12 @@ end
 function add_random_field!(state::AbstractArray{T,4},
                            field_buffer::AbstractArray{T,4},
                            grf::RandomField,
-                           rng::Random.AbstractRNG,
+                           rng::AbstractVector{<:Random.AbstractRNG},
                            nprt::Int) where T
 
     Threads.@threads for ip in 1:nprt
 
-        sample_gaussian_random_field!(@view(field_buffer[:, :, 1, threadid()]), grf, rng)
+        sample_gaussian_random_field!(@view(field_buffer[:, :, 1, threadid()]), grf, rng[threadid()])
         # Add the random field only to the height component.
         @view(state[:, :, 1, ip]) .+= @view(field_buffer[:, :, 1, threadid()])
 
@@ -532,7 +533,7 @@ function write_timers(length::Int, size::Int, chars::AbstractVector{Char}, filen
     end
 end
 
-function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buffer::AbstractArray{T, 4}, rng::Random.AbstractRNG, nprt_per_rank::Int, params::tdac_params) where T
+function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buffer::AbstractArray{T, 4}, rng::AbstractVector{<:Random.AbstractRNG}, nprt_per_rank::Int, params::tdac_params) where T
 
     # Set true initial state
     LLW2d.initheight!(@view(states.truth[:, :, 1]), hh, params.dx, params.dy, params.source_size)
@@ -604,7 +605,9 @@ function tdac(params::tdac_params)
 
         background_grf = init_gaussian_random_field_generator(params)
 
-        rng = Random.MersenneTwister(params.random_seed)
+        rng = let m = Random.MersenneTwister(params.random_seed)
+            [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
+        end;
 
         # Set up tsunami model
         #TODO: Put these in a data structure
@@ -664,7 +667,7 @@ function tdac(params::tdac_params)
                      stations.ist,
                      stations.jst,
                      params)
-            add_noise!(@view(observations.model[:,ip]), rng, params)
+            add_noise!(@view(observations.model[:,ip]), rng[1], params)
         end
 
         # Gather all particles to master rank
