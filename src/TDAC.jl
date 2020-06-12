@@ -165,8 +165,8 @@ function copy_resampled_state!(state::AbstractArray{T,4}, state_buffer::Abstract
     @assert length(indices) == nprt
 
     for ip in 1:nprt
-        for is in CartesianIndices(@view(state[:, :, :, 1]))
-            state_buffer[CartesianIndex(is, ip)] = state[CartesianIndex(is, indices[ip])]
+        for is in CartesianIndices(@view(state[:, :, 1, 1]))
+            state_buffer[CartesianIndex(is, 1, ip)] = state[CartesianIndex(is, 1, indices[ip])]
         end
     end
 
