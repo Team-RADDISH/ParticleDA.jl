@@ -332,26 +332,24 @@ function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::In
         #   state[:, 2]: vertically integrated velocity Mx(nx,ny)
         #   state[:, 3]: vertically integrated velocity Mx(nx,ny)
         state_particles = zeros(T, nx, ny, n_state_var, nprt_total) # model state vectors for particles
-        state_truth = zeros(T, nx, ny, n_state_var) # model vector: true wavefield (observation)
         state_avg = zeros(T, nx, ny, n_state_var) # average of particle state vectors
         state_var = zeros(T, nx, ny, n_state_var) # variance of particle state vectors
         state_resampled = Array{T,4}(undef, nx, ny, n_state_var, nprt_total)
         weights = Vector{T}(undef, nprt_total)
-        obs_truth = Vector{T}(undef, nobs)        # observed tsunami height
-        obs_model = Matrix{T}(undef, nobs, nprt_total) # forecasted tsunami height
     else
         state_particles = zeros(T, nx, ny, n_state_var, nprt_per_rank)
-        obs_model = Matrix{T}(undef, nobs, nprt_per_rank)
-        state_truth = Array{T,3}(undef, nx, ny, n_state_var)
 
         # The below arrays are not needed on non-master ranks. However, to fit them in the
         # data structures, we define them as 0-size Vectors
         state_avg = Array{T,3}(undef, 0, 0, 0)
         state_var = Array{T,3}(undef, 0, 0, 0)
         state_resampled = Array{T,4}(undef, 0, 0, 0, 0)
-        weights = Vector{T}(undef, 0)
-        obs_truth = Vector{T}(undef, 0)
+        weights = Vector{T}(undef, nprt_per_rank)
     end
+
+    state_truth = zeros(T, nx, ny, n_state_var) # model vector: true wavefield (observation)
+    obs_truth = Vector{T}(undef, nobs)          # observed tsunami height
+    obs_model = Matrix{T}(undef, nobs, nprt_per_rank) # forecasted tsunami height
 
     # station location in digital grids
     ist = Vector{Int}(undef, nobs)
@@ -642,16 +640,13 @@ function tdac(params::tdac_params)
 
     for it in 1:params.n_time_step
 
-        if my_rank == params.master_rank
-            # integrate true synthetic wavefield
-            @timeit_debug timer "True State Update" tsunami_update!(@view(field_buffer[:, :, 1, 1]),
-                                                                    @view(field_buffer[:, :, 2, 1]),
-                                                                    states.truth, hm, hn, fn, fm, fe, gg, params)
+        # integrate true synthetic wavefield
+        @timeit_debug timer "True State Update" tsunami_update!(@view(field_buffer[:, :, 1, 1]),
+                                                                @view(field_buffer[:, :, 2, 1]),
+                                                                states.truth, hm, hn, fn, fm, fe, gg, params)
 
-            # Get observation from true synthetic wavefield
-            @timeit_debug timer "Observations" get_obs!(observations.truth, states.truth, stations.ist, stations.jst, params)
-
-        end
+        # Get observation from true synthetic wavefield
+        @timeit_debug timer "Observations" get_obs!(observations.truth, states.truth, stations.ist, stations.jst, params)
 
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads.
@@ -680,7 +675,12 @@ function tdac(params::tdac_params)
             add_noise!(@view(observations.model[:,ip]), rng, params)
         end
 
-        # Gather all particles to master rank
+        @timeit_debug timer "Weights" get_weights!(@view(weights[1:nprt_per_rank]),
+                                                         observations.truth,
+                                                         observations.model,
+                                                         params.obs_noise_std)
+
+        # Gather all particles and weights to master rank
         # Doing MPI collectives in place to save memory allocations.
         # This style with if statmeents is recommended instead of MPI.Gather_in_place! which is a bit strange.
         # Note that only master_rank allocates memory for all particles. Other ranks only allocate
@@ -692,19 +692,20 @@ function tdac(params::tdac_params)
                                                          params.master_rank,
                                                          MPI.COMM_WORLD)
             @timeit_debug timer "MPI Gather" MPI.Gather!(nothing,
-                                                         @view(observations.model[:]),
-                                                         params.nobs * nprt_per_rank,
+                                                         weights,
+                                                         nprt_per_rank,
                                                          params.master_rank,
                                                          MPI.COMM_WORLD)
+
         else
             @timeit_debug timer "MPI Gather" MPI.Gather!(@view(states.particles[:]),
                                                          nothing,
                                                          params.nx * params.ny * params.n_state_var * nprt_per_rank,
                                                          params.master_rank,
                                                          MPI.COMM_WORLD)
-            @timeit_debug timer "MPI Gather" MPI.Gather!(@view(observations.model[:]),
+            @timeit_debug timer "MPI Gather" MPI.Gather!(weights,
                                                          nothing,
-                                                         params.nobs * nprt_per_rank,
+                                                         nprt_per_rank,
                                                          params.master_rank,
                                                          MPI.COMM_WORLD)
         end
@@ -712,7 +713,6 @@ function tdac(params::tdac_params)
         if my_rank == params.master_rank
 
             # Weigh and resample particles
-            @timeit_debug timer "Weights" get_weights!(weights, observations.truth, observations.model, params.obs_noise_std)
             @timeit_debug timer "Resample" resample!(resampling_indices, weights)
             @timeit_debug timer "State Copy" copy_resampled_state!(states.particles, states.buffer, resampling_indices)
 
