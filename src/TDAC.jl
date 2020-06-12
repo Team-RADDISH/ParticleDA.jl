@@ -715,7 +715,7 @@ function tdac(params::tdac_params)
 
             # Calculate statistical quantities
             @timeit_debug timer "Particle Mean" Statistics.mean!(states.avg, states.particles)
-            @timeit_debug timer "Particle Variance" states.var .= dropdims(Statistics.var(states.particles; dims=4), dims=4)
+            @timeit_debug timer "Particle Variance" Statistics.varm!(states.var, states.particles, states.avg)
 
             # Write output
             if params.verbose
