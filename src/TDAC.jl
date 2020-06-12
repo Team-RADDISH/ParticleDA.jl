@@ -1,6 +1,7 @@
 module TDAC
 
 using Random, Distributions, Statistics, MPI, Base.Threads, YAML, GaussianRandomFields, HDF5
+import Future
 using TimerOutputs
 using DelimitedFiles
 
@@ -246,9 +247,9 @@ function sample_gaussian_random_field!(field::AbstractMatrix{T},
 end
 
 function add_random_field!(state::AbstractArray{T,4},
-                           field_buffer::AbstractMatrix{T},
+                           field_buffer::AbstractArray{T,4},
                            grf::RandomField,
-                           rng::Random.AbstractRNG,
+                           rng::AbstractVector{<:Random.AbstractRNG},
                            params::tdac_params) where T
 
     add_random_field!(state, field_buffer, grf, rng, params.nprt)
@@ -257,16 +258,16 @@ end
 
 # Add a gaussian random field to the height in the state vector of all particles
 function add_random_field!(state::AbstractArray{T,4},
-                           field_buffer::AbstractMatrix{T},
+                           field_buffer::AbstractArray{T,4},
                            grf::RandomField,
-                           rng::Random.AbstractRNG,
+                           rng::AbstractVector{<:Random.AbstractRNG},
                            nprt::Int) where T
 
-    for ip in 1:nprt
+    Threads.@threads for ip in 1:nprt
 
-        sample_gaussian_random_field!(field_buffer, grf, rng)
+        sample_gaussian_random_field!(@view(field_buffer[:, :, 1, threadid()]), grf, rng[threadid()])
         # Add the random field only to the height component.
-        @view(state[:, :, 1, ip]) .+= field_buffer
+        @view(state[:, :, 1, ip]) .+= @view(field_buffer[:, :, 1, threadid()])
 
     end
 
@@ -541,7 +542,7 @@ function write_timers(length::Int, size::Int, chars::AbstractVector{Char}, filen
     end
 end
 
-function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buffer::AbstractMatrix, rng::Random.AbstractRNG, nprt_per_rank::Int, params::tdac_params)
+function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buffer::AbstractArray{T, 4}, rng::AbstractVector{<:Random.AbstractRNG}, nprt_per_rank::Int, params::tdac_params) where T
 
     # Set true initial state
     LLW2d.initheight!(@view(states.truth[:, :, 1]), hh, params.dx, params.dy, params.source_size)
@@ -613,7 +614,9 @@ function tdac(params::tdac_params)
 
         background_grf = init_gaussian_random_field_generator(params)
 
-        rng = Random.MersenneTwister(params.random_seed)
+        rng = let m = Random.MersenneTwister(params.random_seed)
+            [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
+        end;
 
         # Set up tsunami model
         #TODO: Put these in a data structure
@@ -621,7 +624,7 @@ function tdac(params::tdac_params)
 
         set_stations!(stations, params)
 
-        set_initial_state!(states, hh, @view(field_buffer[:,:,1,1]), rng, nprt_per_rank, params)
+        set_initial_state!(states, hh, field_buffer, rng, nprt_per_rank, params)
 
         resampling_indices = Vector{Int}(undef,params.nprt)
 
@@ -630,7 +633,7 @@ function tdac(params::tdac_params)
     # Write initial state + metadata
     if(params.verbose && my_rank == params.master_rank)
         @timeit_debug timer "Particle Mean" Statistics.mean!(states.avg, states.particles)
-        @timeit_debug timer "Particle Variance" states.var .= dropdims(Statistics.var(states.particles; dims=4), dims=4)
+        @timeit_debug timer "Particle Variance" Statistics.varm!(states.var, states.particles, states.avg)
 
         @timeit_debug timer "IO" write_grid(params)
         @timeit_debug timer "IO" write_params(params)
@@ -660,7 +663,7 @@ function tdac(params::tdac_params)
 
 
         @timeit_debug timer "Process Noise" add_random_field!(states.particles,
-                                                              @view(field_buffer[:, :, 1, 1]),
+                                                              field_buffer,
                                                               background_grf,
                                                               rng,
                                                               nprt_per_rank)
@@ -672,7 +675,7 @@ function tdac(params::tdac_params)
                      stations.ist,
                      stations.jst,
                      params)
-            add_noise!(@view(observations.model[:,ip]), rng, params)
+            add_noise!(@view(observations.model[:,ip]), rng[1], params)
         end
 
         @timeit_debug timer "Weights" get_weights!(@view(weights[1:nprt_per_rank]),
