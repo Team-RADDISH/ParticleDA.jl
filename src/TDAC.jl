@@ -622,7 +622,7 @@ function tdac(params::tdac_params)
     # Write initial state + metadata
     if(params.verbose && my_rank == params.master_rank)
         @timeit_debug timer "Particle Mean" Statistics.mean!(states.avg, states.particles)
-        @timeit_debug timer "Particle Variance" states.var .= dropdims(Statistics.var(states.particles; dims=4), dims=4)
+        @timeit_debug timer "Particle Variance" Statistics.varm!(states.var, states.particles, states.avg)
 
         @timeit_debug timer "IO" write_grid(params)
         @timeit_debug timer "IO" write_params(params)
