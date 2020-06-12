@@ -168,7 +168,8 @@ function copy_resampled_state!(state::AbstractArray{T,3}, state_buffer::Abstract
         end
     end
 
-    state = state_buffer
+    state .= state_buffer
+    return state
 
 end
 
