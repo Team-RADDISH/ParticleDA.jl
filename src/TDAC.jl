@@ -33,6 +33,7 @@ function get_obs!(obs::AbstractVector{T},
                   nx::Integer,
                   ist::AbstractVector{Int},
                   jst::AbstractVector{Int}) where T
+
     @assert length(obs) == length(ist) == length(jst)
 
     for i in eachindex(obs)
@@ -81,7 +82,6 @@ function tsunami_update!(dx_buffer::AbstractMatrix{T},
     dt = time_interval / nt
 
     for it in 1:nt
-        # Parts of model vector are aliased to tsunami heiht and velocities
         LLW2d.timestep!(dx_buffer, dy_buffer, height, vx, vy, height, vx, vy, hm, hn, fn, fm, fe, gg, dx, dy, dt)
     end
 
@@ -348,9 +348,9 @@ function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::In
 
         # The below arrays are not needed on non-master ranks. However, to fit them in the
         # data structures, we define them as 0-size Vectors
-        avg = Array{T,3}(undef, 0, 0, 0)
-        var = Array{T,3}(undef, 0, 0, 0)
-        buffer = Array{T,3}(undef, 0, 0, 0, 0)
+        avg = Array{T,2}(undef, 0, 0)
+        var = Array{T,2}(undef, 0, 0)
+        buffer = Array{T,3}(undef, 0, 0, 0)
         weights = Vector{T}(undef, nprt_per_rank)
     end
 
@@ -488,7 +488,7 @@ function write_weights(file::HDF5File, weights::AbstractVector, unit::String, it
 
 end
 
-function write_surface_height(file::HDF5File, state::AbstractArray{T,2}, unit::String, it::Int, title::String, params::tdac_params) where T
+function write_surface_height(file::HDF5File, state::AbstractMatrix{T}, unit::String, it::Int, title::String, params::tdac_params) where T
 
     group_name = params.state_prefix * "_" * title
     subgroup_name = "t" * string(it)
