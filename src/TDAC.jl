@@ -241,7 +241,7 @@ function add_random_field!(state::AbstractArray{T,4},
                            rng::AbstractVector{<:Random.AbstractRNG},
                            params::tdac_params) where T
 
-    add_random_field!(state, field_buffer, grf, rng, params.nprt)
+    add_random_field!(state, field_buffer, grf, rng, params.n_state_var, params.nprt)
 
 end
 
@@ -250,13 +250,18 @@ function add_random_field!(state::AbstractArray{T,4},
                            field_buffer::AbstractArray{T,4},
                            grf::RandomField,
                            rng::AbstractVector{<:Random.AbstractRNG},
+                           nvar::Int,
                            nprt::Int) where T
 
     Threads.@threads for ip in 1:nprt
 
-        sample_gaussian_random_field!(@view(field_buffer[:, :, 1, threadid()]), grf, rng[threadid()])
-        # Add the random field only to the height component.
-        @view(state[:, :, 1, ip]) .+= @view(field_buffer[:, :, 1, threadid()])
+        for ivar in 1:nvar
+
+            sample_gaussian_random_field!(@view(field_buffer[:, :, 1, threadid()]), grf, rng[threadid()])
+            # Add the random field only to the height component.
+            @view(state[:, :, ivar, ip]) .+= @view(field_buffer[:, :, 1, threadid()])
+
+        end
 
     end
 
@@ -550,7 +555,7 @@ function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buff
 
     # Initialize all particles to samples of the initial random field
     # Since states.particles is initially created as `zeros` we don't need to set it to 0 here
-    add_random_field!(states.particles, field_buffer, initial_grf, rng, nprt_per_rank)
+    add_random_field!(states.particles, field_buffer, initial_grf, rng, params.n_state_var, nprt_per_rank)
 
 end
 
@@ -658,6 +663,7 @@ function tdac(params::tdac_params)
                                                               field_buffer,
                                                               background_grf,
                                                               rng,
+                                                              params.n_state_var,
                                                               nprt_per_rank)
 
         # Add process noise, get observations, add observation noise (to particles)
