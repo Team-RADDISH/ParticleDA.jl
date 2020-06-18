@@ -563,8 +563,14 @@ function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buff
                                                        params.padding,
                                                        params.primes)
 
-    # Initialize all particles to samples of the initial random field
     # Since states.particles is initially created as `zeros` we don't need to set it to 0 here
+    # to get the default behaviour
+
+    if params.particle_initial_state == "true"
+        states.particles .= states.truth
+    end
+
+    # Add samples of the initial random field to all particles
     add_random_field!(states.particles, field_buffer, initial_grf, rng, params.n_state_var, nprt_per_rank)
 
 end
