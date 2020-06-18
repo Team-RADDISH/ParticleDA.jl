@@ -200,7 +200,7 @@ end
     # Test true state with standard parameters
     x_true,x_avg,x_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_1.yaml"))
     data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_1")
-    @test x_true[:] ≈ data_true
+    @test x_true ≈ data_true
 
     # Test true state with different parameters
     x_true,x_avg,x_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_2.yaml"))
