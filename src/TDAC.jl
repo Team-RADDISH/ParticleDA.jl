@@ -601,7 +601,7 @@ function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::Strin
 
 end
 
-function tdac(params::tdac_params)
+function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
 
     if !MPI.Initialized()
         MPI.Init()
@@ -625,10 +625,6 @@ function tdac(params::tdac_params)
         states, observations, stations, weights, field_buffer = init_tdac(params)
 
         background_grf = init_gaussian_random_field_generator(params)
-
-        rng = let m = Random.MersenneTwister(params.random_seed)
-            [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
-        end;
 
         # Set up tsunami model
         #TODO: Put these in a data structure
@@ -821,6 +817,31 @@ function get_params(path_to_input_file::String)
 
 end
 
+function tdac(path_to_input_file::String, rng::AbstractRNG)
+
+    if !MPI.Initialized()
+        MPI.Init()
+    end
+
+    # Do I/O on rank 0 only and then broadcast params
+    if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+
+        params = get_params(path_to_input_file)
+
+    else
+
+        params = nothing
+
+    end
+
+    params = MPI.bcast(params, 0, MPI.COMM_WORLD)
+
+    rng_vec = fill(rng, Threads.nthreads())
+
+    return tdac(params, rng_vec)
+
+end
+
 function tdac(path_to_input_file::String = "")
 
     if !MPI.Initialized()
@@ -840,7 +861,21 @@ function tdac(path_to_input_file::String = "")
 
     params = MPI.bcast(params, 0, MPI.COMM_WORLD)
 
-    return tdac(params)
+    rng = let m = Random.MersenneTwister(params.random_seed)
+        [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
+    end;
+
+    return tdac(params, rng)
+
+end
+
+function tdac(params::tdac_params)
+
+    rng = let m = Random.MersenneTwister(params.random_seed)
+        [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
+    end;
+
+    return tdac(params, rng)
 
 end
 
