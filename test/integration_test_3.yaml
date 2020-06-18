@@ -1,0 +1,14 @@
+nprt: 4
+n_time_step: 5
+n_integration_step: 50
+time_step: 50.0
+nobs: 9
+nx: 50
+ny: 50
+x_length: 1.0e6
+y_length: 1.0e6
+
+particle_initial_state: "true"
+sigma: 1.0e-16
+sigma_initial_state: 1.0e-16
+obs_noise_std: 1.0e-16
