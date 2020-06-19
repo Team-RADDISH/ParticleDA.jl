@@ -233,7 +233,7 @@ function sample_gaussian_random_field!(field::AbstractMatrix{T},
                                        random_field_generator::RandomField,
                                        rng::Random.AbstractRNG) where T
 
-    @. random_field_generator.xi[:,:,threadid()] = randn((rng,), T)
+    @. @view(random_field_generator.xi[:,:,threadid()]) = randn((rng,), T)
     sample_gaussian_random_field!(field, random_field_generator, @view(random_field_generator.xi[:,:,threadid()]))
 
 end
