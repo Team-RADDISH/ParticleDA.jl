@@ -2,6 +2,7 @@ using TDAC
 using LinearAlgebra, Test, HDF5, Random
 using MPI
 using FFTW
+using StableRNGs
 
 # Disable FFTW threads: they don't seem to help much in our case.  Also, they
 # seem to cause deadlocks when running the tests, causing CI jobs to hang
@@ -191,18 +192,36 @@ end
     attr = h5readattr(params.output_filename, params.title_stations * "/y")
     @test attr["Unit"] == "m"
 
-    rm(params.output_filename, force=true)    
+    rm(params.output_filename, force=true)
 end
 
 @testset "TDAC integration tests" begin
 
-    x_true,x_avg,v_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_1.yaml"))
+    # Test true state with standard parameters
+    x_true,x_avg,x_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_1.yaml"))
     data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_1")
-    @test x_true[:] ≈ data_true
+    @test x_true ≈ data_true
 
-    x_true,x_avg,v_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_2.yaml"))
+    # Test true state with different parameters
+    x_true,x_avg,x_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_2.yaml"))
     data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_2")
     @test x_true ≈ data_true
+
+    # Test particle state with ~zero noise
+    x_true,x_avg,x_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_3.yaml"))
+    @test x_true ≈ x_avg
+    @test x_var .+ 1.0 ≈ ones(size(x_var))
+
+    # Test particle state with noise
+    rng = StableRNG(123)
+    x_true,x_avg,x_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_4.yaml"), rng)
+    avg_ref = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_4")
+    @test x_avg ≈ avg_ref
+
+    # Test that different seed gives different result
+    rng = StableRNG(124)
+    x_true,x_avg,x_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_4.yaml"), rng)
+    @test !(x_avg ≈ avg_ref)
 
 end
 
