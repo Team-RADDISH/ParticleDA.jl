@@ -46,6 +46,9 @@ Parameters for TDAC run. Arguments:
 * `master_rank` : Id of MPI rank that performs serial computations
 * `random_seed::Int` : Seed number for the pseudorandom number generator
 * `enable_timers::Bool` : Flag to control run time measurements
+* `particle_initial_state::String` : Initial state of the particles before noise is added. Possible options are
+  * "zero" : initialise height and velocity to 0 everywhere
+  * "true" : copy the true initial state
 """
 Base.@kwdef struct tdac_params{T<:AbstractFloat}
 
@@ -100,6 +103,8 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
 
     random_seed::Int = 12345
     enable_timers::Bool = false
+
+    particle_initial_state::String = "zero"
 end
 
 end

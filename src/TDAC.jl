@@ -18,37 +18,34 @@ get_distance(i0, j0, i1, j1, dx, dy) =
     sqrt((float(i0 - i1) * dx) ^ 2 + (float(j0 - j1) * dy) ^ 2)
 
 function get_obs!(obs::AbstractVector{T},
-                  height::AbstractArray{T,2},
+                  state::AbstractArray{T,3},
                   ist::AbstractVector{Int},
                   jst::AbstractVector{Int},
                   params::tdac_params) where T
 
-    get_obs!(obs,height,params.nx,ist,jst)
+    get_obs!(obs,state,params.nx,ist,jst)
 
 end
 
 # Return observation data at stations from given model state
 function get_obs!(obs::AbstractVector{T},
-                  height::AbstractArray{T,2},
+                  state::AbstractArray{T,3},
                   nx::Integer,
                   ist::AbstractVector{Int},
                   jst::AbstractVector{Int}) where T
-
     @assert length(obs) == length(ist) == length(jst)
 
     for i in eachindex(obs)
         ii = ist[i]
         jj = jst[i]
         iptr = (jj - 1) * nx + ii
-        obs[i] = height[iptr]
+        obs[i] = state[iptr]
     end
 end
 
 function tsunami_update!(dx_buffer::AbstractMatrix{T},
                          dy_buffer::AbstractMatrix{T},
-                         height::AbstractMatrix{T},
-                         vx::AbstractMatrix{T},
-                         vy::AbstractMatrix{T},
+                         state::AbstractArray{T,3},
                          hm::AbstractMatrix{T},
                          hn::AbstractMatrix{T},
                          fm::AbstractMatrix{T},
@@ -57,7 +54,7 @@ function tsunami_update!(dx_buffer::AbstractMatrix{T},
                          gg::AbstractMatrix{T},
                          params::tdac_params) where T
 
-    tsunami_update!(dx_buffer, dy_buffer, height, vx, vy, params.n_integration_step,
+    tsunami_update!(dx_buffer, dy_buffer, state, params.n_integration_step,
                     params.dx, params.dy, params.time_step, hm, hn, fm, fn, fe, gg)
 
 end
@@ -65,9 +62,7 @@ end
 # Update tsunami wavefield with LLW2d in-place.
 function tsunami_update!(dx_buffer::AbstractMatrix{T},
                          dy_buffer::AbstractMatrix{T},
-                         height::AbstractMatrix{T},
-                         vx::AbstractMatrix{T},
-                         vy::AbstractMatrix{T},
+                         state::AbstractArray{T,3},
                          nt::Int,
                          dx::Real,
                          dy::Real,
@@ -79,10 +74,18 @@ function tsunami_update!(dx_buffer::AbstractMatrix{T},
                          fe::AbstractMatrix{T},
                          gg::AbstractMatrix{T}) where T
 
+    eta_a = @view(state[:, :, 1])
+    mm_a  = @view(state[:, :, 2])
+    nn_a  = @view(state[:, :, 3])
+    eta_f = @view(state[:, :, 1])
+    mm_f  = @view(state[:, :, 2])
+    nn_f  = @view(state[:, :, 3])
+
     dt = time_interval / nt
 
     for it in 1:nt
-        LLW2d.timestep!(dx_buffer, dy_buffer, height, vx, vy, height, vx, vy, hm, hn, fn, fm, fe, gg, dx, dy, dt)
+        # Parts of model vector are aliased to tsunami heiht and velocities
+        LLW2d.timestep!(dx_buffer, dy_buffer, eta_f, mm_f, nn_f, eta_a, mm_a, nn_a, hm, hn, fn, fm, fe, gg, dx, dy, dt)
     end
 
 end
@@ -157,13 +160,13 @@ function resample!(resampled_indices::AbstractVector{Int}, weight::AbstractVecto
 
 end
 
-function copy_resampled_state!(state::AbstractArray{T,3}, state_buffer::AbstractArray{T,3}, indices::AbstractVector{Int}) where T
+function copy_resampled_state!(state::AbstractArray{T,4}, state_buffer::AbstractArray{T,4}, indices::AbstractVector{Int}) where T
 
-    nprt = size(state, 3)
+    nprt = size(state, 4)
     @assert length(indices) == nprt
 
     for ip in 1:nprt
-        for is in CartesianIndices(@view(state[:, :, 1]))
+        for is in CartesianIndices(@view(state[:, :, :, 1]))
             state_buffer[CartesianIndex(is, ip)] = state[CartesianIndex(is, indices[ip])]
         end
     end
@@ -218,54 +221,62 @@ function init_gaussian_random_field_generator(lambda::T,
     cov = CovarianceFunction(dim, Matern(lambda, nu, σ = sigma))
     grf = GaussianRandomField(cov, CirculantEmbedding(), x, y, minpadding=pad, primes=primes)
     v = grf.data[1]
-    xi = Array{eltype(grf.cov)}(undef, size(v))
-    w = Array{complex(float(eltype(v)))}(undef, size(v))
-    z = Array{eltype(grf.cov)}(undef, length.(grf.pts))
+    xi = Array{eltype(grf.cov)}(undef, size(v)..., nthreads())
+    w = Array{complex(float(eltype(v)))}(undef, size(v)..., nthreads())
+    z = Array{eltype(grf.cov)}(undef, length.(grf.pts)..., nthreads())
 
     return RandomField(grf, xi, w, z)
 end
 
-# Get a random sample from gaussian random field grf using random number generator rng
+# Get a random sample from random_field_generator using random number generator rng
 function sample_gaussian_random_field!(field::AbstractMatrix{T},
-                                       grf::RandomField,
+                                       random_field_generator::RandomField,
                                        rng::Random.AbstractRNG) where T
 
-    @. grf.xi = randn((rng,), T)
-    sample_gaussian_random_field!(field, grf, grf.xi)
+    @. @view(random_field_generator.xi[:,:,threadid()]) = randn((rng,), T)
+    sample_gaussian_random_field!(field, random_field_generator, @view(random_field_generator.xi[:,:,threadid()]))
 
 end
 
-# Get a random sample from gaussian random field grf using random_numbers
+# Get a random sample from random_field_generator using random_numbers
 function sample_gaussian_random_field!(field::AbstractMatrix{T},
-                                       grf::RandomField,
+                                       random_field_generator::RandomField,
                                        random_numbers::AbstractArray{T}) where T
 
-    field .= GaussianRandomFields._sample!(grf.w, grf.z, grf.grf, random_numbers)
+    field .= GaussianRandomFields._sample!(@view(random_field_generator.w[:,:,threadid()]),
+                                           @view(random_field_generator.z[:,:,threadid()]),
+                                           random_field_generator.grf,
+                                           random_numbers)
 
 end
 
-function add_random_field!(state::AbstractArray{T,3},
+function add_random_field!(state::AbstractArray{T,4},
                            field_buffer::AbstractArray{T,4},
-                           grf::RandomField,
+                           generator::RandomField,
                            rng::AbstractVector{<:Random.AbstractRNG},
                            params::tdac_params) where T
 
-    add_random_field!(field, field_buffer, grf, rng, params.nprt)
+    add_random_field!(state, field_buffer, generator, rng, params.n_state_var, params.nprt)
 
 end
 
 # Add a gaussian random field to the height in the state vector of all particles
-function add_random_field!(field::AbstractArray{T,3},
+function add_random_field!(state::AbstractArray{T,4},
                            field_buffer::AbstractArray{T,4},
-                           grf::RandomField,
+                           generator::RandomField,
                            rng::AbstractVector{<:Random.AbstractRNG},
+                           nvar::Int,
                            nprt::Int) where T
 
     Threads.@threads for ip in 1:nprt
 
-        sample_gaussian_random_field!(@view(field_buffer[:, :, 1, threadid()]), grf, rng[threadid()])
-        # Add the random field only to the height component.
-        @view(field[:, :, ip]) .+= @view(field_buffer[:, :, 1, threadid()])
+        for ivar in 1:nvar
+
+            sample_gaussian_random_field!(@view(field_buffer[:, :, 1, threadid()]), generator, rng[threadid()])
+            # Add the random field only to the height component.
+            @view(state[:, :, ivar, ip]) .+= @view(field_buffer[:, :, 1, threadid()])
+
+        end
 
     end
 
@@ -291,15 +302,11 @@ function init_tdac(params::tdac_params)
 
 end
 
-struct StateVariables{T<:AbstractArray, S<:AbstractArray}
+struct StateVectors{T<:AbstractArray, S<:AbstractArray}
 
-    height::T
-    vx::T
-    vy::T
+    particles::T
     buffer::T
-    true_height::S
-    true_vx::S
-    true_vy::S
+    truth::S
     avg::S
     var::S
 
@@ -334,30 +341,24 @@ function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::In
         #   state[:, 1]: tsunami height eta(nx,ny)
         #   state[:, 2]: vertically integrated velocity Mx(nx,ny)
         #   state[:, 3]: vertically integrated velocity Mx(nx,ny)
-        height = zeros(T, nx, ny, nprt_total) # model state vectors for particles
-        vx = zeros(T, nx, ny, nprt_total) # model state vectors for particles
-        vy = zeros(T, nx, ny, nprt_total) # model state vectors for particles
-        buffer = Array{T,3}(undef, nx, ny, nprt_total)
-        avg = zeros(T, nx, ny) # average of particle state vectors
-        var = zeros(T, nx, ny) # variance of particle state vectors
+        state_particles = zeros(T, nx, ny, n_state_var, nprt_total) # model state vectors for particles
+        state_avg = zeros(T, nx, ny, n_state_var) # average of particle state vectors
+        state_var = zeros(T, nx, ny, n_state_var) # variance of particle state vectors
+        state_resampled = Array{T,4}(undef, nx, ny, n_state_var, nprt_total)
         weights = Vector{T}(undef, nprt_total)
     else
-        height = zeros(T, nx, ny, nprt_per_rank)
-        vx = zeros(T, nx, ny, nprt_per_rank)
-        vy = zeros(T, nx, ny, nprt_per_rank)
+        state_particles = zeros(T, nx, ny, n_state_var, nprt_per_rank)
 
         # The below arrays are not needed on non-master ranks. However, to fit them in the
         # data structures, we define them as 0-size Vectors
-        avg = Array{T,2}(undef, 0, 0)
-        var = Array{T,2}(undef, 0, 0)
-        buffer = Array{T,3}(undef, 0, 0, 0)
+        state_avg = Array{T,3}(undef, 0, 0, 0)
+        state_var = Array{T,3}(undef, 0, 0, 0)
+        state_resampled = Array{T,4}(undef, 0, 0, 0, 0)
         weights = Vector{T}(undef, nprt_per_rank)
     end
 
-    true_height = zeros(T, nx, ny) # model vector: true wavefield (observation)
-    true_vx = zeros(T, nx, ny) # model vector: true wavefield (observation)
-    true_vy = zeros(T, nx, ny) # model vector: true wavefield (observation)
-    obs_truth = Vector{T}(undef, nobs)                # observed tsunami height
+    state_truth = zeros(T, nx, ny, n_state_var) # model vector: true wavefield (observation)
+    obs_truth = Vector{T}(undef, nobs)          # observed tsunami height
     obs_model = Matrix{T}(undef, nobs, nprt_per_rank) # forecasted tsunami height
 
     # station location in digital grids
@@ -365,13 +366,9 @@ function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::In
     jst = Vector{Int}(undef, nobs)
 
     # Buffer array to be used in the tsunami update
-    field_buffer = Array{T,4}(undef, nx, ny, 2, nthreads())
+    field_buffer = Array{T}(undef, nx, ny, 2, nthreads())
 
-    states = StateVariables(height, vx, vy, buffer, true_height, true_vx, true_vy, avg, var)
-    obs = ObsVectors(obs_truth, obs_model)
-    stations = StationVectors(ist, jst)
-
-    return states, obs, stations, weights, field_buffer
+    return StateVectors(state_particles, state_resampled, state_truth, state_avg, state_var), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), weights, field_buffer
 end
 
 function write_params(params)
@@ -447,7 +444,7 @@ function write_stations(stations::StationVectors, params::tdac_params) where T
 end
 
 
-function write_snapshot(states::StateVariables, weights::AbstractVector{T}, it::Int, params::tdac_params) where T
+function write_snapshot(states::StateVectors, weights::AbstractVector{T}, it::Int, params::tdac_params) where T
 
     if params.verbose
         println("Writing output at timestep = ", it)
@@ -455,7 +452,7 @@ function write_snapshot(states::StateVariables, weights::AbstractVector{T}, it::
 
     h5open(params.output_filename, "cw") do file
 
-        write_surface_height(file, states.true_height, "m", it, params.title_syn, params)
+        write_surface_height(file, states.truth, "m", it, params.title_syn, params)
         write_surface_height(file, states.avg, "m", it, params.title_avg, params)
         write_surface_height(file, states.var, "m^2", it, params.title_var, params)
         write_weights(file, weights, "", it, params)
@@ -488,7 +485,7 @@ function write_weights(file::HDF5File, weights::AbstractVector, unit::String, it
 
 end
 
-function write_surface_height(file::HDF5File, state::AbstractMatrix{T}, unit::String, it::Int, title::String, params::tdac_params) where T
+function write_surface_height(file::HDF5File, state::AbstractArray{T,3}, unit::String, it::Int, title::String, params::tdac_params) where T
 
     group_name = params.state_prefix * "_" * title
     subgroup_name = "t" * string(it)
@@ -508,8 +505,8 @@ function write_surface_height(file::HDF5File, state::AbstractMatrix{T}, unit::St
 
     if !exists(subgroup, dataset_name)
         #TODO: use d_write instead of d_create when they fix it in the HDF5 package
-        ds,dtype = d_create(subgroup, dataset_name, state)
-        ds[:, :] = state
+        ds,dtype = d_create(subgroup, dataset_name, @view(state[:, :, 1]))
+        ds[:, :] = @view(state[:, :, 1])
         attrs(ds)["Description"] = "Ocean surface height"
         attrs(ds)["Unit"] = unit
         attrs(ds)["Time_step"] = it
@@ -554,10 +551,10 @@ function write_timers(length::Int, size::Int, chars::AbstractVector{Char}, filen
     end
 end
 
-function set_initial_state!(states::StateVariables, hh::AbstractMatrix, field_buffer::AbstractArray{T,4}, rng::AbstractVector{<:Random.AbstractRNG}, nprt_per_rank::Int, params::tdac_params) where T
+function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buffer::AbstractArray{T, 4}, rng::AbstractVector{<:Random.AbstractRNG}, nprt_per_rank::Int, params::tdac_params) where T
 
     # Set true initial state
-    LLW2d.initheight!(states.true_height, hh, params.dx, params.dy, params.source_size)
+    LLW2d.initheight!(@view(states.truth[:, :, 1]), hh, params.dx, params.dy, params.source_size)
 
     # Create generator for the initial random field
     x,y = get_axes(params)
@@ -569,9 +566,15 @@ function set_initial_state!(states::StateVariables, hh::AbstractMatrix, field_bu
                                                        params.padding,
                                                        params.primes)
 
-    # Initialize all particles to samples of the initial random field
-    # Since states.height is initially created as `zeros` we don't need to set it to 0 here
-    add_random_field!(states.height, field_buffer, initial_grf, rng, nprt_per_rank)
+    # Since states.particles is initially created as `zeros` we don't need to set it to 0 here
+    # to get the default behaviour
+
+    if params.particle_initial_state == "true"
+        states.particles .= states.truth
+    end
+
+    # Add samples of the initial random field to all particles
+    add_random_field!(states.particles, field_buffer, initial_grf, rng, params.n_state_var, nprt_per_rank)
 
 end
 
@@ -601,7 +604,7 @@ function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::Strin
 
 end
 
-function tdac(params::tdac_params)
+function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
 
     if !MPI.Initialized()
         MPI.Init()
@@ -626,10 +629,6 @@ function tdac(params::tdac_params)
 
         background_grf = init_gaussian_random_field_generator(params)
 
-        rng = let m = Random.MersenneTwister(params.random_seed)
-            [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
-        end;
-
         # Set up tsunami model
         #TODO: Put these in a data structure
         gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx, params.ny, params.bathymetry_setup)
@@ -644,8 +643,8 @@ function tdac(params::tdac_params)
 
     # Write initial state + metadata
     if(params.verbose && my_rank == params.master_rank)
-        @timeit_debug timer "Particle Mean" Statistics.mean!(states.avg, states.height)
-        @timeit_debug timer "Particle Variance" Statistics.varm!(states.var, states.height, states.avg)
+        @timeit_debug timer "Particle Mean" Statistics.mean!(states.avg, states.particles)
+        @timeit_debug timer "Particle Variance" Statistics.varm!(states.var, states.particles, states.avg)
 
         @timeit_debug timer "IO" write_grid(params)
         @timeit_debug timer "IO" write_params(params)
@@ -658,37 +657,33 @@ function tdac(params::tdac_params)
         # integrate true synthetic wavefield
         @timeit_debug timer "True State Update" tsunami_update!(@view(field_buffer[:, :, 1, 1]),
                                                                 @view(field_buffer[:, :, 2, 1]),
-                                                                states.true_height, states.true_vx, states.true_vy,
-                                                                hm, hn, fn, fm, fe, gg, params)
+                                                                states.truth, hm, hn, fn, fm, fe, gg, params)
 
         # Get observation from true synthetic wavefield
-        @timeit_debug timer "Observations" get_obs!(observations.truth, states.true_height, stations.ist, stations.jst, params)
+        @timeit_debug timer "Observations" get_obs!(observations.truth, states.truth, stations.ist, stations.jst, params)
 
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads.
 
         @timeit_debug timer "Particle State Update" Threads.@threads for ip in 1:nprt_per_rank
 
-            tsunami_update!(@view(field_buffer[:, :, 1, threadid()]),
-                            @view(field_buffer[:, :, 2, threadid()]),
-                            @view(states.height[:, :, ip]),
-                            @view(states.vx[:, :, ip]),
-                            @view(states.vy[:, :, ip]),
-                            hm, hn, fn, fm, fe, gg, params)
+            tsunami_update!(@view(field_buffer[:, :, 1, threadid()]), @view(field_buffer[:, :, 2, threadid()]),
+                            @view(states.particles[:, :, :, ip]), hm, hn, fn, fm, fe, gg, params)
 
         end
 
 
-        @timeit_debug timer "Process Noise" add_random_field!(states.height,
+        @timeit_debug timer "Process Noise" add_random_field!(states.particles,
                                                               field_buffer,
                                                               background_grf,
                                                               rng,
+                                                              params.n_state_var,
                                                               nprt_per_rank)
 
         # Add process noise, get observations, add observation noise (to particles)
         @timeit_debug timer "Observations" for ip in 1:nprt_per_rank
             get_obs!(@view(observations.model[:,ip]),
-                     @view(states.height[:, :, ip]),
+                     @view(states.particles[:, :, :, ip]),
                      stations.ist,
                      stations.jst,
                      params)
@@ -707,8 +702,8 @@ function tdac(params::tdac_params)
         # for their chunk of state.
         if my_rank == params.master_rank
             @timeit_debug timer "MPI Gather" MPI.Gather!(nothing,
-                                                         @view(states.height[:]),
-                                                         params.nx * params.ny * nprt_per_rank,
+                                                         @view(states.particles[:]),
+                                                         params.nx * params.ny * params.n_state_var * nprt_per_rank,
                                                          params.master_rank,
                                                          MPI.COMM_WORLD)
             @timeit_debug timer "MPI Gather" MPI.Gather!(nothing,
@@ -718,9 +713,9 @@ function tdac(params::tdac_params)
                                                          MPI.COMM_WORLD)
 
         else
-            @timeit_debug timer "MPI Gather" MPI.Gather!(@view(states.height[:]),
+            @timeit_debug timer "MPI Gather" MPI.Gather!(@view(states.particles[:]),
                                                          nothing,
-                                                         params.nx * params.ny * nprt_per_rank,
+                                                         params.nx * params.ny * params.n_state_var * nprt_per_rank,
                                                          params.master_rank,
                                                          MPI.COMM_WORLD)
             @timeit_debug timer "MPI Gather" MPI.Gather!(weights,
@@ -734,18 +729,18 @@ function tdac(params::tdac_params)
 
             # Weigh and resample particles
             @timeit_debug timer "Resample" resample!(resampling_indices, weights)
-            @timeit_debug timer "State Copy" copy_resampled_state!(states.height, states.buffer, resampling_indices)
+            @timeit_debug timer "State Copy" copy_resampled_state!(states.particles, states.buffer, resampling_indices)
 
             # Scatter the new particles to all ranks. In place similar to gather above.
-            @timeit_debug timer "MPI Scatter" MPI.Scatter!(@view(states.height[:]),
+            @timeit_debug timer "MPI Scatter" MPI.Scatter!(@view(states.particles[:]),
                                                            nothing,
-                                                           params.nx * params.ny * nprt_per_rank,
+                                                           params.nx * params.ny * params.n_state_var * nprt_per_rank,
                                                            params.master_rank,
                                                            MPI.COMM_WORLD)
 
             # Calculate statistical quantities
-            @timeit_debug timer "Particle Mean" Statistics.mean!(states.avg, states.height)
-            @timeit_debug timer "Particle Variance" Statistics.varm!(states.var, states.height, states.avg)
+            @timeit_debug timer "Particle Mean" Statistics.mean!(states.avg, states.particles)
+            @timeit_debug timer "Particle Variance" Statistics.varm!(states.var, states.particles, states.avg)
 
             # Write output
             if params.verbose
@@ -754,8 +749,8 @@ function tdac(params::tdac_params)
 
         else
             @timeit_debug timer "MPI Scatter" MPI.Scatter!(nothing,
-                                                           @view(states.height[:]),
-                                                           params.nx * params.ny * nprt_per_rank,
+                                                           @view(states.particles[:]),
+                                                           params.nx * params.ny * params.n_state_var * nprt_per_rank,
                                                            params.master_rank,
                                                            MPI.COMM_WORLD)
         end
@@ -794,7 +789,7 @@ function tdac(params::tdac_params)
         end
     end
 
-    return states.true_height, states.avg, states.var
+    return states.truth, states.avg, states.var
 end
 
 # Initialise params struct with user-defined dict of values.
@@ -825,6 +820,33 @@ function get_params(path_to_input_file::String)
 
 end
 
+function tdac(path_to_input_file::String, rng::AbstractRNG)
+
+    if !MPI.Initialized()
+        MPI.Init()
+    end
+
+    # Do I/O on rank 0 only and then broadcast params
+    if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+
+        params = get_params(path_to_input_file)
+
+    else
+
+        params = nothing
+
+    end
+
+    params = MPI.bcast(params, 0, MPI.COMM_WORLD)
+
+    rng_vec = let m = rng
+        [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
+    end;
+
+    return tdac(params, rng_vec)
+
+end
+
 function tdac(path_to_input_file::String = "")
 
     if !MPI.Initialized()
@@ -845,6 +867,16 @@ function tdac(path_to_input_file::String = "")
     params = MPI.bcast(params, 0, MPI.COMM_WORLD)
 
     return tdac(params)
+
+end
+
+function tdac(params::tdac_params)
+
+    rng = let m = Random.MersenneTwister(params.random_seed)
+        [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
+    end;
+
+    return tdac(params, rng)
 
 end
 

@@ -2,6 +2,7 @@ using TDAC
 using LinearAlgebra, Test, HDF5, Random
 using MPI
 using FFTW
+using StableRNGs
 
 # Disable FFTW threads: they don't seem to help much in our case.  Also, they
 # seem to cause deadlocks when running the tests, causing CI jobs to hang
@@ -67,7 +68,7 @@ end
     @test TDAC.get_distance(3/2000, 4/2000, 0, 0, dx, dy) == 5
     @test TDAC.get_distance(10, 23, 5, 11, dx, dy) == 26000.0
 
-    x = collect(reshape(1.0:9.0, 3, 3))
+    x = collect(reshape(1.0:9.0, 3, 3, 1))
     # stations at (1,1) (2,2) and (3,3) return diagonal of x[3,3]
     ist = [1,2,3]
     jst = [1,2,3]
@@ -119,24 +120,23 @@ end
     dt = 1.0
     nt = 1
     # 0 input gives 0 output
-    x = zeros(nx, ny)
-    vx = zeros(nx, ny)
-    vy = zeros(nx, ny)
+    x0 = x = zeros(nx, ny, 3)
     gg, hh, hm, hn, fm, fn, fe = TDAC.LLW2d.setup(nx,ny,3.0e4)
     @test size(gg) == size(hh) == size(hm) == size(fm) == size(fn) == size(fe) == (nx,ny)
     dxeta = Matrix{Float64}(undef, nx, ny)
     dyeta = Matrix{Float64}(undef, nx, ny)
-    TDAC.tsunami_update!(dxeta, dyeta, x, vx, vy, nt, dx, dy, dt, hm, hn, fm, fn, fe, gg)
-    @test x ≈ zeros(nx, ny)
+    TDAC.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, hm, hn, fm, fn, fe, gg)
+    @test x ≈ x0
 
     # Initialise and update a tsunami on a small grid
     s = 4e3
-    TDAC.LLW2d.initheight!(x, hh, dx, dy, s)
-    @test x[2,2] ≈ 1.0
-    @test sum(x) ≈ 4.0
-    TDAC.tsunami_update!(dxeta, dyeta, x, vx, vy, nt, dx, dy, dt, hm, hn, fm, fn, fe, gg)
-    @test sum(x, dims=1) ≈ [0.9140901416339269 1.7010577375770561 0.9140901416339269 0.06356127284539884 0.0 0.0 0.0 0.0 0.0 0.0]
-    @test sum(x, dims=2) ≈ [0.9068784611641829; 1.6999564781646717; 0.9204175965604575; 0.06554675780099671; 0.0; 0.0; 0.0; 0.0; 0.0; 0.0]
+    eta = reshape(@view(x[1:nx*ny]), nx, ny)
+    TDAC.LLW2d.initheight!(eta, hh, dx, dy, s)
+    @test eta[2,2] ≈ 1.0
+    @test sum(eta) ≈ 4.0
+    TDAC.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, hm, hn, fm, fn, fe, gg)
+    @test sum(eta, dims=1) ≈ [0.9140901416339269 1.7010577375770561 0.9140901416339269 0.06356127284539884 0.0 0.0 0.0 0.0 0.0 0.0]
+    @test sum(eta, dims=2) ≈ [0.9068784611641829; 1.6999564781646717; 0.9204175965604575; 0.06554675780099671; 0.0; 0.0; 0.0; 0.0; 0.0; 0.0]
 
     # Test gaussian random field sampling
     x = 1.:2.
@@ -150,8 +150,8 @@ end
     # Test IO
     params = TDAC.get_params(joinpath(@__DIR__, "io_unit_test.yaml"))
     rm(params.output_filename, force=true)
-    data1 = collect(reshape(1.0:(params.nx * params.ny), params.nx, params.ny))
-    data2 = randn(params.nx, params.ny)
+    data1 = collect(reshape(1.0:(params.nx * params.ny), params.nx, params.ny, 1))
+    data2 = randn(params.nx, params.ny, 1)
     tstep = 0
     h5open(params.output_filename, "cw") do file
         TDAC.write_surface_height(file, data1, "m", tstep, params.title_syn, params)
@@ -192,18 +192,40 @@ end
     attr = h5readattr(params.output_filename, params.title_stations * "/y")
     @test attr["Unit"] == "m"
 
-    rm(params.output_filename, force=true)    
+    rm(params.output_filename, force=true)
 end
 
 @testset "TDAC integration tests" begin
 
-    x_true,x_avg,v_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_1.yaml"))
+    # Test true state with standard parameters
+    x_true,x_avg,x_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_1.yaml"))
     data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_1")
     @test x_true ≈ data_true
 
-    x_true,x_avg,v_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_2.yaml"))
+    # Test true state with different parameters
+    x_true,x_avg,x_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_2.yaml"))
     data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_2")
     @test x_true ≈ data_true
+
+    # Test particle state with ~zero noise
+    x_true,x_avg,x_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_3.yaml"))
+    @test x_true ≈ x_avg
+    @test x_var .+ 1.0 ≈ ones(size(x_var))
+
+    if Threads.nthreads() == 1
+
+        # Test particle state with noise
+        rng = StableRNG(123)
+        x_true,x_avg,x_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_4.yaml"), rng)
+        avg_ref = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_4")
+        @test x_avg ≈ avg_ref
+
+        # Test that different seed gives different result
+        rng = StableRNG(124)
+        x_true,x_avg,x_var = TDAC.tdac(joinpath(@__DIR__, "integration_test_4.yaml"), rng)
+        @test !(x_avg ≈ avg_ref)
+
+    end
 
 end
 
