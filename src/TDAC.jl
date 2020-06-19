@@ -221,46 +221,49 @@ function init_gaussian_random_field_generator(lambda::T,
     cov = CovarianceFunction(dim, Matern(lambda, nu, σ = sigma))
     grf = GaussianRandomField(cov, CirculantEmbedding(), x, y, minpadding=pad, primes=primes)
     v = grf.data[1]
-    xi = Array{eltype(grf.cov)}(undef, size(v))
-    w = Array{complex(float(eltype(v)))}(undef, size(v))
-    z = Array{eltype(grf.cov)}(undef, length.(grf.pts))
+    xi = Array{eltype(grf.cov)}(undef, size(v)..., nthreads())
+    w = Array{complex(float(eltype(v)))}(undef, size(v)..., nthreads())
+    z = Array{eltype(grf.cov)}(undef, length.(grf.pts)..., nthreads())
 
     return RandomField(grf, xi, w, z)
 end
 
-# Get a random sample from gaussian random field grf using random number generator rng
+# Get a random sample from random_field_generator using random number generator rng
 function sample_gaussian_random_field!(field::AbstractMatrix{T},
-                                       grf::RandomField,
+                                       random_field_generator::RandomField,
                                        rng::Random.AbstractRNG) where T
 
-    @. grf.xi = randn((rng,), T)
-    sample_gaussian_random_field!(field, grf, grf.xi)
+    @. random_field_generator.xi[:,:,threadid()] = randn((rng,), T)
+    sample_gaussian_random_field!(field, random_field_generator, @view(random_field_generator.xi[:,:,threadid()]))
 
 end
 
-# Get a random sample from gaussian random field grf using random_numbers
+# Get a random sample from random_field_generator using random_numbers
 function sample_gaussian_random_field!(field::AbstractMatrix{T},
-                                       grf::RandomField,
+                                       random_field_generator::RandomField,
                                        random_numbers::AbstractArray{T}) where T
 
-    field .= GaussianRandomFields._sample!(grf.w, grf.z, grf.grf, random_numbers)
+    field .= GaussianRandomFields._sample!(@view(random_field_generator.w[:,:,threadid()]),
+                                           @view(random_field_generator.z[:,:,threadid()]),
+                                           random_field_generator.grf,
+                                           random_numbers)
 
 end
 
 function add_random_field!(state::AbstractArray{T,4},
                            field_buffer::AbstractArray{T,4},
-                           grf::RandomField,
+                           generator::RandomField,
                            rng::AbstractVector{<:Random.AbstractRNG},
                            params::tdac_params) where T
 
-    add_random_field!(state, field_buffer, grf, rng, params.n_state_var, params.nprt)
+    add_random_field!(state, field_buffer, generator, rng, params.n_state_var, params.nprt)
 
 end
 
 # Add a gaussian random field to the height in the state vector of all particles
 function add_random_field!(state::AbstractArray{T,4},
                            field_buffer::AbstractArray{T,4},
-                           grf::RandomField,
+                           generator::RandomField,
                            rng::AbstractVector{<:Random.AbstractRNG},
                            nvar::Int,
                            nprt::Int) where T
@@ -269,7 +272,7 @@ function add_random_field!(state::AbstractArray{T,4},
 
         for ivar in 1:nvar
 
-            sample_gaussian_random_field!(@view(field_buffer[:, :, 1, threadid()]), grf, rng[threadid()])
+            sample_gaussian_random_field!(@view(field_buffer[:, :, 1, threadid()]), generator, rng[threadid()])
             # Add the random field only to the height component.
             @view(state[:, :, ivar, ip]) .+= @view(field_buffer[:, :, 1, threadid()])
 
@@ -836,7 +839,9 @@ function tdac(path_to_input_file::String, rng::AbstractRNG)
 
     params = MPI.bcast(params, 0, MPI.COMM_WORLD)
 
-    rng_vec = fill(rng, Threads.nthreads())
+    rng_vec = let m = rng
+        [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
+    end;
 
     return tdac(params, rng_vec)
 
@@ -861,11 +866,7 @@ function tdac(path_to_input_file::String = "")
 
     params = MPI.bcast(params, 0, MPI.COMM_WORLD)
 
-    rng = let m = Random.MersenneTwister(params.random_seed)
-        [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
-    end;
-
-    return tdac(params, rng)
+    return tdac(params)
 
 end
 
