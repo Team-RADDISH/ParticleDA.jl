@@ -184,7 +184,7 @@ end
     TDAC.set_stations!(stations, params)
     @test stations.ist == [5, 5, 10, 10]
     @test stations.jst == [5, 10, 5, 10]
-    TDAC.write_stations(stations, params)
+    TDAC.write_stations(stations.ist, stations.jst, params)
     @test h5read(params.output_filename, params.title_stations * "/x") ≈ stations.ist .* params.dx
     @test h5read(params.output_filename, params.title_stations * "/y") ≈ stations.jst .* params.dy
     attr = h5readattr(params.output_filename, params.title_stations * "/x")
