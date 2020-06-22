@@ -443,7 +443,6 @@ function write_stations(stations::StationVectors, params::tdac_params) where T
     end
 end
 
-
 function write_snapshot(states::StateVectors, weights::AbstractVector{T}, it::Int, params::tdac_params) where T
 
     if params.verbose
@@ -452,11 +451,50 @@ function write_snapshot(states::StateVectors, weights::AbstractVector{T}, it::In
 
     h5open(params.output_filename, "cw") do file
 
-        write_surface_height(file, states.truth, "m", it, params.title_syn, params)
-        write_surface_height(file, states.avg, "m", it, params.title_avg, params)
-        write_surface_height(file, states.var, "m^2", it, params.title_var, params)
+        dset_height = "height"
+        dset_vx = "vx"
+        dset_vy = "vy"
+
+        desc_height = "Ocean surface height"
+        desc_vx = "Ocean surface velocity x-component"
+        desc_vy = "Ocean surface velocity y-component"
+
+        write_field(file, @view(states.truth[:,:,1]), it, "m", params.title_syn, dset_height, desc_height, params)
+        write_field(file, @view(states.avg[:,:,1]), it, "m"  , params.title_avg, dset_height, desc_height, params)
+        write_field(file, @view(states.var[:,:,1]), it, "m^2", params.title_var, dset_height, desc_height, params)
+
+        write_field(file, @view(states.truth[:,:,2]), it, "m/s",   params.title_syn, dset_vx, desc_vx, params)
+        write_field(file, @view(states.avg[:,:,2]), it, "m/s"  ,   params.title_avg, dset_vx, desc_vx, params)
+        write_field(file, @view(states.var[:,:,2]), it, "m^2/s^2", params.title_var, dset_vx, desc_vx, params)
+
+        write_field(file, @view(states.truth[:,:,3]), it, "m/s",   params.title_syn, dset_vy, desc_vy, params)
+        write_field(file, @view(states.avg[:,:,3]), it, "m/s"  ,   params.title_avg, dset_vy, desc_vy, params)
+        write_field(file, @view(states.var[:,:,3]), it, "m^2/s^2", params.title_var, dset_vy, desc_vy, params)
+
         write_weights(file, weights, "", it, params)
     end
+
+end
+
+function create_or_open_group(file::HDF5File, group_name::String, subgroup_name::String = "None")
+
+    if !exists(file, group_name)
+        group = g_create(file, group_name)
+    else
+        group = g_open(file, group_name)
+    end
+
+    if subgroup_name != "None"
+        if !exists(group, subgroup_name)
+            subgroup = g_create(group, subgroup_name)
+        else
+            subgroup = g_open(group, subgroup_name)
+        end
+    else
+        subgroup = nothing
+    end
+
+    return group, subgroup
 
 end
 
@@ -465,11 +503,7 @@ function write_weights(file::HDF5File, weights::AbstractVector, unit::String, it
     group_name = "weights"
     dataset_name = "t" * string(it)
 
-    if !exists(file, group_name)
-        group = g_create(file, group_name)
-    else
-        group = g_open(file, group_name)
-    end
+    group, subgroup = create_or_open_group(file, group_name)
 
     if !exists(group, dataset_name)
         #TODO: use d_write instead of d_create when they fix it in the HDF5 package
@@ -485,39 +519,33 @@ function write_weights(file::HDF5File, weights::AbstractVector, unit::String, it
 
 end
 
-function write_surface_height(file::HDF5File, state::AbstractArray{T,3}, unit::String, it::Int, title::String, params::tdac_params) where T
+function write_field(file::HDF5File,
+                     field::AbstractMatrix{T},
+                     it::Int,
+                     unit::String,
+                     group::String,
+                     dataset::String,
+                     description::String,
+                     params::tdac_params) where T
 
-    group_name = params.state_prefix * "_" * title
+    group_name = params.state_prefix * "_" * group
     subgroup_name = "t" * string(it)
-    dataset_name = "height"
+    dataset_name = dataset
 
-    if !exists(file, group_name)
-        group = g_create(file, group_name)
-    else
-        group = g_open(file, group_name)
-    end
-
-    if !exists(group, subgroup_name)
-        subgroup = g_create(group, subgroup_name)
-    else
-        subgroup = g_open(group, subgroup_name)
-    end
+    group, subgroup = create_or_open_group(file, group_name, subgroup_name)
 
     if !exists(subgroup, dataset_name)
         #TODO: use d_write instead of d_create when they fix it in the HDF5 package
-        ds,dtype = d_create(subgroup, dataset_name, @view(state[:, :, 1]))
-        ds[:, :] = @view(state[:, :, 1])
-        attrs(ds)["Description"] = "Ocean surface height"
+        ds,dtype = d_create(subgroup, dataset_name, field)
+        ds[:,:] = field
+        attrs(ds)["Description"] = description
         attrs(ds)["Unit"] = unit
         attrs(ds)["Time_step"] = it
         attrs(ds)["Time (s)"] = it * params.time_step
     else
         @warn "Write failed, dataset " * group_name * "/" * subgroup_name * "/" * dataset_name *  " already exists in " * file.filename * "!"
     end
-
 end
-
-
 
 function write_timers(length::Int, size::Int, chars::AbstractVector{Char}, params::tdac_params)
 
