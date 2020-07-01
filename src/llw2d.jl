@@ -2,11 +2,6 @@ module LLW2d
 
 # Linear Long Wave (LLW) tsunami in 2D Cartesian Coordinate
 
-const nxa = 20            # absorber thickness
-const nya = 20            # absorber thickness
-const apara = 0.015       # damping for boundaries
-const CUTOFF_DEPTH = 10   # shallowest water depth
-
 const g_n = 9.80665
 
 # Set station locations.
@@ -109,6 +104,9 @@ end
 function setup(nx::Int,
                ny::Int,
                bathymetry_val::Real,
+               absorber_thickness_fraction::Real,
+               apara::Real,
+               cutoff_depth::Real,
                T::DataType = Float64)
     # Memory allocation
     hh = Matrix{T}(undef, nx, ny) # ocean depth
@@ -119,13 +117,16 @@ function setup(nx::Int,
     fn = ones(T, nx, ny) # "
     fe = ones(T, nx, ny) # "
 
+    nxa = floor(Int, nx * absorber_thickness_fraction)
+    nya = floor(Int, nx * absorber_thickness_fraction)
+
     # Bathymetry set-up. Users may need to modify it
     fill!(hh, bathymetry_val)
     @inbounds for j in 1:ny, i in 1:nx
         if hh[i,j] < 0
             hh[i,j] = 0
-        elseif hh[i,j] < CUTOFF_DEPTH
-            hh[i,j] = CUTOFF_DEPTH
+        elseif hh[i,j] < cutoff_depth
+            hh[i,j] = cutoff_depth
         end
     end
 
