@@ -2,11 +2,6 @@ module LLW2d
 
 # Linear Long Wave (LLW) tsunami in 2D Cartesian Coordinate
 
-const nxa = 20            # absorber thickness
-const nya = 20            # absorber thickness
-const apara = 0.015       # damping for boundaries
-const CUTOFF_DEPTH = 10   # shallowest water depth
-
 const g_n = 9.80665
 
 # Set station locations.
@@ -109,23 +104,29 @@ end
 function setup(nx::Int,
                ny::Int,
                bathymetry_val::Real,
+               absorber_thickness_fraction::Real,
+               apara::Real,
+               cutoff_depth::Real,
                T::DataType = Float64)
     # Memory allocation
     hh = Matrix{T}(undef, nx, ny) # ocean depth
     hm = Matrix{T}(undef, nx, ny) # x-averaged depth
     hn = Matrix{T}(undef, nx, ny) # y-averaged depth
-    gg = Matrix{T}(undef, nx, ny) # absorbing boundary
+    gg = ones(T, nx, ny) # absorbing boundary
     fm = ones(T, nx, ny) # land filters
     fn = ones(T, nx, ny) # "
     fe = ones(T, nx, ny) # "
+
+    nxa = floor(Int, nx * absorber_thickness_fraction)
+    nya = floor(Int, nx * absorber_thickness_fraction)
 
     # Bathymetry set-up. Users may need to modify it
     fill!(hh, bathymetry_val)
     @inbounds for j in 1:ny, i in 1:nx
         if hh[i,j] < 0
             hh[i,j] = 0
-        elseif hh[i,j] < CUTOFF_DEPTH
-            hh[i,j] = CUTOFF_DEPTH
+        elseif hh[i,j] < cutoff_depth
+            hh[i,j] = cutoff_depth
         end
     end
 
@@ -158,17 +159,18 @@ function setup(nx::Int,
 
     # Sponge absorbing boundary condition by Cerjan (1985)
     @inbounds for j in 1:ny, i in 1:nx
-          if i <= nxa
-             gg[i, j] = exp(-((apara * (nxa - i)) ^ 2))
-          elseif i >= nx - nxa + 1
-             gg[i, j] = exp(-((apara * (i - nx + nxa - 1)) ^ 2))
-          elseif j <= nya
-             gg[i, j] = exp(-((apara * (nya - j)) ^ 2))
-          elseif j >= ny - nya + 1
-             gg[i, j] = exp(-((apara * (j - ny + nya - 1)) ^ 2))
-          else
-             gg[i, j] = 1
-          end
+        if i <= nxa
+            gg[i, j] *= exp(-((apara * (nxa - i)) ^ 2))
+        end
+        if i >= nx - nxa + 1
+            gg[i, j] *= exp(-((apara * (i - nx + nxa - 1)) ^ 2))
+        end
+        if j <= nya
+            gg[i, j] *= exp(-((apara * (nya - j)) ^ 2))
+        end
+        if j >= ny - nya + 1
+            gg[i, j] *= exp(-((apara * (j - ny + nya - 1)) ^ 2))
+        end
     end
     return gg, hh, hm, hn, fm, fn, fe
 end

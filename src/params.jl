@@ -49,6 +49,9 @@ Parameters for TDAC run. Arguments:
 * `particle_initial_state::String` : Initial state of the particles before noise is added. Possible options are
   * "zero" : initialise height and velocity to 0 everywhere
   * "true" : copy the true initial state
+* `absorber_thickness_fraction` : Thickness of absorber for sponge absorbing boundary conditions, fraction of grid size
+* `boundary_damping` : damping for boundaries
+* `cutoff_depth` : Shallowest water depth
 """
 Base.@kwdef struct tdac_params{T<:AbstractFloat}
 
@@ -105,6 +108,11 @@ Base.@kwdef struct tdac_params{T<:AbstractFloat}
     enable_timers::Bool = false
 
     particle_initial_state::String = "zero"
+
+    absorber_thickness_fraction::T = 0.1
+    boundary_damping::T = 0.015
+    cutoff_depth::T = 10.0
+
 end
 
 end

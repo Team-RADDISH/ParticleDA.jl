@@ -452,7 +452,12 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
 
         # Set up tsunami model
         #TODO: Put these in a data structure
-        gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx, params.ny, params.bathymetry_setup)
+        gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx,
+                                                 params.ny,
+                                                 params.bathymetry_setup,
+                                                 params.absorber_thickness_fraction,
+                                                 params.boundary_damping,
+                                                 params.cutoff_depth)
 
         set_stations!(stations, params)
 
