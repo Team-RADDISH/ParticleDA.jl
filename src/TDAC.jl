@@ -338,18 +338,11 @@ function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::In
     # Do memory allocations
 
     if MPI.Comm_rank(MPI.COMM_WORLD) == master_rank
-        # Model vector for data assimilation
-        #   state[:, 1]: tsunami height eta(nx,ny)
-        #   state[:, 2]: vertically integrated velocity Mx(nx,ny)
-        #   state[:, 3]: vertically integrated velocity Mx(nx,ny)
-        state_particles = zeros(T, nx, ny, n_state_var, nprt_total) # model state vectors for particles
         state_avg = zeros(T, nx, ny, n_state_var) # average of particle state vectors
         state_var = zeros(T, nx, ny, n_state_var) # variance of particle state vectors
         state_resampled = Array{T,4}(undef, nx, ny, n_state_var, nprt_total)
         weights = Vector{T}(undef, nprt_total)
     else
-        state_particles = zeros(T, nx, ny, n_state_var, nprt_per_rank)
-
         # The below arrays are not needed on non-master ranks. However, to fit them in the
         # data structures, we define them as 0-size Vectors
         state_avg = Array{T,3}(undef, 0, 0, 0)
@@ -358,6 +351,11 @@ function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::In
         weights = Vector{T}(undef, nprt_per_rank)
     end
 
+    # Model vector for data assimilation
+    #   state[:, :, 1, :]: tsunami height eta(nx,ny)
+    #   state[:, :, 2, :]: vertically integrated velocity Mx(nx,ny)
+    #   state[:, :, 3, :]: vertically integrated velocity Mx(nx,ny)
+    state_particles = zeros(T, nx, ny, n_state_var, nprt_per_rank)
     state_truth = zeros(T, nx, ny, n_state_var) # model vector: true wavefield (observation)
     obs_truth = Vector{T}(undef, nobs)          # observed tsunami height
     obs_model = Matrix{T}(undef, nobs, nprt_per_rank) # forecasted tsunami height
@@ -422,6 +420,24 @@ function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::Strin
     else
         LLW2d.set_stations!(ist,jst,distance_x,distance_y,boundary_x,boundary_y,dx,dy)
     end
+
+end
+
+# Return something that can be MPI_Reduced to a mean
+function get_parallel_mean!(avg::AbstractArray{T,3}, particles::AbstractArray{T,4}, mpisize::Int) where T
+
+    Statistics.mean!(avg, particles)
+    avg ./= mpisize
+
+end
+
+# Return something that can be MPI_Reduced to a variance
+function get_parallel_var!(states.var::AbstractArray{T,3},
+                           states.particles::AbstractArray{T,4},
+                           states.avg::AbstractArray{T,3},
+                           mpisize::Int)
+
+    var ./= mpisize
 
 end
 
@@ -521,29 +537,21 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
                                                          observations.model,
                                                          params.obs_noise_std)
 
-        # Gather all particles and weights to master rank
+        # Gather weights to master rank and resample particles.
         # Doing MPI collectives in place to save memory allocations.
         # This style with if statmeents is recommended instead of MPI.Gather_in_place! which is a bit strange.
         # Note that only master_rank allocates memory for all particles. Other ranks only allocate
         # for their chunk of state.
         if my_rank == params.master_rank
             @timeit_debug timer "MPI Gather" MPI.Gather!(nothing,
-                                                         @view(states.particles[:]),
-                                                         params.nx * params.ny * params.n_state_var * nprt_per_rank,
-                                                         params.master_rank,
-                                                         MPI.COMM_WORLD)
-            @timeit_debug timer "MPI Gather" MPI.Gather!(nothing,
                                                          weights,
                                                          nprt_per_rank,
                                                          params.master_rank,
                                                          MPI.COMM_WORLD)
 
+            @timeit_debug timer "Resample" resample!(resampling_indices, weights)
+
         else
-            @timeit_debug timer "MPI Gather" MPI.Gather!(@view(states.particles[:]),
-                                                         nothing,
-                                                         params.nx * params.ny * params.n_state_var * nprt_per_rank,
-                                                         params.master_rank,
-                                                         MPI.COMM_WORLD)
             @timeit_debug timer "MPI Gather" MPI.Gather!(weights,
                                                          nothing,
                                                          nprt_per_rank,
@@ -551,38 +559,63 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
                                                          MPI.COMM_WORLD)
         end
 
-        if my_rank == params.master_rank
+        # Broadcast resampled particle indices to all ranks
+        MPI.Bcast!(resampling_indices, params.master_rank, MPI.COMM_WORLD)
 
-            # Weigh and resample particles
-            @timeit_debug timer "Resample" resample!(resampling_indices, weights)
-            @timeit_debug timer "State Copy" copy_resampled_state!(states.particles, states.buffer, resampling_indices)
+        @timeit_debug timer "State Copy" begin
 
-            # Scatter the new particles to all ranks. In place similar to gather above.
-            @timeit_debug timer "MPI Scatter" MPI.Scatter!(@view(states.particles[:]),
-                                                           nothing,
-                                                           params.nx * params.ny * params.n_state_var * nprt_per_rank,
-                                                           params.master_rank,
-                                                           MPI.COMM_WORLD)
+            # These are the particle indices stored on this rank
+            particles_have = my_rank * nprt_per_rank:(my_rank + 1) * nprt_per_rank
 
-            # Calculate statistical quantities
-            @timeit_debug timer "Particle Mean" Statistics.mean!(states.avg, states.particles)
-            @timeit_debug timer "Particle Variance" Statistics.varm!(states.var, states.particles, states.avg)
+            # These are the particle indices this rank should have after resampling
+            particles_want = resampling_indices[particles_have]
 
-            # Write output
-            if params.verbose
-                @timeit_debug timer "IO" write_snapshot(states.truth, states.avg, states.var, weights, it, params)
+            # These are the ranks that have the particles this rank should have
+            process_has = floor(Int, particles_want / nprt_per_rank)
+
+            # We could work out how many sends and receives we have to do and allocate
+            # this appropriately but, lazy
+            reqs = []
+
+            # Send particles to processes that want them
+            for (k,id) in enumerate(resampling_indices)
+                process_wants = floor(Int, k / nprt_per_rank)
+                if id in particles_have and process_wants[k] != my_rank
+                    req = MPI.Isend(@view(states.particles[:,:,:,id]), process_wants, id, MPI.COMM_WORLD)
+                    push!(reqs, req)
+                end
             end
 
-        else
-            @timeit_debug timer "MPI Scatter" MPI.Scatter!(nothing,
-                                                           @view(states.particles[:]),
-                                                           params.nx * params.ny * params.n_state_var * nprt_per_rank,
-                                                           params.master_rank,
-                                                           MPI.COMM_WORLD)
-        end
-    end
+            # Receive particles this rank wants from ranks that have them
+            # If I already have them, just do a local copy
+            # Receive into a buffer so we dont accidentally overwrite stuff
+            for (k,proc,id) in zip(1:nprt_per_rank, process_has, particles_want)
+                if process_has == my_id
+                    @view(states.buffer[:,:,:,k]) .= @view(states.particles([:,:,:,id]))
+                else
+                    req = MPI.Irecv!(@view(states.buffer[:,:,:,k]), proc, id, MPI.COMM_WORLD)
+                    push!(reqs,req)
+                end
+            end
 
-    if my_rank == params.master_rank && params.enable_timers
+            # Wait for all comms to complete
+            MPI.Waitall(reqs)
+
+            states.particles .= states.buffer
+        end
+
+        @timeit_debug timer "Particle Mean" get_parallel_mean(states.avg, states.particles, my_size)
+        @timeit_debug timer "Particle Variance" get_parallel_var(states.var, states.particles, states.avg, my_size)
+
+        MPI.Reduce!(states.avg, +, params.master_rank, MPI.COMM_WORLD)
+        MPI.Reduce!(states.var, +, params.master_rank, MPI.COMM_WORLD)
+
+        if my_rank == params.master_rank && params.verbose
+
+            # Write output
+            @timeit_debug timer "IO" write_snapshot(states.truth, states.avg, states.var, weights, it, params)
+
+        end
 
     end
 
