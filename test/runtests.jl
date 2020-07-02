@@ -29,13 +29,13 @@ FFTW.set_num_threads(1)
 
     ### initheight!
     eta = ones(2, 2)
-    hh  = ones(2, 2)
-    LLW2d.initheight!(eta, hh, dx, dy, 3e4)
+    ocean_depth  = ones(2, 2)
+    LLW2d.initheight!(eta, ocean_depth, dx, dy, 3e4)
     @test eta ≈ [0.978266982572228  0.9463188389826958;
                  0.9463188389826958 0.9154140546161575]
     eta = ones(2, 2)
-    hh  = zeros(2, 2)
-    LLW2d.initheight!(eta, hh, dx, dy, 3e4)
+    ocean_depth  = zeros(2, 2)
+    LLW2d.initheight!(eta, ocean_depth, dx, dy, 3e4)
     @test eta ≈ zeros(2, 2)
 
     # timestep.  TODO: add real tests.  So far we're just making sure code won't
@@ -47,15 +47,18 @@ FFTW.set_num_threads(1)
     eta0 = rand(n, n)
     mm0 = rand(n, n)
     nn0 = rand(n, n)
-    hn = rand(n, n)
-    hm = rand(n, n)
-    fm = rand(n, n)
-    fn = rand(n, n)
-    fe = rand(n,n)
-    gg = rand(n,n)
+    y_averaged_depth = rand(n, n)
+    x_averaged_depth = rand(n, n)
+    land_filter_m = rand(n, n)
+    land_filter_n = rand(n, n)
+    land_filter_e = rand(n,n)
+    absorbing_boundary = rand(n,n)
+    model_matrices = LLW2d.Matrices(absorbing_boundary, ocean_depth,
+                                    x_averaged_depth, y_averaged_depth,
+                                    land_filter_m, land_filter_n, land_filter_e)
     dxeta = Matrix{Float64}(undef, n, n)
     dyeta = Matrix{Float64}(undef, n, n)
-    LLW2d.timestep!(dxeta, dyeta, eta1, mm1, nn1, eta0, mm0, nn0, hm, hn, fm, fn, fe, gg, dx, dy, 1)
+    LLW2d.timestep!(dxeta, dyeta, eta1, mm1, nn1, eta0, mm0, nn0, model_matrices, dx, dy, 1)
 
     # setup.  TODO: add real tests.  So far we're just making sure code won't
     # crash
@@ -121,20 +124,25 @@ end
     nt = 1
     # 0 input gives 0 output
     x0 = x = zeros(nx, ny, 3)
-    gg, hh, hm, hn, fm, fn, fe = TDAC.LLW2d.setup(nx,ny,3.0e4, 0.1, 0.015, 10.0)
-    @test size(gg) == size(hh) == size(hm) == size(fm) == size(fn) == size(fe) == (nx,ny)
+    model_matrices = TDAC.LLW2d.setup(nx,ny,3.0e4, 0.1, 0.015, 10.0)
+    @test size(model_matrices.absorbing_boundary) ==
+        size(model_matrices.ocean_depth) ==
+        size(model_matrices.x_averaged_depth) ==
+        size(model_matrices.land_filter_m) ==
+        size(model_matrices.land_filter_n) ==
+        size(model_matrices.land_filter_e) == (nx, ny)
     dxeta = Matrix{Float64}(undef, nx, ny)
     dyeta = Matrix{Float64}(undef, nx, ny)
-    TDAC.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, hm, hn, fm, fn, fe, gg)
+    TDAC.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, model_matrices)
     @test x ≈ x0
 
     # Initialise and update a tsunami on a small grid
     s = 4e3
     eta = reshape(@view(x[1:nx*ny]), nx, ny)
-    TDAC.LLW2d.initheight!(eta, hh, dx, dy, s)
+    TDAC.LLW2d.initheight!(eta, model_matrices, dx, dy, s)
     @test eta[2,2] ≈ 1.0
     @test sum(eta) ≈ 4.0
-    TDAC.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, hm, hn, fm, fn, fe, gg)
+    TDAC.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, model_matrices)
     @test sum(eta, dims=1) ≈ [0.98161253125 1.8161253125 0.98161253125 0.073549875 0.0 0.0 0.0 0.0 0.0 0.0]
     @test sum(eta, dims=2) ≈ [0.98161253125 1.8161253125 0.98161253125 0.073549875 0.0 0.0 0.0 0.0 0.0 0.0]'
 

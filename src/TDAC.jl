@@ -47,16 +47,11 @@ end
 function tsunami_update!(dx_buffer::AbstractMatrix{T},
                          dy_buffer::AbstractMatrix{T},
                          state::AbstractArray{T,3},
-                         hm::AbstractMatrix{T},
-                         hn::AbstractMatrix{T},
-                         fm::AbstractMatrix{T},
-                         fn::AbstractMatrix{T},
-                         fe::AbstractMatrix{T},
-                         gg::AbstractMatrix{T},
+                         model_matrices::LLW2d.Matrices{T},
                          params::tdac_params) where T
 
     tsunami_update!(dx_buffer, dy_buffer, state, params.n_integration_step,
-                    params.dx, params.dy, params.time_step, hm, hn, fm, fn, fe, gg)
+                    params.dx, params.dy, params.time_step, model_matrices)
 
 end
 
@@ -68,12 +63,7 @@ function tsunami_update!(dx_buffer::AbstractMatrix{T},
                          dx::Real,
                          dy::Real,
                          time_interval::Real,
-                         hm::AbstractMatrix{T},
-                         hn::AbstractMatrix{T},
-                         fm::AbstractMatrix{T},
-                         fn::AbstractMatrix{T},
-                         fe::AbstractMatrix{T},
-                         gg::AbstractMatrix{T}) where T
+                         model_matrices::LLW2d.Matrices{T}) where T
 
     eta_a = @view(state[:, :, 1])
     mm_a  = @view(state[:, :, 2])
@@ -86,7 +76,7 @@ function tsunami_update!(dx_buffer::AbstractMatrix{T},
 
     for it in 1:nt
         # Parts of model vector are aliased to tsunami heiht and velocities
-        LLW2d.timestep!(dx_buffer, dy_buffer, eta_f, mm_f, nn_f, eta_a, mm_a, nn_a, hm, hn, fn, fm, fe, gg, dx, dy, dt)
+        LLW2d.timestep!(dx_buffer, dy_buffer, eta_f, mm_f, nn_f, eta_a, mm_a, nn_a, model_matrices, dx, dy, dt)
     end
 
 end
@@ -372,10 +362,14 @@ function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::In
     return StateVectors(state_particles, state_resampled, state_truth, state_avg, state_var), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), weights, field_buffer
 end
 
-function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buffer::AbstractArray{T, 4}, rng::AbstractVector{<:Random.AbstractRNG}, nprt_per_rank::Int, params::tdac_params) where T
+function set_initial_state!(states::StateVectors, model_matrices::LLW2d.Matrices{T},
+                            field_buffer::AbstractArray{T, 4},
+                            rng::AbstractVector{<:Random.AbstractRNG},
+                            nprt_per_rank::Int,
+                            params::tdac_params) where T
 
     # Set true initial state
-    LLW2d.initheight!(@view(states.truth[:, :, 1]), hh, params.dx, params.dy, params.source_size)
+    LLW2d.initheight!(@view(states.truth[:, :, 1]), model_matrices, params.dx, params.dy, params.source_size)
 
     # Create generator for the initial random field
     x,y = get_axes(params)
@@ -451,17 +445,16 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
         background_grf = init_gaussian_random_field_generator(params)
 
         # Set up tsunami model
-        #TODO: Put these in a data structure
-        gg, hh, hm, hn, fm, fn, fe = LLW2d.setup(params.nx,
-                                                 params.ny,
-                                                 params.bathymetry_setup,
-                                                 params.absorber_thickness_fraction,
-                                                 params.boundary_damping,
-                                                 params.cutoff_depth)
+        model_matrices = LLW2d.setup(params.nx,
+                                     params.ny,
+                                     params.bathymetry_setup,
+                                     params.absorber_thickness_fraction,
+                                     params.boundary_damping,
+                                     params.cutoff_depth)
 
         set_stations!(stations, params)
 
-        set_initial_state!(states, hh, field_buffer, rng, nprt_per_rank, params)
+        set_initial_state!(states, model_matrices, field_buffer, rng, nprt_per_rank, params)
 
         resampling_indices = Vector{Int}(undef,params.nprt)
 
@@ -483,7 +476,7 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
         # integrate true synthetic wavefield
         @timeit_debug timer "True State Update" tsunami_update!(@view(field_buffer[:, :, 1, 1]),
                                                                 @view(field_buffer[:, :, 2, 1]),
-                                                                states.truth, hm, hn, fn, fm, fe, gg, params)
+                                                                states.truth, model_matrices, params)
 
         # Get observation from true synthetic wavefield
         @timeit_debug timer "Observations" get_obs!(observations.truth, states.truth, stations.ist, stations.jst, params)
@@ -494,7 +487,7 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
         @timeit_debug timer "Particle State Update" Threads.@threads for ip in 1:nprt_per_rank
 
             tsunami_update!(@view(field_buffer[:, :, 1, threadid()]), @view(field_buffer[:, :, 2, threadid()]),
-                            @view(states.particles[:, :, :, ip]), hm, hn, fn, fm, fe, gg, params)
+                            @view(states.particles[:, :, :, ip]), model_matrices, params)
 
         end
 
