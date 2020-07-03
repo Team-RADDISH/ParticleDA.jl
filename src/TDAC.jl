@@ -432,10 +432,10 @@ function get_parallel_mean!(avg::AbstractArray{T,3}, particles::AbstractArray{T,
 end
 
 # Return something that can be MPI_Reduced to a variance
-function get_parallel_var!(states.var::AbstractArray{T,3},
-                           states.particles::AbstractArray{T,4},
-                           states.avg::AbstractArray{T,3},
-                           mpisize::Int)
+function get_parallel_var!(var::AbstractArray{T,3},
+                           particles::AbstractArray{T,4},
+                           avg::AbstractArray{T,3},
+                           mpisize::Int) where T
 
     var ./= mpisize
 
@@ -562,25 +562,25 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
         # Broadcast resampled particle indices to all ranks
         MPI.Bcast!(resampling_indices, params.master_rank, MPI.COMM_WORLD)
 
-        @timeit_debug timer "State Copy" begin
+        #@timeit_debug timer "State Copy" begin
 
             # These are the particle indices stored on this rank
-            particles_have = my_rank * nprt_per_rank:(my_rank + 1) * nprt_per_rank
+            particles_have = my_rank * nprt_per_rank + 1:(my_rank + 1) * nprt_per_rank
 
             # These are the particle indices this rank should have after resampling
             particles_want = resampling_indices[particles_have]
 
             # These are the ranks that have the particles this rank should have
-            process_has = floor(Int, particles_want / nprt_per_rank)
+            process_has = floor.(Int, particles_want / nprt_per_rank)
 
             # We could work out how many sends and receives we have to do and allocate
             # this appropriately but, lazy
-            reqs = []
+            reqs = Vector{MPI.Request}(undef, 0)
 
             # Send particles to processes that want them
             for (k,id) in enumerate(resampling_indices)
-                process_wants = floor(Int, k / nprt_per_rank)
-                if id in particles_have && process_wants[k] != my_rank
+                process_wants = floor(Int, (k - 1) / nprt_per_rank)
+                if id in particles_have && process_wants != my_rank
                     req = MPI.Isend(@view(states.particles[:,:,:,id]), process_wants, id, MPI.COMM_WORLD)
                     push!(reqs, req)
                 end
@@ -590,8 +590,8 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
             # If I already have them, just do a local copy
             # Receive into a buffer so we dont accidentally overwrite stuff
             for (k,proc,id) in zip(1:nprt_per_rank, process_has, particles_want)
-                if process_has == my_id
-                    @view(states.buffer[:,:,:,k]) .= @view(states.particles([:,:,:,id]))
+                if process_has == my_rank
+                    @view(states.buffer[:,:,:,k]) .= @view(states.particles[:,:,:,id])
                 else
                     req = MPI.Irecv!(@view(states.buffer[:,:,:,k]), proc, id, MPI.COMM_WORLD)
                     push!(reqs,req)
@@ -599,10 +599,10 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
             end
 
             # Wait for all comms to complete
-            MPI.Waitall(reqs)
+            MPI.Waitall!(reqs)
 
             states.particles .= states.buffer
-        end
+        #end
 
         @timeit_debug timer "Particle Mean" get_parallel_mean(states.avg, states.particles, my_size)
         @timeit_debug timer "Particle Variance" get_parallel_var(states.var, states.particles, states.avg, my_size)
