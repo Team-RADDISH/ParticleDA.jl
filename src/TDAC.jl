@@ -580,7 +580,7 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
             # Send particles to processes that want them
             for (k,id) in enumerate(resampling_indices)
                 process_wants = floor(Int, k / nprt_per_rank)
-                if id in particles_have and process_wants[k] != my_rank
+                if id in particles_have && process_wants[k] != my_rank
                     req = MPI.Isend(@view(states.particles[:,:,:,id]), process_wants, id, MPI.COMM_WORLD)
                     push!(reqs, req)
                 end
