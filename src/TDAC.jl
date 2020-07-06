@@ -585,7 +585,7 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
                 rank_wants = floor(Int, (k - 1) / nprt_per_rank)
                 #@show rank_wants
                 if id in particles_have && rank_wants != my_rank
-                    local_id = id - my_rank * my_size
+                    local_id = id - my_rank * nprt_per_rank
                     #println("sending particle ", id, " with local id ", local_id," from rank ",my_rank," to rank ", rank_wants)
                     req = MPI.Isend(@view(states.particles[:,:,:,local_id]), rank_wants, id, MPI.COMM_WORLD)
                     push!(reqs, req)
@@ -597,7 +597,7 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
             # Receive into a buffer so we dont accidentally overwrite stuff
             for (k,proc,id) in zip(1:nprt_per_rank, rank_has, particles_want)
                 if proc == my_rank
-                    local_id = id - my_rank * my_size
+                    local_id = id - my_rank * nprt_per_rank
                     # for i in 1:my_size
                     #     if i == my_rank + 1
                     #         println("copying local particle ",id," from local id ",local_id," to local id ",k," on rank ",my_rank)
