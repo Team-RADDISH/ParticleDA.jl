@@ -94,9 +94,9 @@ end
 # Get weights for particles by evaluating the probability of the observations predicted by the model
 # from independent normal pdfs for each observation.
 function get_log_weights!(weight::AbstractVector{T},
-                      obs::AbstractVector{T},
-                      obs_model::AbstractMatrix{T},
-                      obs_noise_std::T) where T
+                          obs::AbstractVector{T},
+                          obs_model::AbstractMatrix{T},
+                          obs_noise_std::T) where T
 
     nobs = size(obs_model,1)
     @assert size(obs,1) == nobs
@@ -112,9 +112,9 @@ end
 # Get weights for particles by evaluating the probability of the observations predicted by the model
 # from a multivariate normal pdf with mean equal to real observations and covariance equal to cov_obs
 function get_log_weights!(weight::AbstractVector{T},
-                      obs::AbstractVector{T},
-                      obs_model::AbstractMatrix{T},
-                      cov_obs::AbstractMatrix{T}) where T
+                          obs::AbstractVector{T},
+                          obs_model::AbstractMatrix{T},
+                          cov_obs::AbstractMatrix{T}) where T
 
     weight .= Distributions.logpdf(Distributions.MvNormal(obs, cov_obs), obs_model)
 
