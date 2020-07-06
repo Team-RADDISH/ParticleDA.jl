@@ -343,7 +343,7 @@ function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::In
     state_avg = zeros(T, nx, ny, n_state_var) # average of particle state vectors
     state_var = zeros(T, nx, ny, n_state_var) # variance of particle state vectors
     state_resampled = Array{T,4}(undef, nx, ny, n_state_var, nprt_per_rank)
-    
+
     # Model vector for data assimilation
     #   state[:, :, 1, :]: tsunami height eta(nx,ny)
     #   state[:, :, 2, :]: vertically integrated velocity Mx(nx,ny)
@@ -431,6 +431,79 @@ function get_parallel_var!(var::AbstractArray{T,3},
                            mpisize::Int) where T
 
     var ./= mpisize
+
+end
+
+function copy_states!(states::StateVectors, resampling_indices::Vector{Int}, my_rank::Int, nprt_per_rank::Int)
+
+    copy_states!(states.particles, states.buffer, resampling_indices, my_rank, nprt_per_rank)
+
+end
+
+function copy_states!(particles::AbstractArray{T,4},
+                      buffer::AbstractArray{T,4},
+                      resampling_indices::Vector{Int},
+                      my_rank::Int,
+                      nprt_per_rank::Int) where T
+
+    debug = false
+
+    # These are the particle indices stored on this rank
+    particles_have = my_rank * nprt_per_rank + 1:(my_rank + 1) * nprt_per_rank
+
+    # These are the particle indices this rank should have after resampling
+    particles_want = resampling_indices[particles_have]
+
+    # These are the ranks that have the particles this rank should have
+    rank_has = floor.(Int, (particles_want .- 1) / nprt_per_rank)
+
+    # We could work out how many sends and receives we have to do and allocate
+    # this appropriately but, lazy
+    reqs = Vector{MPI.Request}(undef, 0)
+
+    if debug
+        for i in 1:my_size
+            if i == my_rank + 1
+                @show my_rank
+                @show collect(particles_have)
+                @show particles_want
+                @show rank_has
+            end
+            MPI.Barrier(MPI.COMM_WORLD) #For debugging
+        end
+    end
+
+    # Send particles to processes that want them
+    for (k,id) in enumerate(resampling_indices)
+        rank_wants = floor(Int, (k - 1) / nprt_per_rank)
+        debug ? @show(rank_wants) : nothing
+        if id in particles_have && rank_wants != my_rank
+            local_id = id - my_rank * nprt_per_rank
+            debug ? println("sending particle ", id, " with local id ", local_id," from rank ",my_rank," to rank ", rank_wants) : nothing
+            req = MPI.Isend(@view(particles[:,:,:,local_id]), rank_wants, id, MPI.COMM_WORLD)
+            push!(reqs, req)
+        end
+    end
+
+    # Receive particles this rank wants from ranks that have them
+    # If I already have them, just do a local copy
+    # Receive into a buffer so we dont accidentally overwrite stuff
+    for (k,proc,id) in zip(1:nprt_per_rank, rank_has, particles_want)
+        if proc == my_rank
+            local_id = id - my_rank * nprt_per_rank
+            debug ? println("copying local particle ",id," from local id ",local_id," to local id ",k," on rank ",my_rank) : nothing
+            @view(buffer[:,:,:,k]) .= @view(particles[:,:,:,local_id])
+        else
+            debug ? println("receiving particle ", id, " on rank ",my_rank," from rank ", proc) : nothing
+            req = MPI.Irecv!(@view(buffer[:,:,:,k]), proc, id, MPI.COMM_WORLD)
+            push!(reqs,req)
+        end
+    end
+
+    # Wait for all comms to complete
+    MPI.Waitall!(reqs)
+
+    particles .= buffer
 
 end
 
@@ -541,9 +614,9 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
                                                          nprt_per_rank,
                                                          params.master_rank,
                                                          MPI.COMM_WORLD)
-            @timeit_debug timer "Weights" normalized_exp!(weights)           
+            @timeit_debug timer "Weights" normalized_exp!(weights)
             @timeit_debug timer "Resample" resample!(resampling_indices, weights)
-            
+
         else
             @timeit_debug timer "MPI Gather" MPI.Gather!(weights,
                                                          nothing,
@@ -555,67 +628,7 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
         # Broadcast resampled particle indices to all ranks
         MPI.Bcast!(resampling_indices, params.master_rank, MPI.COMM_WORLD)
 
-        @timeit_debug timer "State Copy" begin
-
-            # These are the particle indices stored on this rank
-            particles_have = my_rank * nprt_per_rank + 1:(my_rank + 1) * nprt_per_rank
-
-            # These are the particle indices this rank should have after resampling
-            particles_want = resampling_indices[particles_have]
-
-            # These are the ranks that have the particles this rank should have
-            rank_has = floor.(Int, (particles_want .- 1) / nprt_per_rank)
-
-            # We could work out how many sends and receives we have to do and allocate
-            # this appropriately but, lazy
-            reqs = Vector{MPI.Request}(undef, 0)
-
-            # for i in 1:my_size
-            #     if i == my_rank + 1
-            #         @show my_rank
-            #         @show collect(particles_have)
-            #         @show particles_want
-            #         @show rank_has
-            #     end
-            #     MPI.Barrier(MPI.COMM_WORLD) #For debugging
-            # end
-        
-            # Send particles to processes that want them
-            for (k,id) in enumerate(resampling_indices)
-                rank_wants = floor(Int, (k - 1) / nprt_per_rank)
-                #@show rank_wants
-                if id in particles_have && rank_wants != my_rank
-                    local_id = id - my_rank * nprt_per_rank
-                    #println("sending particle ", id, " with local id ", local_id," from rank ",my_rank," to rank ", rank_wants)
-                    req = MPI.Isend(@view(states.particles[:,:,:,local_id]), rank_wants, id, MPI.COMM_WORLD)
-                    push!(reqs, req)
-                end
-            end
-        
-            # Receive particles this rank wants from ranks that have them
-            # If I already have them, just do a local copy
-            # Receive into a buffer so we dont accidentally overwrite stuff
-            for (k,proc,id) in zip(1:nprt_per_rank, rank_has, particles_want)
-                if proc == my_rank
-                    local_id = id - my_rank * nprt_per_rank
-                    # for i in 1:my_size
-                    #     if i == my_rank + 1
-                    #         println("copying local particle ",id," from local id ",local_id," to local id ",k," on rank ",my_rank)
-                    #     end
-                    # end
-                    @view(states.buffer[:,:,:,k]) .= @view(states.particles[:,:,:,local_id])
-                else
-                    #println("receiving particle ", id, " on rank ",my_rank," from rank ", proc)
-                    req = MPI.Irecv!(@view(states.buffer[:,:,:,k]), proc, id, MPI.COMM_WORLD)
-                    push!(reqs,req)
-                end
-            end
-
-            # Wait for all comms to complete
-            MPI.Waitall!(reqs)
-
-            states.particles .= states.buffer
-        end
+        @timeit_debug timer "State Copy" copy_states!(states, resampling_indices, my_rank, nprt_per_rank)
 
         @timeit_debug timer "Particle Mean" get_parallel_mean!(states.avg, states.particles, my_size)
         @timeit_debug timer "Particle Variance" get_parallel_var!(states.var, states.particles, states.avg, my_size)
@@ -747,7 +760,7 @@ function tdac(params::tdac_params)
     if !MPI.Initialized()
         MPI.Init()
     end
-    
+
     rng = let m = Random.MersenneTwister(params.random_seed + MPI.Comm_rank(MPI.COMM_WORLD))
         [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
     end;
