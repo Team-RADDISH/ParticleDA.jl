@@ -1,4 +1,4 @@
-using TDAC, MPI, Random
+using Test, TDAC, MPI, Random
 
 MPI.Init()
 my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
@@ -36,3 +36,5 @@ for i = 1:my_size
     end
     MPI.Barrier(MPI.COMM_WORLD)
 end
+
+@test local_particles ≈ float(indices[my_rank * nprt_per_rank + 1 : (my_rank + 1) * nprt_per_rank])

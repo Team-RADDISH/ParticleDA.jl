@@ -234,11 +234,11 @@ end
 end
 
 @testset "MPI" begin
-    script = joinpath(@__DIR__, "mpi.jl")
+    mpi_script = joinpath(@__DIR__, "mpi.jl")
     mktempdir() do dir
         cd(dir) do
             mpiexec() do cmd
-                run(`$(cmd) -n 2 $(Base.julia_cmd()) $(script)`)
+                run(`$(cmd) -n 2 $(Base.julia_cmd()) $(mpi_script)`)
                 # This is a dummy test.  If `run` exitsts successfully, this
                 # testset will be successful as well, if `run` errors out this
                 # testset will error out as well, and the next `@test` will not
@@ -252,5 +252,11 @@ end
                 @test true
             end
         end
+    end
+
+    copy_script = joinpath(@__DIR__, "copy_states.jl")
+    mpiexec() do cmd
+        run(`$(cmd) -n 2 $(Base.julia_cmd()) $(copy_script)`)
+        @test true
     end
 end
