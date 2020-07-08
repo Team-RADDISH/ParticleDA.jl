@@ -259,4 +259,10 @@ end
         run(`$(cmd) -n 2 $(Base.julia_cmd()) $(copy_script)`)
         @test true
     end
+
+    stats_script = joinpath(@__DIR__, "mean_and_var.jl")
+    mpiexec() do cmd
+        run(`$(cmd) -n 2 $(Base.julia_cmd()) $(stats_script)`)
+        @test true
+    end
 end

@@ -158,22 +158,6 @@ function resample!(resampled_indices::AbstractVector{Int}, weight::AbstractVecto
 
 end
 
-function copy_resampled_state!(state::AbstractArray{T,4}, state_buffer::AbstractArray{T,4}, indices::AbstractVector{Int}) where T
-
-    nprt = size(state, 4)
-    @assert length(indices) == nprt
-
-    for ip in 1:nprt
-        for is in CartesianIndices(@view(state[:, :, :, 1]))
-            state_buffer[CartesianIndex(is, ip)] = state[CartesianIndex(is, indices[ip])]
-        end
-    end
-
-    state .= state_buffer
-    return state
-
-end
-
 function get_axes(params::tdac_params)
 
     return get_axes(params.nx, params.ny, params.dx, params.dy)
@@ -416,21 +400,40 @@ function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::Strin
 
 end
 
-# Return something that can be MPI_Reduced to a mean
-function get_parallel_mean!(avg::AbstractArray{T,3}, particles::AbstractArray{T,4}, mpisize::Int) where T
+function get_parallel_mean_and_var!(states::StateVectors,
+                                    mpi_size::Int,
+                                    nprt_per_rank::Int,
+                                    master_rank::Int)
 
-    Statistics.mean!(avg, particles)
-    avg ./= mpisize
+    get_parallel_mean_and_var!(states.avg,
+                               states.var,
+                               @view(states.buffer[:,:,:,1]),
+                               states.particles,
+                               mpi_size,
+                               nprt_per_rank,
+                               master_rank)
 
 end
 
-# Return something that can be MPI_Reduced to a variance
-function get_parallel_var!(var::AbstractArray{T,3},
-                           particles::AbstractArray{T,4},
-                           avg::AbstractArray{T,3},
-                           mpisize::Int) where T
+# Calculate mean and variance in parallel without using MPI.Gather to master.
+# Based on https://github.com/wesleykendall/mpitutorial/tree/gh-pages/tutorials/mpi-reduce-and-allreduce/code/reduce_stddev.c
+function get_parallel_mean_and_var!(avg::AbstractArray{T,3},
+                                    var::AbstractArray{T,3},
+                                    buffer::AbstractArray{T,3},
+                                    particles::AbstractArray{T,4},
+                                    mpi_size::Int,
+                                    nprt_per_rank::Int,
+                                    master_rank::Int) where T
 
-    var ./= mpisize
+    # Calculate local mean, reduce it to all ranks to get global mean
+    buffer .= dropdims(sum(particles, dims=4), dims=4)
+    MPI.Allreduce!(buffer, +, MPI.COMM_WORLD)
+    avg .= buffer ./ (nprt_per_rank .* mpi_size)
+
+    # Calculate square of difference from global mean, reduce it to master rank
+    buffer .= sum((particles .- avg) .^ 2)
+    MPI.Reduce!(buffer, +, master_rank, MPI.COMM_WORLD)
+    var .= buffer / (nprt_per_rank * mpi_size - 1)
 
 end
 
@@ -549,11 +552,10 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
 
     end
 
+    @timeit_debug timer "Mean and Var" get_parallel_mean_and_var!(states, my_size, nprt_per_rank, params.master_rank)
+
     # Write initial state + metadata
     if(params.verbose && my_rank == params.master_rank)
-        @timeit_debug timer "Particle Mean" Statistics.mean!(states.avg, states.particles)
-        @timeit_debug timer "Particle Variance" Statistics.varm!(states.var, states.particles, states.avg)
-
         @timeit_debug timer "IO" write_grid(params)
         @timeit_debug timer "IO" write_params(params)
         @timeit_debug timer "IO" write_stations(stations.ist, stations.jst, params)
@@ -630,11 +632,7 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
 
         @timeit_debug timer "State Copy" copy_states!(states, resampling_indices, my_rank, nprt_per_rank)
 
-        @timeit_debug timer "Particle Mean" get_parallel_mean!(states.avg, states.particles, my_size)
-        @timeit_debug timer "Particle Variance" get_parallel_var!(states.var, states.particles, states.avg, my_size)
-
-        MPI.Reduce!(states.avg, +, params.master_rank, MPI.COMM_WORLD)
-        MPI.Reduce!(states.var, +, params.master_rank, MPI.COMM_WORLD)
+        @timeit_debug timer "Mean and Var" get_parallel_mean_and_var!(states, my_size, nprt_per_rank, params.master_rank)
 
         if my_rank == params.master_rank && params.verbose
 
