@@ -426,12 +426,12 @@ function get_parallel_mean_and_var!(avg::AbstractArray{T,3},
                                     master_rank::Int) where T
 
     # Calculate local mean, reduce it to all ranks to get global mean
-    buffer .= dropdims(sum(particles, dims=4), dims=4)
+    sum!(buffer, particles)
     MPI.Allreduce!(buffer, +, MPI.COMM_WORLD)
     avg .= buffer ./ (nprt_per_rank .* mpi_size)
 
     # Calculate square of difference from global mean, reduce it to master rank
-    buffer .= sum((particles .- avg) .^ 2)
+    sum!(buffer, (particles .- avg) .^ 2)
     MPI.Reduce!(buffer, +, master_rank, MPI.COMM_WORLD)
     var .= buffer / (nprt_per_rank * mpi_size - 1)
 
