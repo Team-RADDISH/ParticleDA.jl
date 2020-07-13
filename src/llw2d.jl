@@ -2,6 +2,16 @@ module LLW2d
 
 # Linear Long Wave (LLW) tsunami in 2D Cartesian Coordinate
 
+struct Matrices{T,M<:AbstractMatrix{T}}
+    absorbing_boundary::M
+    ocean_depth::M
+    x_averaged_depth::M
+    y_averaged_depth::M
+    land_filter_m::M
+    land_filter_n::M
+    land_filter_e::M
+end
+
 const g_n = 9.80665
 
 # Set station locations.
@@ -37,17 +47,18 @@ function timestep!(dx_buffer::AbstractMatrix{T},
                    eta0::AbstractMatrix{T},
                    mm0::AbstractMatrix{T},
                    nn0::AbstractMatrix{T},
-                   hm::AbstractMatrix{T},
-                   hn::AbstractMatrix{T},
-                   fm::AbstractMatrix{T},
-                   fn::AbstractMatrix{T},
-                   fe::AbstractMatrix{T},
-                   gg::AbstractMatrix{T},
+                   absorbing_boundary::AbstractMatrix{T},
+                   x_averaged_depth::AbstractMatrix{T},
+                   y_averaged_depth::AbstractMatrix{T},
+                   land_filter_m::AbstractMatrix{T},
+                   land_filter_n::AbstractMatrix{T},
+                   land_filter_e::AbstractMatrix{T},
                    dx::Real,dy::Real,dt::Real) where T
     nx, ny = size(eta1)
     @assert (nx, ny) == size(mm1) == size(nn1) == size(eta0) == size(mm0) ==
-        size(nn0) == size(hm) == size(hn) == size(fm) == size(fn) == size(fe) ==
-        size(gg)
+        size(nn0) == size(x_averaged_depth) == size(y_averaged_depth) ==
+        size(land_filter_m) == size(land_filter_n) == size(land_filter_e) ==
+        size(absorbing_boundary)
 
     # diffs
     for j in 1:ny
@@ -65,14 +76,14 @@ function timestep!(dx_buffer::AbstractMatrix{T},
 
     # Update Velocity
     for j in 1:ny, i in 1:nx
-        @inbounds mm1[i,j] = mm0[i, j] - g_n * hm[i, j] * dx_buffer[i, j] * dt
-        @inbounds nn1[i,j] = nn0[i, j] - g_n * hn[i, j] * dy_buffer[i, j] * dt
+        @inbounds mm1[i,j] = mm0[i, j] - g_n * x_averaged_depth[i, j] * dx_buffer[i, j] * dt
+        @inbounds nn1[i,j] = nn0[i, j] - g_n * y_averaged_depth[i, j] * dy_buffer[i, j] * dt
     end
 
     # boundary condition
     for j in 1:ny, i in 1:nx
-        @inbounds mm1[i, j] = mm1[i, j] * fm[i, j] * gg[i, j]
-        @inbounds nn1[i, j] = nn1[i, j] * fn[i, j] * gg[i, j]
+        @inbounds mm1[i, j] = mm1[i, j] * land_filter_m[i, j] * absorbing_boundary[i, j]
+        @inbounds nn1[i, j] = nn1[i, j] * land_filter_n[i, j] * absorbing_boundary[i, j]
     end
 
     # diffs
@@ -96,10 +107,28 @@ function timestep!(dx_buffer::AbstractMatrix{T},
 
     # boundary condition
     for j in 1:ny, i in 1:nx
-        @inbounds eta1[i, j] = eta1[i, j] * fe[i, j] * gg[i, j]
+        @inbounds eta1[i, j] = eta1[i, j] * land_filter_e[i, j] * absorbing_boundary[i, j]
     end
     return eta1, mm1, nn1
 end
+
+function timestep!(dx_buffer::AbstractMatrix{T},
+                   dy_buffer::AbstractMatrix{T},
+                   eta1::AbstractMatrix{T},
+                   mm1::AbstractMatrix{T},
+                   nn1::AbstractMatrix{T},
+                   eta0::AbstractMatrix{T},
+                   mm0::AbstractMatrix{T},
+                   nn0::AbstractMatrix{T},
+                   matrices::Matrices{T},
+                   dx::Real,dy::Real,dt::Real) where T
+    # Unpack the relevant fields of `matrices`    
+    return timestep!(dx_buffer, dy_buffer, eta1, mm1, nn1, eta0, mm0, nn0,
+                     matrices.absorbing_boundary, matrices.x_averaged_depth,
+                     matrices.y_averaged_depth, matrices.land_filter_m,
+                     matrices.land_filter_n, matrices.land_filter_e, dx, dy, dt)
+end
+
 
 function setup(nx::Int,
                ny::Int,
@@ -109,77 +138,78 @@ function setup(nx::Int,
                cutoff_depth::Real,
                T::DataType = Float64)
     # Memory allocation
-    hh = Matrix{T}(undef, nx, ny) # ocean depth
-    hm = Matrix{T}(undef, nx, ny) # x-averaged depth
-    hn = Matrix{T}(undef, nx, ny) # y-averaged depth
-    gg = ones(T, nx, ny) # absorbing boundary
-    fm = ones(T, nx, ny) # land filters
-    fn = ones(T, nx, ny) # "
-    fe = ones(T, nx, ny) # "
+    ocean_depth = Matrix{T}(undef, nx, ny)
+    x_averaged_depth = Matrix{T}(undef, nx, ny)
+    y_averaged_depth = Matrix{T}(undef, nx, ny)
+    absorbing_boundary = ones(T, nx, ny)
+    land_filter_m = ones(T, nx, ny) # land filters
+    land_filter_n = ones(T, nx, ny) # "
+    land_filter_e = ones(T, nx, ny) # "
 
     nxa = floor(Int, nx * absorber_thickness_fraction)
     nya = floor(Int, nx * absorber_thickness_fraction)
 
     # Bathymetry set-up. Users may need to modify it
-    fill!(hh, bathymetry_val)
+    fill!(ocean_depth, bathymetry_val)
     @inbounds for j in 1:ny, i in 1:nx
-        if hh[i,j] < 0
-            hh[i,j] = 0
-        elseif hh[i,j] < cutoff_depth
-            hh[i,j] = cutoff_depth
+        if ocean_depth[i,j] < 0
+            ocean_depth[i,j] = 0
+        elseif ocean_depth[i,j] < cutoff_depth
+            ocean_depth[i,j] = cutoff_depth
         end
     end
 
-    # average bathymetry for staggered-grid computation
+    # average bathymetry for staabsorbing_boundaryered-grid computation
     for j in 1:ny
         for i in 2:nx
-            hm[i, j] = (hh[i, j] + hh[i - 1, j]) / 2
-            if hh[i, j] <= 0 || hh[i - 1, j] <= 0
-                hm[i, j] = 0
+            x_averaged_depth[i, j] = (ocean_depth[i, j] + ocean_depth[i - 1, j]) / 2
+            if ocean_depth[i, j] <= 0 || ocean_depth[i - 1, j] <= 0
+                x_averaged_depth[i, j] = 0
             end
         end
-        hm[1, j] = hh[1, j]
+        x_averaged_depth[1, j] = ocean_depth[1, j]
     end
     for i in 1:nx
         for j in 2:ny
-            hn[i, j] = (hh[i, j] + hh[i, j - 1]) / 2
-            if hh[i, j] <= 0 || hh[i, j - 1] <= 0
-                hn[i, j] = 0
+            y_averaged_depth[i, j] = (ocean_depth[i, j] + ocean_depth[i, j - 1]) / 2
+            if ocean_depth[i, j] <= 0 || ocean_depth[i, j - 1] <= 0
+                y_averaged_depth[i, j] = 0
             end
         end
-        hn[i, 1] = hh[i, 1]
+        y_averaged_depth[i, 1] = ocean_depth[i, 1]
     end
 
     # Land filter
     @inbounds for j in 1:ny,i in 1:nx
-        (hm[i, j] < 0) && (fm[i, j] = 0)
-        (hn[i, j] < 0) && (fn[i, j] = 0)
-        (hh[i, j] < 0) && (fe[i, j] = 0)
+        (x_averaged_depth[i, j] < 0) && (land_filter_m[i, j] = 0)
+        (y_averaged_depth[i, j] < 0) && (land_filter_n[i, j] = 0)
+        (ocean_depth[i, j] < 0) && (land_filter_e[i, j] = 0)
     end
 
     # Sponge absorbing boundary condition by Cerjan (1985)
     @inbounds for j in 1:ny, i in 1:nx
         if i <= nxa
-            gg[i, j] *= exp(-((apara * (nxa - i)) ^ 2))
+            absorbing_boundary[i, j] *= exp(-((apara * (nxa - i)) ^ 2))
         end
         if i >= nx - nxa + 1
-            gg[i, j] *= exp(-((apara * (i - nx + nxa - 1)) ^ 2))
+            absorbing_boundary[i, j] *= exp(-((apara * (i - nx + nxa - 1)) ^ 2))
         end
         if j <= nya
-            gg[i, j] *= exp(-((apara * (nya - j)) ^ 2))
+            absorbing_boundary[i, j] *= exp(-((apara * (nya - j)) ^ 2))
         end
         if j >= ny - nya + 1
-            gg[i, j] *= exp(-((apara * (j - ny + nya - 1)) ^ 2))
+            absorbing_boundary[i, j] *= exp(-((apara * (j - ny + nya - 1)) ^ 2))
         end
     end
-    return gg, hh, hm, hn, fm, fn, fe
+    return Matrices(absorbing_boundary, ocean_depth, x_averaged_depth, y_averaged_depth,
+                    land_filter_m, land_filter_n, land_filter_e)
 end
 
 
 function initheight!(eta::AbstractMatrix{T},
-                     hh::AbstractMatrix{T},
+                     ocean_depth::AbstractMatrix{T},
                      dx::Real,dy::Real,source_size::Real) where T
-    @assert size(eta) == size(hh)
+    @assert size(eta) == size(ocean_depth)
 
     # source size
     aa = source_size
@@ -212,10 +242,17 @@ function initheight!(eta::AbstractMatrix{T},
     # force zero amplitude on land
     for j in 1:ny
         for i in 1:nx
-            (hh[i, j] < eps(T)) && (eta[i, j] = 0)
+            (ocean_depth[i, j] < eps(T)) && (eta[i, j] = 0)
         end
     end
     return eta
+end
+
+function initheight!(eta::AbstractMatrix{T},
+                     matrices::Matrices{T},
+                     dx::Real,dy::Real,source_size::Real) where T
+    # Unpack the relevant field of `matrices`
+    return initheight!(eta, matrices.ocean_depth, dx, dy, source_size)
 end
 
 end # module
