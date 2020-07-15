@@ -18,27 +18,17 @@ for i = 1:my_size
     MPI.Barrier(MPI.COMM_WORLD)
 end
 
-buffer = zeros(1,1,1)
-avg = zeros(1,1,1)
-var = zeros(1,1,1)
-
-TDAC.get_parallel_mean_and_var!(avg,
-                                var,
-                                buffer,
-                                reshape(local_particles, (1,1,1,nprt_per_rank)),
-                                my_size,
-                                nprt_per_rank,
-                                0)
+stats = TDAC.get_parallel_mean_and_var(reshape(local_particles,1,1,1,nprt_per_rank),0)
 
 global_particles = MPI.Gather(local_particles, 0, MPI.COMM_WORLD)
 
 if my_rank == 0
     gather_mean = Statistics.mean(global_particles)
-    gather_var = Statistics.var(global_particles)
+    gather_var = Statistics.var(global_particles, corrected=false)
 
-    println("Mean     ",avg[1], " -- ", avg[1] ≈ gather_mean)
-    println("Variance ",var[1], " -- ", var[1] ≈ gather_var)
+    println("Mean     ",stats[1].avg, " -- ", stats[1].avg ≈ gather_mean)
+    println("Variance ",stats[1].var, " -- ", stats[1].var ≈ gather_var)
 
-    @test avg[1] ≈ gather_mean
-    @test var[1] ≈ gather_var
+    @test stats[1].avg ≈ gather_mean
+    @test stats[1].var ≈ gather_var
 end

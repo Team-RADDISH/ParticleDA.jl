@@ -289,8 +289,6 @@ struct StateVectors{T<:AbstractArray, S<:AbstractArray}
     particles::T
     buffer::T
     truth::S
-    avg::S
-    var::S
 
 end
 
@@ -306,6 +304,19 @@ struct StationVectors{T<:AbstractArray}
     ist::T
     jst::T
 
+end
+
+struct SummaryStat
+    avg::Float64
+    var::Float64
+    n::Float64
+end
+
+function SummaryStat(X::Vector)
+    m = mean(X)
+    v = varm(X,m, corrected=false)
+    n = length(X)
+    SummaryStat(m,v,n)
 end
 
 function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::Int, master_rank::Int = 0)
@@ -344,7 +355,9 @@ function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::In
     # Buffer array to be used in the tsunami update
     field_buffer = Array{T}(undef, nx, ny, 2, nthreads())
 
-    return StateVectors(state_particles, state_resampled, state_truth, state_avg, state_var), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), weights, field_buffer
+    mean_and_var = Array{SummaryStat, 3}(undef, nx, ny, n_state_var)
+
+    return StateVectors(state_particles, state_resampled, state_truth), mean_and_var, ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), weights, field_buffer
 end
 
 function set_initial_state!(states::StateVectors, hh::AbstractMatrix, field_buffer::AbstractArray{T, 4}, rng::AbstractVector{<:Random.AbstractRNG}, nprt_per_rank::Int, params::tdac_params) where T
@@ -400,47 +413,37 @@ function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::Strin
 
 end
 
-function get_parallel_mean_and_var!(timer,
-                                    states::StateVectors,
-                                    mpi_size::Int,
-                                    nprt_per_rank::Int,
-                                    master_rank::Int)
+function stats_reduction(S1::SummaryStat, S2::SummaryStat)
 
-    get_parallel_mean_and_var!(timer,
-                               states.avg,
-                               states.var,
-                               @view(states.buffer[:,:,:,1]),
-                               states.particles,
-                               mpi_size,
-                               nprt_per_rank,
-                               master_rank)
+    n = S1.n + S2.n
+    m = (S1.avg*S1.n + S2.avg*S2.n) / n
+
+    v = (S1.n * (S1.var + S1.avg * (S1.avg-m)) + S2.n * (S2.var + S2.avg * (S2.avg-m)))/n
+
+    SummaryStat(m, v, n)
 
 end
 
 function get_parallel_mean_and_var!(timer,
-                                    avg::AbstractArray{T,3},
-                                    var::AbstractArray{T,3},
-                                    buffer::AbstractArray{T,3},
+                                    statistics::Array{SummaryStat,3},
                                     particles::AbstractArray{T,4},
-                                    mpi_size::Int,
-                                    nprt_per_rank::Int,
                                     master_rank::Int) where T
 
-    # Calculate local mean, reduce it to all ranks to get global mean
-    @timeit_debug timer "first sum" sum!(buffer, particles)
-    @timeit_debug timer "allreduce" MPI.Allreduce!(buffer, +, MPI.COMM_WORLD)
-    @timeit_debug timer "mean" avg .= buffer ./ (nprt_per_rank .* mpi_size)
-
-    # Calculate square of difference from global mean, reduce it to master rank
-    @timeit_debug timer "zero buffer" fill!(buffer, 0)
-    @timeit_debug timer "second sum" for idx in CartesianIndices(buffer), iprt in 1:nprt_per_rank
-        buffer[idx] += (particles[CartesianIndex(idx, iprt)] - avg[idx]) ^ 2
-    end
-    # @timeit_debug timer "second sum" @view(buffer[:,:,:,1]) .+= sum!(@view(buffer[:,:,:,1]), buffer)
-    @timeit_debug timer "reduce" MPI.Reduce!(buffer, +, master_rank, MPI.COMM_WORLD)
-    @timeit_debug timer "variance" var .= buffer ./ (nprt_per_rank .* mpi_size .- 1)
+    @timeit_debug timer "mapslices" statistics .= dropdims(mapslices(SummaryStat, particles, dims=4),dims=4)
+    @timeit_debug timer "reduce" MPI.Reduce!(statistics, stats_reduction, master_rank, MPI.COMM_WORLD)
 
 end
+
+function get_parallel_mean_and_var(particles::AbstractArray{T,4},
+                                   master_rank::Int) where T
+
+    statistics = Array{SummaryStat,3}(size(particles,1),size(particles,2),size(particles,3))
+    statistics = mapslices(SummaryStat, particles, dims=4)
+    MPI.Reduce!(statistics, stats_reduction, master_rank, MPI.COMM_WORLD)
+    return statistics
+
+end
+
 
 function copy_states!(states::StateVectors, resampling_indices::Vector{Int}, my_rank::Int, nprt_per_rank::Int)
 
@@ -536,7 +539,7 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
 
     @timeit_debug timer "Initialization" begin
 
-        states, observations, stations, weights, field_buffer = init_tdac(params)
+        states, statistics, observations, stations, weights, field_buffer = init_tdac(params)
 
         background_grf = init_gaussian_random_field_generator(params)
 
@@ -557,14 +560,14 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
 
     end
 
-    @timeit_debug timer "Mean and Var" get_parallel_mean_and_var!(timer, states, my_size, nprt_per_rank, params.master_rank)
+    @timeit_debug timer "Mean and Var" get_parallel_mean_and_var!(timer, statistics, states.particles, params.master_rank)
 
     # Write initial state + metadata
     if(params.verbose && my_rank == params.master_rank)
         @timeit_debug timer "IO" write_grid(params)
         @timeit_debug timer "IO" write_params(params)
         @timeit_debug timer "IO" write_stations(stations.ist, stations.jst, params)
-        @timeit_debug timer "IO" write_snapshot(states.truth, states.avg, states.var, weights, 0, params)
+        @timeit_debug timer "IO" write_snapshot(states.truth, statistics.avg, statistics.var, weights, 0, params)
     end
 
     for it in 1:params.n_time_step
@@ -637,12 +640,12 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
 
         @timeit_debug timer "State Copy" copy_states!(states, resampling_indices, my_rank, nprt_per_rank)
 
-        @timeit_debug timer "Mean and Var" get_parallel_mean_and_var!(timer, states, my_size, nprt_per_rank, params.master_rank)
+        @timeit_debug timer "Mean and Var" get_parallel_mean_and_var!(timer, statistics, states.particles, params.master_rank)
 
         if my_rank == params.master_rank && params.verbose
 
             # Write output
-            @timeit_debug timer "IO" write_snapshot(states.truth, states.avg, states.var, weights, it, params)
+            @timeit_debug timer "IO" write_snapshot(states.truth, statistics.avg, statistics.var, weights, it, params)
 
         end
 
@@ -677,7 +680,7 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
         end
     end
 
-    return states.truth, states.avg, states.var
+    return states.truth, statistics
 end
 
 # Initialise params struct with user-defined dict of values.
