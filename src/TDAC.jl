@@ -312,11 +312,19 @@ struct SummaryStat
     n::Float64
 end
 
-function SummaryStat(X::Vector)
+function SummaryStat(X::AbstractVector)
     m = mean(X)
     v = varm(X,m, corrected=false)
     n = length(X)
     SummaryStat(m,v,n)
+end
+
+function unpack_statistics!(avg::AbstractArray{T}, var::AbstractArray{T}, statistics::AbstractArray{SummaryStat}) where T
+
+    for idx in CartesianIndices(statistics)
+        avg[idx] = statistics[idx].avg
+        var[idx] = statistics[idx].var
+    end
 end
 
 function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::Int, master_rank::Int = 0)
@@ -424,23 +432,15 @@ function stats_reduction(S1::SummaryStat, S2::SummaryStat)
 
 end
 
-function get_parallel_mean_and_var!(timer,
-                                    statistics::Array{SummaryStat,3},
+function get_parallel_mean_and_var!(statistics::Array{SummaryStat,3},
                                     particles::AbstractArray{T,4},
                                     master_rank::Int) where T
 
-    @timeit_debug timer "mapslices" statistics .= dropdims(mapslices(SummaryStat, particles, dims=4),dims=4)
-    @timeit_debug timer "reduce" MPI.Reduce!(statistics, stats_reduction, master_rank, MPI.COMM_WORLD)
+    Threads.@threads for idx in CartesianIndices(statistics)
+        statistics[idx] = SummaryStat(@view(particles[idx,:]))
+    end
 
-end
-
-function get_parallel_mean_and_var(particles::AbstractArray{T,4},
-                                   master_rank::Int) where T
-
-    statistics = Array{SummaryStat,3}(size(particles,1),size(particles,2),size(particles,3))
-    statistics = mapslices(SummaryStat, particles, dims=4)
     MPI.Reduce!(statistics, stats_reduction, master_rank, MPI.COMM_WORLD)
-    return statistics
 
 end
 
@@ -558,16 +558,23 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
 
         resampling_indices = Vector{Int}(undef,params.nprt)
 
+        avg_arr = Array{Float64,3}(undef, params.nx, params.ny, params.n_state_var)
+        var_arr = Array{Float64,3}(undef, params.nx, params.ny, params.n_state_var)
+
     end
 
-    @timeit_debug timer "Mean and Var" get_parallel_mean_and_var!(timer, statistics, states.particles, params.master_rank)
+    @timeit_debug timer "Mean and Var" get_parallel_mean_and_var!(statistics, states.particles, params.master_rank)
 
     # Write initial state + metadata
     if(params.verbose && my_rank == params.master_rank)
-        @timeit_debug timer "IO" write_grid(params)
-        @timeit_debug timer "IO" write_params(params)
-        @timeit_debug timer "IO" write_stations(stations.ist, stations.jst, params)
-        @timeit_debug timer "IO" write_snapshot(states.truth, statistics.avg, statistics.var, weights, 0, params)
+
+        @timeit_debug timer "IO" begin
+            write_grid(params)
+            write_params(params)
+            write_stations(stations.ist, stations.jst, params)
+            unpack_statistics!(avg_arr, var_arr, statistics)
+            write_snapshot(states.truth, avg_arr, var_arr, weights, 0, params)
+        end
     end
 
     for it in 1:params.n_time_step
@@ -640,12 +647,14 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
 
         @timeit_debug timer "State Copy" copy_states!(states, resampling_indices, my_rank, nprt_per_rank)
 
-        @timeit_debug timer "Mean and Var" get_parallel_mean_and_var!(timer, statistics, states.particles, params.master_rank)
+        @timeit_debug timer "Mean and Var" get_parallel_mean_and_var!(statistics, states.particles, params.master_rank)
 
         if my_rank == params.master_rank && params.verbose
 
-            # Write output
-            @timeit_debug timer "IO" write_snapshot(states.truth, statistics.avg, statistics.var, weights, it, params)
+            @timeit_debug timer "IO" begin
+                unpack_statistics!(avg_arr, var_arr, statistics)
+                write_snapshot(states.truth, avg_arr, var_arr, weights, it, params)
+            end
 
         end
 
@@ -680,7 +689,9 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
         end
     end
 
-    return states.truth, statistics
+    unpack_statistics!(avg_arr, var_arr, statistics)
+
+    return states.truth, avg_arr, var_arr
 end
 
 # Initialise params struct with user-defined dict of values.

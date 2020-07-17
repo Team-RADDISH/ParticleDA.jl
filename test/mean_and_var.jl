@@ -18,7 +18,8 @@ for i = 1:my_size
     MPI.Barrier(MPI.COMM_WORLD)
 end
 
-stats = TDAC.get_parallel_mean_and_var(reshape(local_particles,1,1,1,nprt_per_rank),0)
+stats = Array{TDAC.SummaryStat,3}(undef, 1, 1, 1)
+TDAC.get_parallel_mean_and_var!(stats,reshape(local_particles,1,1,1,nprt_per_rank),0)
 
 global_particles = MPI.Gather(local_particles, 0, MPI.COMM_WORLD)
 
