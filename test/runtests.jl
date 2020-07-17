@@ -233,36 +233,15 @@ end
 
 end
 
-@testset "MPI" begin
-    mpi_script = joinpath(@__DIR__, "mpi.jl")
-    mktempdir() do dir
-        cd(dir) do
-            mpiexec() do cmd
-                run(`$(cmd) -n 2 $(Base.julia_cmd()) $(mpi_script)`)
-                # This is a dummy test.  If `run` exitsts successfully, this
-                # testset will be successful as well, if `run` errors out this
-                # testset will error out as well, and the next `@test` will not
-                # be executed.  The advantage over doing something like
-                #     @test success(`...`)
-                # is that with
-                #    run(`...`)
-                #    @test true
-                # we can directly see the output of the spawned command, which
-                # would be suppressed if using `success`.
-                @test true
+@testset "MPI -- $(file)" for file in ("mpi.jl", "copy_states.jl", "mean_and_var.jl")
+    julia = joinpath(Sys.BINDIR, Base.julia_exename())
+    flags = ["--startup-file=no", "-q"]
+    script = joinpath(@__DIR__, file)
+    mpiexec() do mpiexec
+        mktempdir() do dir
+            cd(dir) do
+                @test success(run(ignorestatus(`$(mpiexec) -n 2 $(julia) $(flags) $(script)`)))
             end
         end
-    end
-
-    copy_script = joinpath(@__DIR__, "copy_states.jl")
-    mpiexec() do cmd
-        run(`$(cmd) -n 2 $(Base.julia_cmd()) $(copy_script)`)
-        @test true
-    end
-
-    stats_script = joinpath(@__DIR__, "mean_and_var.jl")
-    mpiexec() do cmd
-        run(`$(cmd) -n 2 $(Base.julia_cmd()) $(stats_script)`)
-        @test true
     end
 end
