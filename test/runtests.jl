@@ -240,7 +240,7 @@ end
     mpiexec() do mpiexec
         mktempdir() do dir
             cd(dir) do
-                @test success(run(ignorestatus(`$(mpiexec) -n 2 $(julia) $(flags) $(script)`)))
+                @test success(run(ignorestatus(`$(mpiexec) -n 3 $(julia) $(flags) $(script)`)))
             end
         end
     end
