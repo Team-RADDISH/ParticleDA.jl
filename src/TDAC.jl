@@ -314,7 +314,7 @@ end
 
 function SummaryStat(X::AbstractVector)
     m = mean(X)
-    v = varm(X,m, corrected=false)
+    v = varm(X,m, corrected=true)
     n = length(X)
     SummaryStat(m,v,n)
 end
@@ -426,13 +426,17 @@ function stats_reduction(S1::SummaryStat, S2::SummaryStat)
     n = S1.n + S2.n
     m = (S1.avg*S1.n + S2.avg*S2.n) / n
 
-    v = (S1.n * (S1.var + S1.avg * (S1.avg-m)) + S2.n * (S2.var + S2.avg * (S2.avg-m)))/n
+    # Calculate pooled unbiased sample variance of two groups. From https://stats.stackexchange.com/q/384951
+    # Can be found in https://www.tandfonline.com/doi/abs/10.1080/00031305.2014.966589
+    # To get the uncorrected variance, use
+    # v = (S1.n * (S1.var + S1.avg * (S1.avg-m)) + S2.n * (S2.var + S2.avg * (S2.avg-m)))/n
+    v = ((S1.n-1) * S1.var + (S2.n-1) * S2.var + S1.n*S2.n/n * (S2.avg - S1.avg)^2 )/(n-1)
 
     SummaryStat(m, v, n)
 
 end
 
-function get_parallel_mean_and_var!(statistics::Array{SummaryStat,3},
+function get_mean_and_var!(statistics::Array{SummaryStat,3},
                                     particles::AbstractArray{T,4},
                                     master_rank::Int) where T
 
@@ -457,8 +461,6 @@ function copy_states!(particles::AbstractArray{T,4},
                       my_rank::Int,
                       nprt_per_rank::Int) where T
 
-    debug = false
-
     # These are the particle indices stored on this rank
     particles_have = my_rank * nprt_per_rank + 1:(my_rank + 1) * nprt_per_rank
 
@@ -472,25 +474,11 @@ function copy_states!(particles::AbstractArray{T,4},
     # this appropriately but, lazy
     reqs = Vector{MPI.Request}(undef, 0)
 
-    if debug
-        for i in 1:my_size
-            if i == my_rank + 1
-                @show my_rank
-                @show collect(particles_have)
-                @show particles_want
-                @show rank_has
-            end
-            MPI.Barrier(MPI.COMM_WORLD) #For debugging
-        end
-    end
-
     # Send particles to processes that want them
     for (k,id) in enumerate(resampling_indices)
         rank_wants = floor(Int, (k - 1) / nprt_per_rank)
-        debug ? @show(rank_wants) : nothing
         if id in particles_have && rank_wants != my_rank
             local_id = id - my_rank * nprt_per_rank
-            debug ? println("sending particle ", id, " with local id ", local_id," from rank ",my_rank," to rank ", rank_wants) : nothing
             req = MPI.Isend(@view(particles[:,:,:,local_id]), rank_wants, id, MPI.COMM_WORLD)
             push!(reqs, req)
         end
@@ -502,10 +490,8 @@ function copy_states!(particles::AbstractArray{T,4},
     for (k,proc,id) in zip(1:nprt_per_rank, rank_has, particles_want)
         if proc == my_rank
             local_id = id - my_rank * nprt_per_rank
-            debug ? println("copying local particle ",id," from local id ",local_id," to local id ",k," on rank ",my_rank) : nothing
             @view(buffer[:,:,:,k]) .= @view(particles[:,:,:,local_id])
         else
-            debug ? println("receiving particle ", id, " on rank ",my_rank," from rank ", proc) : nothing
             req = MPI.Irecv!(@view(buffer[:,:,:,k]), proc, id, MPI.COMM_WORLD)
             push!(reqs,req)
         end
@@ -563,7 +549,7 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
 
     end
 
-    @timeit_debug timer "Mean and Var" get_parallel_mean_and_var!(statistics, states.particles, params.master_rank)
+    @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, states.particles, params.master_rank)
 
     # Write initial state + metadata
     if(params.verbose && my_rank == params.master_rank)
@@ -647,7 +633,7 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
 
         @timeit_debug timer "State Copy" copy_states!(states, resampling_indices, my_rank, nprt_per_rank)
 
-        @timeit_debug timer "Mean and Var" get_parallel_mean_and_var!(statistics, states.particles, params.master_rank)
+        @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, states.particles, params.master_rank)
 
         if my_rank == params.master_rank && params.verbose
 

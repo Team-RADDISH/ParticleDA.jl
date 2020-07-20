@@ -19,13 +19,13 @@ for i = 1:my_size
 end
 
 stats = Array{TDAC.SummaryStat,3}(undef, 1, 1, 1)
-TDAC.get_parallel_mean_and_var!(stats,reshape(local_particles,1,1,1,nprt_per_rank),0)
+TDAC.get_mean_and_var!(stats,reshape(local_particles,1,1,1,nprt_per_rank),0)
 
 global_particles = MPI.Gather(local_particles, 0, MPI.COMM_WORLD)
 
 if my_rank == 0
     gather_mean = Statistics.mean(global_particles)
-    gather_var = Statistics.var(global_particles, corrected=false)
+    gather_var = Statistics.var(global_particles, corrected=true)
 
     println("Mean     ",stats[1].avg, " -- ", stats[1].avg ≈ gather_mean)
     println("Variance ",stats[1].var, " -- ", stats[1].var ≈ gather_var)
