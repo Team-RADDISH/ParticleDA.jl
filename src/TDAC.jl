@@ -81,21 +81,12 @@ function tsunami_update!(dx_buffer::AbstractMatrix{T},
 
 end
 
-#
-function normalized_exp!(weight::AbstractVector)
-
-    weight .-= maximum(weight)
-    @. weight = exp(weight)
-    weight ./= sum(weight)
-
-end
-
 # Get weights for particles by evaluating the probability of the observations predicted by the model
 # from independent normal pdfs for each observation.
-function get_weights!(weight::AbstractVector{T},
-                      obs::AbstractVector{T},
-                      obs_model::AbstractMatrix{T},
-                      obs_noise_std::T) where T
+function get_log_weights!(weight::AbstractVector{T},
+                          obs::AbstractVector{T},
+                          obs_model::AbstractMatrix{T},
+                          obs_noise_std::T) where T
 
     nobs = size(obs_model,1)
     @assert size(obs,1) == nobs
@@ -106,20 +97,26 @@ function get_weights!(weight::AbstractVector{T},
         weight .+= logpdf.(Normal(obs[iobs], obs_noise_std), @view(obs_model[iobs,:]))
     end
 
-    normalized_exp!(weight)
-
 end
 
 # Get weights for particles by evaluating the probability of the observations predicted by the model
 # from a multivariate normal pdf with mean equal to real observations and covariance equal to cov_obs
-function get_weights!(weight::AbstractVector{T},
-                      obs::AbstractVector{T},
-                      obs_model::AbstractMatrix{T},
-                      cov_obs::AbstractMatrix{T}) where T
+function get_log_weights!(weight::AbstractVector{T},
+                          obs::AbstractVector{T},
+                          obs_model::AbstractMatrix{T},
+                          cov_obs::AbstractMatrix{T}) where T
 
     weight .= Distributions.logpdf(Distributions.MvNormal(obs, cov_obs), obs_model)
 
-    normalized_exp!(weight)
+end
+
+
+#
+function normalized_exp!(weight::AbstractVector)
+
+    weight .-= maximum(weight)
+    @. weight = exp(weight)
+    weight ./= sum(weight)
 
 end
 
@@ -148,22 +145,6 @@ function resample!(resampled_indices::AbstractVector{Int}, weight::AbstractVecto
         resampled_indices[ip] = k
 
     end
-
-end
-
-function copy_resampled_state!(state::AbstractArray{T,4}, state_buffer::AbstractArray{T,4}, indices::AbstractVector{Int}) where T
-
-    nprt = size(state, 4)
-    @assert length(indices) == nprt
-
-    for ip in 1:nprt
-        for is in CartesianIndices(@view(state[:, :, :, 1]))
-            state_buffer[CartesianIndex(is, ip)] = state[CartesianIndex(is, indices[ip])]
-        end
-    end
-
-    state .= state_buffer
-    return state
 
 end
 
@@ -298,8 +279,6 @@ struct StateVectors{T<:AbstractArray, S<:AbstractArray}
     particles::T
     buffer::T
     truth::S
-    avg::S
-    var::S
 
 end
 
@@ -317,6 +296,27 @@ struct StationVectors{T<:AbstractArray}
 
 end
 
+struct SummaryStat
+    avg::Float64
+    var::Float64
+    n::Float64
+end
+
+function SummaryStat(X::AbstractVector)
+    m = mean(X)
+    v = varm(X,m, corrected=true)
+    n = length(X)
+    SummaryStat(m,v,n)
+end
+
+function unpack_statistics!(avg::AbstractArray{T}, var::AbstractArray{T}, statistics::AbstractArray{SummaryStat}) where T
+
+    for idx in CartesianIndices(statistics)
+        avg[idx] = statistics[idx].avg
+        var[idx] = statistics[idx].var
+    end
+end
+
 function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::Int, master_rank::Int = 0)
 
     # TODO: ideally this will be an argument of the function, to choose a
@@ -328,26 +328,20 @@ function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::In
     # Do memory allocations
 
     if MPI.Comm_rank(MPI.COMM_WORLD) == master_rank
-        # Model vector for data assimilation
-        #   state[:, 1]: tsunami height eta(nx,ny)
-        #   state[:, 2]: vertically integrated velocity Mx(nx,ny)
-        #   state[:, 3]: vertically integrated velocity Mx(nx,ny)
-        state_particles = zeros(T, nx, ny, n_state_var, nprt_total) # model state vectors for particles
-        state_avg = zeros(T, nx, ny, n_state_var) # average of particle state vectors
-        state_var = zeros(T, nx, ny, n_state_var) # variance of particle state vectors
-        state_resampled = Array{T,4}(undef, nx, ny, n_state_var, nprt_total)
         weights = Vector{T}(undef, nprt_total)
     else
-        state_particles = zeros(T, nx, ny, n_state_var, nprt_per_rank)
-
-        # The below arrays are not needed on non-master ranks. However, to fit them in the
-        # data structures, we define them as 0-size Vectors
-        state_avg = Array{T,3}(undef, 0, 0, 0)
-        state_var = Array{T,3}(undef, 0, 0, 0)
-        state_resampled = Array{T,4}(undef, 0, 0, 0, 0)
         weights = Vector{T}(undef, nprt_per_rank)
     end
 
+    state_avg = zeros(T, nx, ny, n_state_var) # average of particle state vectors
+    state_var = zeros(T, nx, ny, n_state_var) # variance of particle state vectors
+    state_resampled = Array{T,4}(undef, nx, ny, n_state_var, nprt_per_rank)
+
+    # Model vector for data assimilation
+    #   state[:, :, 1, :]: tsunami height eta(nx,ny)
+    #   state[:, :, 2, :]: vertically integrated velocity Mx(nx,ny)
+    #   state[:, :, 3, :]: vertically integrated velocity Mx(nx,ny)
+    state_particles = zeros(T, nx, ny, n_state_var, nprt_per_rank)
     state_truth = zeros(T, nx, ny, n_state_var) # model vector: true wavefield (observation)
     obs_truth = Vector{T}(undef, nobs)          # observed tsunami height
     obs_model = Matrix{T}(undef, nobs, nprt_per_rank) # forecasted tsunami height
@@ -359,7 +353,9 @@ function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::In
     # Buffer array to be used in the tsunami update
     field_buffer = Array{T}(undef, nx, ny, 2, nthreads())
 
-    return StateVectors(state_particles, state_resampled, state_truth, state_avg, state_var), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), weights, field_buffer
+    mean_and_var = Array{SummaryStat, 3}(undef, nx, ny, n_state_var)
+
+    return StateVectors(state_particles, state_resampled, state_truth), mean_and_var, ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), weights, field_buffer
 end
 
 function set_initial_state!(states::StateVectors, model_matrices::LLW2d.Matrices{T},
@@ -419,6 +415,89 @@ function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::Strin
 
 end
 
+function stats_reduction(S1::SummaryStat, S2::SummaryStat)
+
+    n = S1.n + S2.n
+    m = (S1.avg*S1.n + S2.avg*S2.n) / n
+
+    # Calculate pooled unbiased sample variance of two groups. From https://stats.stackexchange.com/q/384951
+    # Can be found in https://www.tandfonline.com/doi/abs/10.1080/00031305.2014.966589
+    # To get the uncorrected variance, use
+    # v = (S1.n * (S1.var + S1.avg * (S1.avg-m)) + S2.n * (S2.var + S2.avg * (S2.avg-m)))/n
+    v = ((S1.n-1) * S1.var + (S2.n-1) * S2.var + S1.n*S2.n/n * (S2.avg - S1.avg)^2 )/(n-1)
+
+    SummaryStat(m, v, n)
+
+end
+
+function get_mean_and_var!(statistics::Array{SummaryStat,3},
+                                    particles::AbstractArray{T,4},
+                                    master_rank::Int) where T
+
+    Threads.@threads for idx in CartesianIndices(statistics)
+        statistics[idx] = SummaryStat(@view(particles[idx,:]))
+    end
+
+    MPI.Reduce!(statistics, stats_reduction, master_rank, MPI.COMM_WORLD)
+
+end
+
+
+function copy_states!(states::StateVectors, resampling_indices::Vector{Int}, my_rank::Int, nprt_per_rank::Int)
+
+    copy_states!(states.particles, states.buffer, resampling_indices, my_rank, nprt_per_rank)
+
+end
+
+function copy_states!(particles::AbstractArray{T,4},
+                      buffer::AbstractArray{T,4},
+                      resampling_indices::Vector{Int},
+                      my_rank::Int,
+                      nprt_per_rank::Int) where T
+
+    # These are the particle indices stored on this rank
+    particles_have = my_rank * nprt_per_rank + 1:(my_rank + 1) * nprt_per_rank
+
+    # These are the particle indices this rank should have after resampling
+    particles_want = resampling_indices[particles_have]
+
+    # These are the ranks that have the particles this rank should have
+    rank_has = floor.(Int, (particles_want .- 1) / nprt_per_rank)
+
+    # We could work out how many sends and receives we have to do and allocate
+    # this appropriately but, lazy
+    reqs = Vector{MPI.Request}(undef, 0)
+
+    # Send particles to processes that want them
+    for (k,id) in enumerate(resampling_indices)
+        rank_wants = floor(Int, (k - 1) / nprt_per_rank)
+        if id in particles_have && rank_wants != my_rank
+            local_id = id - my_rank * nprt_per_rank
+            req = MPI.Isend(@view(particles[:,:,:,local_id]), rank_wants, id, MPI.COMM_WORLD)
+            push!(reqs, req)
+        end
+    end
+
+    # Receive particles this rank wants from ranks that have them
+    # If I already have them, just do a local copy
+    # Receive into a buffer so we dont accidentally overwrite stuff
+    for (k,proc,id) in zip(1:nprt_per_rank, rank_has, particles_want)
+        if proc == my_rank
+            local_id = id - my_rank * nprt_per_rank
+            @view(buffer[:,:,:,k]) .= @view(particles[:,:,:,local_id])
+        else
+            req = MPI.Irecv!(@view(buffer[:,:,:,k]), proc, id, MPI.COMM_WORLD)
+            push!(reqs,req)
+        end
+    end
+
+    # Wait for all comms to complete
+    MPI.Waitall!(reqs)
+
+    particles .= buffer
+
+end
+
 function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
 
     if !MPI.Initialized()
@@ -440,7 +519,7 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
 
     @timeit_debug timer "Initialization" begin
 
-        states, observations, stations, weights, field_buffer = init_tdac(params)
+        states, statistics, observations, stations, weights, field_buffer = init_tdac(params)
 
         background_grf = init_gaussian_random_field_generator(params)
 
@@ -458,17 +537,23 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
 
         resampling_indices = Vector{Int}(undef,params.nprt)
 
+        avg_arr = Array{Float64,3}(undef, params.nx, params.ny, params.n_state_var)
+        var_arr = Array{Float64,3}(undef, params.nx, params.ny, params.n_state_var)
+
     end
+
+    @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, states.particles, params.master_rank)
 
     # Write initial state + metadata
     if(params.verbose && my_rank == params.master_rank)
-        @timeit_debug timer "Particle Mean" Statistics.mean!(states.avg, states.particles)
-        @timeit_debug timer "Particle Variance" Statistics.varm!(states.var, states.particles, states.avg)
 
-        @timeit_debug timer "IO" write_grid(params)
-        @timeit_debug timer "IO" write_params(params)
-        @timeit_debug timer "IO" write_stations(stations.ist, stations.jst, params)
-        @timeit_debug timer "IO" write_snapshot(states.truth, states.avg, states.var, weights, 0, params)
+        @timeit_debug timer "IO" begin
+            write_grid(params)
+            write_params(params)
+            write_stations(stations.ist, stations.jst, params)
+            unpack_statistics!(avg_arr, var_arr, statistics)
+            write_snapshot(states.truth, avg_arr, var_arr, weights, 0, params)
+        end
     end
 
     for it in 1:params.n_time_step
@@ -509,34 +594,26 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
             add_noise!(@view(observations.model[:,ip]), rng[1], params)
         end
 
-        @timeit_debug timer "Weights" get_weights!(@view(weights[1:nprt_per_rank]),
+        @timeit_debug timer "Weights" get_log_weights!(@view(weights[1:nprt_per_rank]),
                                                          observations.truth,
                                                          observations.model,
                                                          params.obs_noise_std)
 
-        # Gather all particles and weights to master rank
+        # Gather weights to master rank and resample particles.
         # Doing MPI collectives in place to save memory allocations.
         # This style with if statmeents is recommended instead of MPI.Gather_in_place! which is a bit strange.
         # Note that only master_rank allocates memory for all particles. Other ranks only allocate
         # for their chunk of state.
         if my_rank == params.master_rank
             @timeit_debug timer "MPI Gather" MPI.Gather!(nothing,
-                                                         @view(states.particles[:]),
-                                                         params.nx * params.ny * params.n_state_var * nprt_per_rank,
-                                                         params.master_rank,
-                                                         MPI.COMM_WORLD)
-            @timeit_debug timer "MPI Gather" MPI.Gather!(nothing,
                                                          weights,
                                                          nprt_per_rank,
                                                          params.master_rank,
                                                          MPI.COMM_WORLD)
+            @timeit_debug timer "Weights" normalized_exp!(weights)
+            @timeit_debug timer "Resample" resample!(resampling_indices, weights)
 
         else
-            @timeit_debug timer "MPI Gather" MPI.Gather!(@view(states.particles[:]),
-                                                         nothing,
-                                                         params.nx * params.ny * params.n_state_var * nprt_per_rank,
-                                                         params.master_rank,
-                                                         MPI.COMM_WORLD)
             @timeit_debug timer "MPI Gather" MPI.Gather!(weights,
                                                          nothing,
                                                          nprt_per_rank,
@@ -544,38 +621,21 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
                                                          MPI.COMM_WORLD)
         end
 
-        if my_rank == params.master_rank
+        # Broadcast resampled particle indices to all ranks
+        MPI.Bcast!(resampling_indices, params.master_rank, MPI.COMM_WORLD)
 
-            # Weigh and resample particles
-            @timeit_debug timer "Resample" resample!(resampling_indices, weights)
-            @timeit_debug timer "State Copy" copy_resampled_state!(states.particles, states.buffer, resampling_indices)
+        @timeit_debug timer "State Copy" copy_states!(states, resampling_indices, my_rank, nprt_per_rank)
 
-            # Scatter the new particles to all ranks. In place similar to gather above.
-            @timeit_debug timer "MPI Scatter" MPI.Scatter!(@view(states.particles[:]),
-                                                           nothing,
-                                                           params.nx * params.ny * params.n_state_var * nprt_per_rank,
-                                                           params.master_rank,
-                                                           MPI.COMM_WORLD)
+        @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, states.particles, params.master_rank)
 
-            # Calculate statistical quantities
-            @timeit_debug timer "Particle Mean" Statistics.mean!(states.avg, states.particles)
-            @timeit_debug timer "Particle Variance" Statistics.varm!(states.var, states.particles, states.avg)
+        if my_rank == params.master_rank && params.verbose
 
-            # Write output
-            if params.verbose
-                @timeit_debug timer "IO" write_snapshot(states.truth, states.avg, states.var, weights, it, params)
+            @timeit_debug timer "IO" begin
+                unpack_statistics!(avg_arr, var_arr, statistics)
+                write_snapshot(states.truth, avg_arr, var_arr, weights, it, params)
             end
 
-        else
-            @timeit_debug timer "MPI Scatter" MPI.Scatter!(nothing,
-                                                           @view(states.particles[:]),
-                                                           params.nx * params.ny * params.n_state_var * nprt_per_rank,
-                                                           params.master_rank,
-                                                           MPI.COMM_WORLD)
         end
-    end
-
-    if my_rank == params.master_rank && params.enable_timers
 
     end
 
@@ -608,7 +668,9 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
         end
     end
 
-    return states.truth, states.avg, states.var
+    unpack_statistics!(avg_arr, var_arr, statistics)
+
+    return states.truth, avg_arr, var_arr
 end
 
 # Initialise params struct with user-defined dict of values.
@@ -691,7 +753,11 @@ end
 
 function tdac(params::tdac_params)
 
-    rng = let m = Random.MersenneTwister(params.random_seed)
+    if !MPI.Initialized()
+        MPI.Init()
+    end
+
+    rng = let m = Random.MersenneTwister(params.random_seed + MPI.Comm_rank(MPI.COMM_WORLD))
         [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
     end;
 

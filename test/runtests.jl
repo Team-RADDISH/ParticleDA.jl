@@ -84,16 +84,20 @@ end
     weights = Vector{Float64}(undef, 3)
     # model observations with equal distance from true observation return equal weights
     hx = [0.5 0.9 1.5; 2.1 2.5 1.9]
-    TDAC.get_weights!(weights, y, hx, cov_obs)
+    TDAC.get_log_weights!(weights, y, hx, cov_obs)
+    @test weights ≈ [-1.9678770664093457, -1.9678770664093457, -1.9678770664093457]
+    TDAC.normalized_exp!(weights)
     @test weights ≈ ones(3) / 3
     # model observations with decreasing distance from true observation return decreasing weights
     hx = [0.9 0.5 1.5; 2.1 2.5 3.5]
-    TDAC.get_weights!(weights, y, hx, cov_obs)
+    TDAC.get_log_weights!(weights, y, hx, cov_obs)
+    TDAC.normalized_exp!(weights)
     @test weights[1] > weights[2] > weights[3]
 
     # multivariate and independent methods give same weights when covariance matrix is diagonal
     weights2 = Vector{Float64}(undef, 3)
-    TDAC.get_weights!(weights2, y, hx, 1.0)
+    TDAC.get_log_weights!(weights2, y, hx, 1.0)
+    TDAC.normalized_exp!(weights2)
     @test weights2 ≈ weights
 
     id = zeros(Int, 5)
@@ -237,23 +241,14 @@ end
 
 end
 
-@testset "MPI" begin
-    script = joinpath(@__DIR__, "mpi.jl")
-    mktempdir() do dir
-        cd(dir) do
-            mpiexec() do cmd
-                run(`$(cmd) -n 2 $(Base.julia_cmd()) $(script)`)
-                # This is a dummy test.  If `run` exitsts successfully, this
-                # testset will be successful as well, if `run` errors out this
-                # testset will error out as well, and the next `@test` will not
-                # be executed.  The advantage over doing something like
-                #     @test success(`...`)
-                # is that with
-                #    run(`...`)
-                #    @test true
-                # we can directly see the output of the spawned command, which
-                # would be suppressed if using `success`.
-                @test true
+@testset "MPI -- $(file)" for file in ("mpi.jl", "copy_states.jl", "mean_and_var.jl")
+    julia = joinpath(Sys.BINDIR, Base.julia_exename())
+    flags = ["--startup-file=no", "-q"]
+    script = joinpath(@__DIR__, file)
+    mpiexec() do mpiexec
+        mktempdir() do dir
+            cd(dir) do
+                @test success(run(ignorestatus(`$(mpiexec) -n 3 $(julia) $(flags) $(script)`)))
             end
         end
     end
