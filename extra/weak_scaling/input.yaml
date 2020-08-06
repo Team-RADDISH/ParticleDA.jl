@@ -1,7 +1,0 @@
-output_filename: weak_scaling_r1.h5
-nprt: 64
-nobs: 64
-verbose: true
-enable_timers: true
-padding: 0
-

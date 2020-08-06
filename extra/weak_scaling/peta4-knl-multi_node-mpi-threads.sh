@@ -24,8 +24,6 @@ rm -f weak_scaling_r*.h5
 
 for ranks in 16 32 64 128 256
 do
-    awk '/nprt/ {sub($2, '$ranks'*256)}1' input.yaml > /tmp/input.yaml
-    awk '/output_filename/ {sub($2, "weak_scaling_r'$ranks'_t4.h5")}1' /tmp/input.yaml > input_weak_scaling.yaml
     srun -n $ranks julia run_tdac.jl
 done
 
