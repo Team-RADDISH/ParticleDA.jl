@@ -122,7 +122,7 @@ function timestep!(dx_buffer::AbstractMatrix{T},
                    nn0::AbstractMatrix{T},
                    matrices::Matrices{T},
                    dx::Real,dy::Real,dt::Real) where T
-    # Unpack the relevant fields of `matrices`    
+    # Unpack the relevant fields of `matrices`
     return timestep!(dx_buffer, dy_buffer, eta1, mm1, nn1, eta0, mm0, nn0,
                      matrices.absorbing_boundary, matrices.x_averaged_depth,
                      matrices.y_averaged_depth, matrices.land_filter_m,
@@ -205,54 +205,41 @@ function setup(nx::Int,
                     land_filter_m, land_filter_n, land_filter_e)
 end
 
-
-function initheight!(eta::AbstractMatrix{T},
+# Initializes height with a cosine wave with a peak height of 1.0
+# located at 1/4 of x and y axis.
+function initheight!(height::AbstractMatrix{T},
                      ocean_depth::AbstractMatrix{T},
-                     dx::Real,dy::Real,source_size::Real) where T
-    @assert size(eta) == size(ocean_depth)
+                     dx::Real,dy::Real,cutoff_distance::Real) where T
 
-    # source size
-    aa = source_size
-    bb = source_size
+    @assert size(height) == size(ocean_depth)
 
-    # bathymetry setting
-    fill!(eta, 0)
+    nx, ny = size(height)
 
-    nx, ny = size(eta)
+    peak_position = [floor(Int, nx / 4) * dx, floor(Int, ny / 4) * dy]
+    distance_to_peak = zeros(2)
 
-    i0 = floor(Int, nx / 4)
-    j0 = floor(Int, ny / 4)
-    for j in 1:ny
-        if -bb <= (j - j0) * dy && (j - j0) * dy <= bb
-            hy = (1 + cospi((j - j0) * dy / bb)) / 2
-        else
-            hy = 0.0
-        end
+    for iy in 1:ny
+        for ix in 1:nx
+            vector_to_peak = peak_position - [ix * dx, iy * dy]
+            distance_to_peak = sqrt(sum((vector_to_peak).^2))
 
-        for i in 1:nx
-            if -aa <= (i - i0) * dx && (i - i0) * dx <= aa
-                hx = (1 + cospi((i - i0) * dx / aa)) / 2
+            if distance_to_peak <= cutoff_distance && ocean_depth[ix, iy] >= eps(T)
+                height[ix, iy] = 0.25 * ((1 + cospi(vector_to_peak[1] / cutoff_distance))
+                                         * (1 + cospi(vector_to_peak[2] / cutoff_distance)))
             else
-                hx = 0.0
+                height[ix, iy] = 0.0
             end
-            eta[i, j] = hx * hy
         end
     end
 
-    # force zero amplitude on land
-    for j in 1:ny
-        for i in 1:nx
-            (ocean_depth[i, j] < eps(T)) && (eta[i, j] = 0)
-        end
-    end
-    return eta
+    return height
 end
 
-function initheight!(eta::AbstractMatrix{T},
+function initheight!(height::AbstractMatrix{T},
                      matrices::Matrices{T},
-                     dx::Real,dy::Real,source_size::Real) where T
+                     dx::Real,dy::Real,cutoff_distance::Real) where T
     # Unpack the relevant field of `matrices`
-    return initheight!(eta, matrices.ocean_depth, dx, dy, source_size)
+    return initheight!(height, matrices.ocean_depth, dx, dy, cutoff_distance)
 end
 
 end # module
