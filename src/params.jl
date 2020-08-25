@@ -1,9 +1,9 @@
 module Default_params
 
-export tdac_params
+export Parameters
 
 """
-tdac_params()
+Parameters()
 
 Parameters for TDAC run. Arguments:
 
@@ -53,7 +53,7 @@ Parameters for TDAC run. Arguments:
 * `boundary_damping` : damping for boundaries
 * `cutoff_depth` : Shallowest water depth
 """
-Base.@kwdef struct tdac_params{T<:AbstractFloat}
+Base.@kwdef struct Parameters{T<:AbstractFloat}
 
     master_rank::Int = 0
 

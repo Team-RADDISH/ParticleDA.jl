@@ -7,7 +7,7 @@ FFTW.set_num_threads(1)
 MPI.Init()
 
 # Define a convenience method to easily replace some parametres
-function (p::TDAC.tdac_params)(; kwargs...)
+function (p::TDAC.Parameters)(; kwargs...)
     # Extract parameters of the input instance
     fields = Dict(name => getfield(p, name) for name in fieldnames(typeof(p)))
     for (k, v) in kwargs
@@ -15,14 +15,14 @@ function (p::TDAC.tdac_params)(; kwargs...)
         fields[k] = v
     end
     # Return the new instance
-    return TDAC.tdac_params(; fields...)
+    return TDAC.Parameters(; fields...)
 end
 
 # Get the number or ranks, so that we can set a number of particle as an integer
 # multiple of them.
 my_size = MPI.Comm_size(MPI.COMM_WORLD)
 
-params = TDAC.tdac_params(; nprt = my_size, nobs = 4, padding = 0, enable_timers = true,
+params = TDAC.Parameters(; nprt = my_size, nobs = 4, padding = 0, enable_timers = true,
                           verbose = true, n_time_step = 5, nx = 20, ny = 20)
 
 # Warmup
