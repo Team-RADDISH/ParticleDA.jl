@@ -268,10 +268,17 @@ function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, mean::T, st
 
 end
 
-function init_tdac(params::Parameters)
+struct SummaryStat
+    avg::Float64
+    var::Float64
+    n::Float64
+end
 
-    return init_tdac(params.nx, params.ny, params.n_state_var, params.nobs, params.nprt, params.master_rank)
-
+function SummaryStat(X::AbstractVector)
+    m = mean(X)
+    v = varm(X,m, corrected=true)
+    n = length(X)
+    SummaryStat(m,v,n)
 end
 
 struct StateVectors{T<:AbstractArray, S<:AbstractArray}
@@ -296,28 +303,13 @@ struct StationVectors{T<:AbstractArray}
 
 end
 
-struct SummaryStat
-    avg::Float64
-    var::Float64
-    n::Float64
+function init_arrays(params::Parameters)
+
+    return init_arrays(params.nx, params.ny, params.n_state_var, params.nobs, params.nprt, params.master_rank)
+
 end
 
-function SummaryStat(X::AbstractVector)
-    m = mean(X)
-    v = varm(X,m, corrected=true)
-    n = length(X)
-    SummaryStat(m,v,n)
-end
-
-function unpack_statistics!(avg::AbstractArray{T}, var::AbstractArray{T}, statistics::AbstractArray{SummaryStat}) where T
-
-    for idx in CartesianIndices(statistics)
-        avg[idx] = statistics[idx].avg
-        var[idx] = statistics[idx].var
-    end
-end
-
-function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::Int, master_rank::Int = 0)
+function init_arrays(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::Int, master_rank::Int = 0)
 
     # TODO: ideally this will be an argument of the function, to choose a
     # different datatype.
@@ -442,6 +434,13 @@ function get_mean_and_var!(statistics::Array{SummaryStat,3},
 
 end
 
+function unpack_statistics!(avg::AbstractArray{T}, var::AbstractArray{T}, statistics::AbstractArray{SummaryStat}) where T
+
+    for idx in CartesianIndices(statistics)
+        avg[idx] = statistics[idx].avg
+        var[idx] = statistics[idx].var
+    end
+end
 
 function copy_states!(states::StateVectors, resampling_indices::Vector{Int}, my_rank::Int, nprt_per_rank::Int)
 
@@ -519,7 +518,7 @@ function tdac(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG})
 
     @timeit_debug timer "Initialization" begin
 
-        states, statistics, observations, stations, weights, field_buffer = init_tdac(params)
+        states, statistics, observations, stations, weights, field_buffer = init_arrays(params)
 
         background_grf = init_gaussian_random_field_generator(params)
 
