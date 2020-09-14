@@ -1,7 +1,4 @@
-using TDAC, FFTW, MPI
-
-# Disable FFTW threads
-FFTW.set_num_threads(1)
+using TDAC, MPI
 
 # Initialise MPI
 MPI.Init()

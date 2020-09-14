@@ -1,13 +1,7 @@
 using TDAC
 using LinearAlgebra, Test, HDF5, Random
 using MPI
-using FFTW
 using StableRNGs
-
-# Disable FFTW threads: they don't seem to help much in our case.  Also, they
-# seem to cause deadlocks when running the tests, causing CI jobs to hang
-# forever.
-FFTW.set_num_threads(1)
 
 @testset "LLW2d" begin
     using TDAC.LLW2d
