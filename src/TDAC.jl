@@ -22,7 +22,7 @@ function get_obs!(obs::AbstractVector{T},
                   state::AbstractArray{T,3},
                   ist::AbstractVector{Int},
                   jst::AbstractVector{Int},
-                  params::tdac_params) where T
+                  params::Parameters) where T
 
     get_obs!(obs,state,params.nx,ist,jst)
 
@@ -48,7 +48,7 @@ function tsunami_update!(dx_buffer::AbstractMatrix{T},
                          dy_buffer::AbstractMatrix{T},
                          state::AbstractArray{T,3},
                          model_matrices::LLW2d.Matrices{T},
-                         params::tdac_params) where T
+                         params::Parameters) where T
 
     tsunami_update!(dx_buffer, dy_buffer, state, params.n_integration_step,
                     params.dx, params.dy, params.time_step, model_matrices)
@@ -148,7 +148,7 @@ function resample!(resampled_indices::AbstractVector{Int}, weight::AbstractVecto
 
 end
 
-function get_axes(params::tdac_params)
+function get_axes(params::Parameters)
 
     return get_axes(params.nx, params.ny, params.dx, params.dy)
 
@@ -169,7 +169,7 @@ struct RandomField{F<:GaussianRandomField,X<:AbstractArray,W<:AbstractArray,Z<:A
     z::Z
 end
 
-function init_gaussian_random_field_generator(params::tdac_params)
+function init_gaussian_random_field_generator(params::Parameters)
 
     x, y = get_axes(params)
     return init_gaussian_random_field_generator(params.lambda,params.nu, params.sigma, x, y, params.padding, params.primes)
@@ -226,7 +226,7 @@ function add_random_field!(state::AbstractArray{T,4},
                            field_buffer::AbstractArray{T,4},
                            generator::RandomField,
                            rng::AbstractVector{<:Random.AbstractRNG},
-                           params::tdac_params) where T
+                           params::Parameters) where T
 
     add_random_field!(state, field_buffer, generator, rng, params.n_state_var, params.nprt)
 
@@ -254,7 +254,7 @@ function add_random_field!(state::AbstractArray{T,4},
 
 end
 
-function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, params::tdac_params) where T
+function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, params::Parameters) where T
 
     add_noise!(vec, rng, 0.0, params.obs_noise_std)
 
@@ -268,10 +268,17 @@ function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, mean::T, st
 
 end
 
-function init_tdac(params::tdac_params)
+struct SummaryStat
+    avg::Float64
+    var::Float64
+    n::Float64
+end
 
-    return init_tdac(params.nx, params.ny, params.n_state_var, params.nobs, params.nprt, params.master_rank)
-
+function SummaryStat(X::AbstractVector)
+    m = mean(X)
+    v = varm(X,m, corrected=true)
+    n = length(X)
+    SummaryStat(m,v,n)
 end
 
 struct StateVectors{T<:AbstractArray, S<:AbstractArray}
@@ -296,28 +303,13 @@ struct StationVectors{T<:AbstractArray}
 
 end
 
-struct SummaryStat
-    avg::Float64
-    var::Float64
-    n::Float64
+function init_arrays(params::Parameters)
+
+    return init_arrays(params.nx, params.ny, params.n_state_var, params.nobs, params.nprt, params.master_rank)
+
 end
 
-function SummaryStat(X::AbstractVector)
-    m = mean(X)
-    v = varm(X,m, corrected=true)
-    n = length(X)
-    SummaryStat(m,v,n)
-end
-
-function unpack_statistics!(avg::AbstractArray{T}, var::AbstractArray{T}, statistics::AbstractArray{SummaryStat}) where T
-
-    for idx in CartesianIndices(statistics)
-        avg[idx] = statistics[idx].avg
-        var[idx] = statistics[idx].var
-    end
-end
-
-function init_tdac(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::Int, master_rank::Int = 0)
+function init_arrays(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::Int, master_rank::Int = 0)
 
     # TODO: ideally this will be an argument of the function, to choose a
     # different datatype.
@@ -362,7 +354,7 @@ function set_initial_state!(states::StateVectors, model_matrices::LLW2d.Matrices
                             field_buffer::AbstractArray{T, 4},
                             rng::AbstractVector{<:Random.AbstractRNG},
                             nprt_per_rank::Int,
-                            params::tdac_params) where T
+                            params::Parameters) where T
 
     # Set true initial state
     LLW2d.initheight!(@view(states.truth[:, :, 1]), model_matrices, params.dx, params.dy, params.source_size)
@@ -389,7 +381,7 @@ function set_initial_state!(states::StateVectors, model_matrices::LLW2d.Matrices
 
 end
 
-function set_stations!(stations::StationVectors, params::tdac_params) where T
+function set_stations!(stations::StationVectors, params::Parameters) where T
 
     set_stations!(stations.ist,
                   stations.jst,
@@ -442,6 +434,13 @@ function get_mean_and_var!(statistics::Array{SummaryStat,3},
 
 end
 
+function unpack_statistics!(avg::AbstractArray{T}, var::AbstractArray{T}, statistics::AbstractArray{SummaryStat}) where T
+
+    for idx in CartesianIndices(statistics)
+        avg[idx] = statistics[idx].avg
+        var[idx] = statistics[idx].var
+    end
+end
 
 function copy_states!(states::StateVectors, resampling_indices::Vector{Int}, my_rank::Int, nprt_per_rank::Int)
 
@@ -498,7 +497,7 @@ function copy_states!(particles::AbstractArray{T,4},
 
 end
 
-function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
+function tdac(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG})
 
     if !MPI.Initialized()
         MPI.Init()
@@ -519,7 +518,7 @@ function tdac(params::tdac_params, rng::AbstractVector{<:Random.AbstractRNG})
 
     @timeit_debug timer "Initialization" begin
 
-        states, statistics, observations, stations, weights, field_buffer = init_tdac(params)
+        states, statistics, observations, stations, weights, field_buffer = init_arrays(params)
 
         background_grf = init_gaussian_random_field_generator(params)
 
@@ -677,12 +676,12 @@ end
 function get_params(user_input_dict::Dict)
 
     user_input = (; (Symbol(k) => v for (k,v) in user_input_dict)...)
-    params = tdac_params(;user_input...)
+    params = Parameters(;user_input...)
 
 end
 
 # Initialise params struct with default values
-get_params() = tdac_params()
+get_params() = Parameters()
 
 function get_params(path_to_input_file::String)
 
@@ -751,7 +750,7 @@ function tdac(path_to_input_file::String = "")
 
 end
 
-function tdac(params::tdac_params)
+function tdac(params::Parameters)
 
     if !MPI.Initialized()
         MPI.Init()

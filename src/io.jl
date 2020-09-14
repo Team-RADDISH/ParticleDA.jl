@@ -53,7 +53,7 @@ function write_grid(params)
 
 end
 
-function write_stations(ist::AbstractVector, jst::AbstractVector, params::tdac_params) where T
+function write_stations(ist::AbstractVector, jst::AbstractVector, params::Parameters) where T
 
     h5open(params.output_filename, "cw") do file
 
@@ -77,7 +77,7 @@ function write_snapshot(truth::AbstractArray{T,3},
                         var::AbstractArray{T,3},
                         weights::AbstractVector{T},
                         it::Int,
-                        params::tdac_params) where T
+                        params::Parameters) where T
 
     if params.verbose
         println("Writing output at timestep = ", it)
@@ -132,7 +132,7 @@ function create_or_open_group(file::HDF5File, group_name::String, subgroup_name:
 
 end
 
-function write_weights(file::HDF5File, weights::AbstractVector, unit::String, it::Int, params::tdac_params)
+function write_weights(file::HDF5File, weights::AbstractVector, unit::String, it::Int, params::Parameters)
 
     group_name = "weights"
     dataset_name = "t" * string(it)
@@ -160,7 +160,7 @@ function write_field(file::HDF5File,
                      group::String,
                      dataset::String,
                      description::String,
-                     params::tdac_params) where T
+                     params::Parameters) where T
 
     group_name = params.state_prefix * "_" * group
     subgroup_name = "t" * string(it)
@@ -181,7 +181,7 @@ function write_field(file::HDF5File,
     end
 end
 
-function write_timers(length::Int, size::Int, chars::AbstractVector{Char}, params::tdac_params)
+function write_timers(length::Int, size::Int, chars::AbstractVector{Char}, params::Parameters)
 
     write_timers(length, size, chars, params.output_filename)
 
