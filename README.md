@@ -120,6 +120,8 @@ To use the MPI parallelisation, write a julia script that calls the `tdac() ` fu
 mpirun -np <your_number_of_processes> julia <your_julia_script>
 ```
 
+Note that the parallel performance may vary depending on the performance of the algorithm. In general, a degeneracy of the particle weights will lead to poor load balance and parallel performance. See [this issue](https://github.com/Team-RADDISH/TDAC.jl/issues/115#issuecomment-675468511) for more details.
+
 ## Testing
 
 We have a basic test suite for `TDAC.jl`.  You can run the tests by entering the
