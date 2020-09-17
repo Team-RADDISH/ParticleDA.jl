@@ -1,4 +1,4 @@
-module TDAC
+module ParticleDA
 
 using Random, Distributions, Statistics, MPI, Base.Threads, YAML, GaussianRandomFields, HDF5
 import Future
@@ -512,7 +512,7 @@ function tdac(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG})
     nprt_per_rank = Int(params.nprt / my_size)
 
     if params.enable_timers
-        TimerOutputs.enable_debug_timings(TDAC)
+        TimerOutputs.enable_debug_timings(ParticleDA)
     end
     timer = TimerOutput()
 

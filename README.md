@@ -1,4 +1,4 @@
-# TDAC
+# ParticleDA
 
 ## Installation
 
@@ -7,18 +7,18 @@ REPL](https://docs.julialang.org/en/v1/stdlib/REPL/), enter the package manager
 with `]`, then run the command
 
 ```
-add https://github.com/Team-RADDISH/TDAC.jl.git
+add https://github.com/Team-RADDISH/ParticleDA.jl.git
 ```
 
 If you plan to develop the package (make changes, submit pull requests, etc), in
 the package manager mode run this command
 
 ```
-dev https://github.com/Team-RADDISH/TDAC.jl.git
+dev https://github.com/Team-RADDISH/ParticleDA.jl.git
 ```
 
 This will automatically clone the repository to your local directory
-`~/.julia/dev/TDAC`.
+`~/.julia/dev/ParticleDA`.
 
 You can exit from the package manager mode by pressing `CTRL + C` or,
 alternatively, the backspace key when there is no input in the prompt.
@@ -29,39 +29,39 @@ After installing the package, you can start using the package in the Julia REPL
 with
 
 ```julia
-using TDAC
+using ParticleDA
 ```
 
 To run the simulation using default parameters, call the main function with no arguments
 
 ```julia
-TDAC.tdac()
+ParticleDA.tdac()
 ```
 
-Note that with the default parameters, no output is written. The function `TDAC()` returns the true
+Note that with the default parameters, no output is written. The function `ParticleDA()` returns the true
 state vector, the average state vector of the particles and the standard deviation of the particles
 at the end of the simulation. To suppress printing the return values on screen, use
 
 ```julia
-TDAC.tdac();
+ParticleDA.tdac();
 ```
 
 ### Setting Parameters
 
-The default parameters can be found in the file [parameters.jl](https://github.com/Team-RADDISH/TDAC.jl/blob/master/src/params.jl). Or viewed in REPL by
+The default parameters can be found in the file [parameters.jl](https://github.com/Team-RADDISH/ParticleDA.jl/blob/master/src/params.jl). Or viewed in REPL by
 
 ```julia
-?TDAC.tdac_parameters
+?ParticleDA.tdac_parameters
 ```
 
 To change parameters from the defaults, create a text file, and pass the path to it as an argument
 
 ```julia
-TDAC.tdac("path/to/my/input/file")
+ParticleDA.tdac("path/to/my/input/file")
 ```
 
 The input file is in the `.yaml` format. Each row contains `<parameter name> : <parameter value>`. 
-For an example input file, see the [input file for the first integration test](https://github.com/Team-RADDISH/TDAC.jl/blob/master/test/integration_test_1.yaml). Any parameters not specified in the input file 
+For an example input file, see the [input file for the first integration test](https://github.com/Team-RADDISH/ParticleDA.jl/blob/master/test/integration_test_1.yaml). Any parameters not specified in the input file 
 will retain their default values.
 
 #### Observation Station Coordinates
@@ -102,9 +102,9 @@ should be set to the total number of observation stations.
 
 ### Output
 
-If `verbose` is set to `true`, `TDAC()` will produce a hdf5 file in the run directory. The file name is `tdac.h5` by default. The file contains the true and assimilated ocean height, particle weights, parameters used, and other metadata at each data assimilation time step. To read the output file, use the [HDF5 library](https://www.hdfgroup.org/solutions/hdf5/).
+If `verbose` is set to `true`, `ParticleDA()` will produce a hdf5 file in the run directory. The file name is `tdac.h5` by default. The file contains the true and assimilated ocean height, particle weights, parameters used, and other metadata at each data assimilation time step. To read the output file, use the [HDF5 library](https://www.hdfgroup.org/solutions/hdf5/).
 
-A basic plotting tool is provided in a [jupyter notebook](https://github.com/Team-RADDISH/TDAC.jl/blob/master/extra/Plot_tdac_output.ipynb). This is intended as a template to build more sophisticated postprocessing tools, but can be used for some simple analysis. Set the variable `timestamp` in the third cell to plot different time slices from the output file. More functionality may be added as the package develops.
+A basic plotting tool is provided in a [jupyter notebook](https://github.com/Team-RADDISH/ParticleDA.jl/blob/master/extra/Plot_tdac_output.ipynb). This is intended as a template to build more sophisticated postprocessing tools, but can be used for some simple analysis. Set the variable `timestamp` in the third cell to plot different time slices from the output file. More functionality may be added as the package develops.
 
 ### Running in Parallel
 
@@ -120,19 +120,19 @@ To use the MPI parallelisation, write a julia script that calls the `tdac() ` fu
 mpirun -np <your_number_of_processes> julia <your_julia_script>
 ```
 
-Note that the parallel performance may vary depending on the performance of the algorithm. In general, a degeneracy of the particle weights will lead to poor load balance and parallel performance. See [this issue](https://github.com/Team-RADDISH/TDAC.jl/issues/115#issuecomment-675468511) for more details.
+Note that the parallel performance may vary depending on the performance of the algorithm. In general, a degeneracy of the particle weights will lead to poor load balance and parallel performance. See [this issue](https://github.com/Team-RADDISH/ParticleDA.jl/issues/115#issuecomment-675468511) for more details.
 
 ## Testing
 
-We have a basic test suite for `TDAC.jl`.  You can run the tests by entering the
+We have a basic test suite for `ParticleDA.jl`.  You can run the tests by entering the
 package manager mode in the Julia REPL with `]` and running the command
 
 ```
-test TDAC
+test ParticleDA
 ```
 
 ## License
 
-The `TDAC.jl` package is licensed under the MIT "Expat" License.  This is partly
+The `ParticleDA.jl` package is licensed under the MIT "Expat" License.  This is partly
 based on the [tsunami data assimilation code](https://github.com/tktmyd/tdac) by
 Takuto Maeda.
