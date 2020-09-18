@@ -1,4 +1,4 @@
-using Test, TDAC, MPI, Random
+using Test, ParticleDA, MPI, Random
 
 MPI.Init()
 my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
@@ -27,7 +27,7 @@ if my_rank == 0
     println()
 end
 
-TDAC.copy_states!(reshape(local_particles, (1,1,1,nprt_per_rank)), buffer, indices, my_rank, nprt_per_rank)
+ParticleDA.copy_states!(reshape(local_particles, (1,1,1,nprt_per_rank)), buffer, indices, my_rank, nprt_per_rank)
 
 for i = 1:my_size
     if i == my_rank + 1

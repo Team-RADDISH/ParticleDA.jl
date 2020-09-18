@@ -1,5 +1,5 @@
-name = "TDAC"
-uuid = "507090cf-060f-45f0-ade2-b737b1c8d972"
+name = "ParticleDA"
+uuid = "61cd1fb4-f4c4-4bc8-80c6-ea5639a6ca2e"
 authors = ["Mosè Giordano"]
 version = "0.1.0"
 

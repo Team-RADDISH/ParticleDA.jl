@@ -5,7 +5,7 @@ export Parameters
 """
 Parameters()
 
-Parameters for TDAC run. Arguments:
+Parameters for ParticleDA run. Arguments:
 
 * `nx::Int` : Number of grid points in the x direction
 * `ny::Int` : Number of grid points in the y direction
@@ -78,7 +78,7 @@ Base.@kwdef struct Parameters{T<:AbstractFloat}
     time_step::T = 50.0
     verbose::Bool = false
 
-    output_filename::String = "tdac.h5"
+    output_filename::String = "particle_da.h5"
     state_prefix::String = "data"
     title_avg::String = "avg"
     title_var::String = "var"
