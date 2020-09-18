@@ -1,5 +1,9 @@
 # ParticleDA
 
+## Disclaimer
+
+This repository is a work in progress and will be updated frequently. Use at your own risk!
+
 ## Installation
 
 To install the package, open the [Julia
