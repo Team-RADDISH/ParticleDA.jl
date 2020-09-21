@@ -497,7 +497,32 @@ function copy_states!(particles::AbstractArray{T,4},
 
 end
 
-function particle_filter(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG})
+function init(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG}, nprt_per_rank::Int)
+    states, statistics, observations, stations, weights, field_buffer = init_arrays(params)
+
+    background_grf = init_gaussian_random_field_generator(params)
+
+    # Set up tsunami model
+    model_matrices = LLW2d.setup(params.nx,
+                                 params.ny,
+                                 params.bathymetry_setup,
+                                 params.absorber_thickness_fraction,
+                                 params.boundary_damping,
+                                 params.cutoff_depth)
+
+    set_stations!(stations, params)
+
+    set_initial_state!(states, model_matrices, field_buffer, rng, nprt_per_rank, params)
+
+    resampling_indices = Vector{Int}(undef, params.nprt)
+
+    avg_arr = Array{Float64,3}(undef, params.nx, params.ny, params.n_state_var)
+    var_arr = Array{Float64,3}(undef, params.nx, params.ny, params.n_state_var)
+
+    return states, statistics, observations, stations, weights, field_buffer, background_grf, model_matrices, resampling_indices, avg_arr, var_arr
+end
+
+function particle_filter(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG}, init)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -516,30 +541,7 @@ function particle_filter(params::Parameters, rng::AbstractVector{<:Random.Abstra
     end
     timer = TimerOutput()
 
-    @timeit_debug timer "Initialization" begin
-
-        states, statistics, observations, stations, weights, field_buffer = init_arrays(params)
-
-        background_grf = init_gaussian_random_field_generator(params)
-
-        # Set up tsunami model
-        model_matrices = LLW2d.setup(params.nx,
-                                     params.ny,
-                                     params.bathymetry_setup,
-                                     params.absorber_thickness_fraction,
-                                     params.boundary_damping,
-                                     params.cutoff_depth)
-
-        set_stations!(stations, params)
-
-        set_initial_state!(states, model_matrices, field_buffer, rng, nprt_per_rank, params)
-
-        resampling_indices = Vector{Int}(undef,params.nprt)
-
-        avg_arr = Array{Float64,3}(undef, params.nx, params.ny, params.n_state_var)
-        var_arr = Array{Float64,3}(undef, params.nx, params.ny, params.n_state_var)
-
-    end
+    @timeit_debug timer "Initialization" states, statistics, observations, stations, weights, field_buffer, background_grf, model_matrices, resampling_indices, avg_arr, var_arr = init(params, rng, nprt_per_rank)
 
     @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, states.particles, params.master_rank)
 
@@ -723,7 +725,7 @@ function particle_filter(path_to_input_file::String, rng::AbstractRNG)
         [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
     end;
 
-    return particle_filter(params, rng_vec)
+    return particle_filter(params, rng_vec, init)
 
 end
 
@@ -760,7 +762,7 @@ function particle_filter(params::Parameters)
         [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
     end;
 
-    return particle_filter(params, rng)
+    return particle_filter(params, rng, init)
 
 end
 
