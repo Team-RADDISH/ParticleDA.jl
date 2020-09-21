@@ -497,6 +497,10 @@ function copy_states!(particles::AbstractArray{T,4},
 
 end
 
+### These functions and data strcutures will go into the model
+struct Model
+end
+
 function init(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG}, nprt_per_rank::Int)
     states, statistics, observations, stations, weights, field_buffer = init_arrays(params)
 
@@ -522,7 +526,45 @@ function init(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG}, npr
     return states, statistics, observations, stations, weights, field_buffer, background_grf, model_matrices, resampling_indices, avg_arr, var_arr
 end
 
-function particle_filter(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG}, init)
+function update_truth!(field_buffer, states, model_matrices, params)
+    tsunami_update!(@view(field_buffer[:, :, 1, 1]),
+                    @view(field_buffer[:, :, 2, 1]),
+                    states.truth, model_matrices, params)
+end
+
+function update_particles!(field_buffer, states, model_matrices, background_grf, rng, nprt_per_rank, params)
+    Threads.@threads for ip in 1:nprt_per_rank
+        tsunami_update!(@view(field_buffer[:, :, 1, threadid()]), @view(field_buffer[:, :, 2, threadid()]),
+                        @view(states.particles[:, :, :, ip]), model_matrices, params)
+
+    end
+    add_random_field!(states.particles,
+                      field_buffer,
+                      background_grf,
+                      rng,
+                      params.n_state_var,
+                      nprt_per_rank)
+
+end
+
+function truth_observations!(observations, states, stations, params)
+    get_obs!(observations.truth, states.truth, stations.ist, stations.jst, params)
+end
+
+function particles_observations!(observations, states, stations, rng, nprt_per_rank, params)
+    for ip in 1:nprt_per_rank
+        get_obs!(@view(observations.model[:,ip]),
+                 @view(states.particles[:, :, :, ip]),
+                 stations.ist,
+                 stations.jst,
+                 params)
+    add_noise!(@view(observations.model[:,ip]), rng[1], params)
+    end
+end
+
+### End of model functions
+
+function particle_filter(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG}, init, update_truth!, update_particles!, truth_observations!, particles_observations!)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -560,40 +602,18 @@ function particle_filter(params::Parameters, rng::AbstractVector{<:Random.Abstra
     for it in 1:params.n_time_step
 
         # integrate true synthetic wavefield
-        @timeit_debug timer "True State Update" tsunami_update!(@view(field_buffer[:, :, 1, 1]),
-                                                                @view(field_buffer[:, :, 2, 1]),
-                                                                states.truth, model_matrices, params)
+        @timeit_debug timer "True State Update" update_truth!(field_buffer, states, model_matrices, params)
 
         # Get observation from true synthetic wavefield
-        @timeit_debug timer "Observations" get_obs!(observations.truth, states.truth, stations.ist, stations.jst, params)
+        @timeit_debug timer "Observations" truth_observations!(observations, states, stations, params)
 
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads.
 
-        @timeit_debug timer "Particle State Update" Threads.@threads for ip in 1:nprt_per_rank
-
-            tsunami_update!(@view(field_buffer[:, :, 1, threadid()]), @view(field_buffer[:, :, 2, threadid()]),
-                            @view(states.particles[:, :, :, ip]), model_matrices, params)
-
-        end
-
-
-        @timeit_debug timer "Process Noise" add_random_field!(states.particles,
-                                                              field_buffer,
-                                                              background_grf,
-                                                              rng,
-                                                              params.n_state_var,
-                                                              nprt_per_rank)
+        @timeit_debug timer "Particle State Update and Process Noise" update_particles!(field_buffer, states, model_matrices, background_grf, rng, nprt_per_rank, params)
 
         # Add process noise, get observations, add observation noise (to particles)
-        @timeit_debug timer "Observations" for ip in 1:nprt_per_rank
-            get_obs!(@view(observations.model[:,ip]),
-                     @view(states.particles[:, :, :, ip]),
-                     stations.ist,
-                     stations.jst,
-                     params)
-            add_noise!(@view(observations.model[:,ip]), rng[1], params)
-        end
+        @timeit_debug timer "Observations" particles_observations!(observations, states, stations, rng, nprt_per_rank, params)
 
         @timeit_debug timer "Weights" get_log_weights!(@view(weights[1:nprt_per_rank]),
                                                        observations.truth,
@@ -725,7 +745,7 @@ function particle_filter(path_to_input_file::String, rng::AbstractRNG)
         [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
     end;
 
-    return particle_filter(params, rng_vec, init)
+    return particle_filter(params, rng_vec, init, update_truth!, update_particles!, truth_observations!, particles_observations!)
 
 end
 
@@ -762,7 +782,7 @@ function particle_filter(params::Parameters)
         [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
     end;
 
-    return particle_filter(params, rng, init)
+    return particle_filter(params, rng, init, update_truth!, update_particles!, truth_observations!, particles_observations!)
 
 end
 
