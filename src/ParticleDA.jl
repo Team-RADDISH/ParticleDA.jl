@@ -5,7 +5,7 @@ import Future
 using TimerOutputs
 using DelimitedFiles
 
-export tdac
+export particle_filter
 
 include("params.jl")
 include("llw2d.jl")
@@ -497,7 +497,7 @@ function copy_states!(particles::AbstractArray{T,4},
 
 end
 
-function tdac(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG})
+function particle_filter(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG})
 
     if !MPI.Initialized()
         MPI.Init()
@@ -594,9 +594,9 @@ function tdac(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG})
         end
 
         @timeit_debug timer "Weights" get_log_weights!(@view(weights[1:nprt_per_rank]),
-                                                         observations.truth,
-                                                         observations.model,
-                                                         params.obs_noise_std)
+                                                       observations.truth,
+                                                       observations.model,
+                                                       params.obs_noise_std)
 
         # Gather weights to master rank and resample particles.
         # Doing MPI collectives in place to save memory allocations.
@@ -700,7 +700,7 @@ function get_params(path_to_input_file::String)
 
 end
 
-function tdac(path_to_input_file::String, rng::AbstractRNG)
+function particle_filter(path_to_input_file::String, rng::AbstractRNG)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -723,11 +723,11 @@ function tdac(path_to_input_file::String, rng::AbstractRNG)
         [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
     end;
 
-    return tdac(params, rng_vec)
+    return particle_filter(params, rng_vec)
 
 end
 
-function tdac(path_to_input_file::String = "")
+function particle_filter(path_to_input_file::String = "")
 
     if !MPI.Initialized()
         MPI.Init()
@@ -746,11 +746,11 @@ function tdac(path_to_input_file::String = "")
 
     params = MPI.bcast(params, 0, MPI.COMM_WORLD)
 
-    return tdac(params)
+    return particle_filter(params)
 
 end
 
-function tdac(params::Parameters)
+function particle_filter(params::Parameters)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -760,7 +760,7 @@ function tdac(params::Parameters)
         [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
     end;
 
-    return tdac(params, rng)
+    return particle_filter(params, rng)
 
 end
 

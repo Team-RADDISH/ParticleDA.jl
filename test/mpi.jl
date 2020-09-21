@@ -24,12 +24,12 @@ params = ParticleDA.Parameters(; nprt = my_size, nobs = 4, padding = 0, enable_t
 
 # Warmup
 rm("particle_da.h5"; force = true)
-tdac(params)
+particle_filter(params)
 # Flush a newline
 println()
 
 # Run the command
 rm("particle_da.h5"; force = true)
-tdac(params(; nprt = 2 * my_size, nobs = 36))
+particle_filter(params(; nprt = 2 * my_size, nobs = 36))
 # Flush a newline
 println()
