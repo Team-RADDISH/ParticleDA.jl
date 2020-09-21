@@ -268,10 +268,10 @@ function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, mean::T, st
 
 end
 
-struct SummaryStat
-    avg::Float64
-    var::Float64
-    n::Float64
+struct SummaryStat{T}
+    avg::T
+    var::T
+    n::Int
 end
 
 function SummaryStat(X::AbstractVector)
@@ -345,7 +345,7 @@ function init_arrays(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::
     # Buffer array to be used in the tsunami update
     field_buffer = Array{T}(undef, nx, ny, 2, nthreads())
 
-    mean_and_var = Array{SummaryStat, 3}(undef, nx, ny, n_state_var)
+    mean_and_var = Array{SummaryStat{T}, 3}(undef, nx, ny, n_state_var)
 
     return StateVectors(state_particles, state_resampled, state_truth), mean_and_var, ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), weights, field_buffer
 end
@@ -422,9 +422,9 @@ function stats_reduction(S1::SummaryStat, S2::SummaryStat)
 
 end
 
-function get_mean_and_var!(statistics::Array{SummaryStat,3},
-                                    particles::AbstractArray{T,4},
-                                    master_rank::Int) where T
+function get_mean_and_var!(statistics::Array{SummaryStat{T},3},
+                           particles::AbstractArray{T,4},
+                           master_rank::Int) where T
 
     Threads.@threads for idx in CartesianIndices(statistics)
         statistics[idx] = SummaryStat(@view(particles[idx,:]))
@@ -434,7 +434,7 @@ function get_mean_and_var!(statistics::Array{SummaryStat,3},
 
 end
 
-function unpack_statistics!(avg::AbstractArray{T}, var::AbstractArray{T}, statistics::AbstractArray{SummaryStat}) where T
+function unpack_statistics!(avg::AbstractArray{T}, var::AbstractArray{T}, statistics::AbstractArray{SummaryStat{T}}) where T
 
     for idx in CartesianIndices(statistics)
         avg[idx] = statistics[idx].avg
