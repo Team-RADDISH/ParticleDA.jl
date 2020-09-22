@@ -162,13 +162,6 @@ function get_axes(nx::Int, ny::Int, dx::Real, dy::Real)
     return x,y
 end
 
-struct RandomField{F<:GaussianRandomField,X<:AbstractArray,W<:AbstractArray,Z<:AbstractArray}
-    grf::F
-    xi::X
-    w::W
-    z::Z
-end
-
 function init_gaussian_random_field_generator(params::Parameters)
 
     x, y = get_axes(params)
@@ -281,28 +274,6 @@ function SummaryStat(X::AbstractVector)
     SummaryStat(m,v,n)
 end
 
-struct StateVectors{T<:AbstractArray, S<:AbstractArray}
-
-    particles::T
-    buffer::T
-    truth::S
-
-end
-
-struct ObsVectors{T<:AbstractArray,S<:AbstractArray}
-
-    truth::T
-    model::S
-
-end
-
-struct StationVectors{T<:AbstractArray}
-
-    ist::T
-    jst::T
-
-end
-
 function init_arrays(params::Parameters)
 
     return init_arrays(params.nx, params.ny, params.n_state_var, params.nobs, params.nprt, params.master_rank)
@@ -310,21 +281,6 @@ function init_arrays(params::Parameters)
 end
 
 function init_arrays(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::Int, master_rank::Int = 0)
-
-    # TODO: ideally this will be an argument of the function, to choose a
-    # different datatype.
-    T = Float64
-
-    nprt_per_rank = Int(nprt_total / MPI.Comm_size(MPI.COMM_WORLD))
-
-    # Do memory allocations
-
-    if MPI.Comm_rank(MPI.COMM_WORLD) == master_rank
-        weights = Vector{T}(undef, nprt_total)
-    else
-        weights = Vector{T}(undef, nprt_per_rank)
-    end
-
     state_avg = zeros(T, nx, ny, n_state_var) # average of particle state vectors
     state_var = zeros(T, nx, ny, n_state_var) # variance of particle state vectors
     state_resampled = Array{T,4}(undef, nx, ny, n_state_var, nprt_per_rank)
@@ -345,9 +301,7 @@ function init_arrays(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::
     # Buffer array to be used in the tsunami update
     field_buffer = Array{T}(undef, nx, ny, 2, nthreads())
 
-    mean_and_var = Array{SummaryStat{T}, 3}(undef, nx, ny, n_state_var)
-
-    return StateVectors(state_particles, state_resampled, state_truth), mean_and_var, ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), weights, field_buffer
+    return StateVectors(state_particles, state_resampled, state_truth), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), field_buffer
 end
 
 function set_initial_state!(states::StateVectors, model_matrices::LLW2d.Matrices{T},
@@ -498,11 +452,57 @@ function copy_states!(particles::AbstractArray{T,4},
 end
 
 ### These functions and data strcutures will go into the model
-struct Model
+struct RandomField{F<:GaussianRandomField,X<:AbstractArray,W<:AbstractArray,Z<:AbstractArray}
+    grf::F
+    xi::X
+    w::W
+    z::Z
+end
+
+struct StateVectors{T<:AbstractArray, S<:AbstractArray}
+
+    particles::T
+    buffer::T
+    truth::S
+
+end
+
+struct ObsVectors{T<:AbstractArray,S<:AbstractArray}
+
+    truth::T
+    model::S
+
+end
+
+struct StationVectors{T<:AbstractArray}
+
+    ist::T
+    jst::T
+
+end
+
+struct ModelData
+    states
+    statistics
+    observations
+    stations
+    field_buffer
+    background_grf
+    model_matrices
+end
+get_particles(d::ModelData) = d.states.particles
+get_truth_observations(d::ModelData) = d.observations.truth
+get_model_observations(d::ModelData) = d.observations.model
+function write_initial_state(d::ModelData, weights, params)
+    write_grid(params)
+    write_params(params)
+    write_stations(d.stations.ist, d.stations.jst, params)
+    unpack_statistics!(d.avg_arr, d.var_arr, d.statistics)
+    write_snapshot(d.states.truth, d.avg_arr, d.var_arr, weights, 0, params)
 end
 
 function init(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG}, nprt_per_rank::Int)
-    states, statistics, observations, stations, weights, field_buffer = init_arrays(params)
+    states, statistics, observations, stations, field_buffer = init_arrays(params)
 
     background_grf = init_gaussian_random_field_generator(params)
 
@@ -518,53 +518,50 @@ function init(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG}, npr
 
     set_initial_state!(states, model_matrices, field_buffer, rng, nprt_per_rank, params)
 
-    resampling_indices = Vector{Int}(undef, params.nprt)
-
-    avg_arr = Array{Float64,3}(undef, params.nx, params.ny, params.n_state_var)
-    var_arr = Array{Float64,3}(undef, params.nx, params.ny, params.n_state_var)
-
-    return states, statistics, observations, stations, weights, field_buffer, background_grf, model_matrices, resampling_indices, avg_arr, var_arr
+    return ModelData(states, observations, stations, field_buffer, background_grf, model_matrices)
 end
 
-function update_truth!(field_buffer, states, model_matrices, params)
-    tsunami_update!(@view(field_buffer[:, :, 1, 1]),
-                    @view(field_buffer[:, :, 2, 1]),
-                    states.truth, model_matrices, params)
+function update_truth!(d::ModelData params)
+    tsunami_update!(@view(d.field_buffer[:, :, 1, 1]),
+                    @view(d.field_buffer[:, :, 2, 1]),
+                    d.states.truth, d.model_matrices, params)
 end
 
-function update_particles!(field_buffer, states, model_matrices, background_grf, rng, nprt_per_rank, params)
+function update_particles!(d::ModelData, nprt_per_rank, params)
     Threads.@threads for ip in 1:nprt_per_rank
-        tsunami_update!(@view(field_buffer[:, :, 1, threadid()]), @view(field_buffer[:, :, 2, threadid()]),
-                        @view(states.particles[:, :, :, ip]), model_matrices, params)
+        tsunami_update!(@view(d.field_buffer[:, :, 1, threadid()]), @view(d.field_buffer[:, :, 2, threadid()]),
+                        @view(d.states.particles[:, :, :, ip]), d.model_matrices, params)
 
     end
-    add_random_field!(states.particles,
-                      field_buffer,
-                      background_grf,
-                      rng,
+    add_random_field!(d.states.particles,
+                      d.field_buffer,
+                      d.background_grf,
+                      d.rng,
                       params.n_state_var,
                       nprt_per_rank)
 
 end
 
-function truth_observations!(observations, states, stations, params)
-    get_obs!(observations.truth, states.truth, stations.ist, stations.jst, params)
+function truth_observations!(d::ModelData, params)
+    get_obs!(d.observations.truth, d.states.truth, d.stations.ist, d.stations.jst, params)
+    return d.observations.truth
 end
 
-function particles_observations!(observations, states, stations, rng, nprt_per_rank, params)
+function particles_observations!(d::ModelData, nprt_per_rank, params)
     for ip in 1:nprt_per_rank
         get_obs!(@view(observations.model[:,ip]),
                  @view(states.particles[:, :, :, ip]),
                  stations.ist,
                  stations.jst,
                  params)
-    add_noise!(@view(observations.model[:,ip]), rng[1], params)
+    add_noise!(@view(d.observations.model[:,ip]), d.rng[1], params)
     end
+    return d.observations.model
 end
 
 ### End of model functions
 
-function particle_filter(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG}, init, update_truth!, update_particles!, truth_observations!, particles_observations!)
+function particle_filter(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG}, init)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -583,41 +580,54 @@ function particle_filter(params::Parameters, rng::AbstractVector{<:Random.Abstra
     end
     timer = TimerOutput()
 
-    @timeit_debug timer "Initialization" states, statistics, observations, stations, weights, field_buffer, background_grf, model_matrices, resampling_indices, avg_arr, var_arr = init(params, rng, nprt_per_rank)
+    # TODO: ideally this will be an argument of the function, to choose a
+    # different datatype.
+    T = Float64
 
-    @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, states.particles, params.master_rank)
+    nprt_per_rank = Int(nprt_total / MPI.Comm_size(MPI.COMM_WORLD))
+
+    # Do memory allocations
+
+    if MPI.Comm_rank(MPI.COMM_WORLD) == master_rank
+        weights = Vector{T}(undef, nprt_total)
+    else
+        weights = Vector{T}(undef, nprt_per_rank)
+    end
+
+    resampling_indices = Vector{Int}(undef, params.nprt)
+
+    mean_and_var = Array{SummaryStat{T}, 3}(undef, nx, ny, n_state_var)
+    avg_arr = Array{T,3}(undef, nx, ny, n_state_var)
+    var_arr = Array{T,3}(undef, nx, ny, n_state_var)
+
+    @timeit_debug timer "Initialization" model_data = init(params, rng, nprt_per_rank)
+
+    @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, get_particles(model_data), params.master_rank)
 
     # Write initial state + metadata
     if(params.verbose && my_rank == params.master_rank)
-
-        @timeit_debug timer "IO" begin
-            write_grid(params)
-            write_params(params)
-            write_stations(stations.ist, stations.jst, params)
-            unpack_statistics!(avg_arr, var_arr, statistics)
-            write_snapshot(states.truth, avg_arr, var_arr, weights, 0, params)
-        end
+        @timeit_debug timer "IO" write_initial_state(model_data, params)
     end
 
     for it in 1:params.n_time_step
 
         # integrate true synthetic wavefield
-        @timeit_debug timer "True State Update" update_truth!(field_buffer, states, model_matrices, params)
+        @timeit_debug timer "True State Update" update_truth!(model_data, params)
 
         # Get observation from true synthetic wavefield
-        @timeit_debug timer "Observations" truth_observations!(observations, states, stations, params)
+        @timeit_debug timer "Observations" truth_observations = truth_observations!(model_data, params)
 
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads.
 
-        @timeit_debug timer "Particle State Update and Process Noise" update_particles!(field_buffer, states, model_matrices, background_grf, rng, nprt_per_rank, params)
+        @timeit_debug timer "Particle State Update and Process Noise" update_particles!(model_data, nprt_per_rank, params)
 
         # Add process noise, get observations, add observation noise (to particles)
-        @timeit_debug timer "Observations" particles_observations!(observations, states, stations, rng, nprt_per_rank, params)
+        @timeit_debug timer "Observations" model_observations = particles_observations!(model_data, nprt_per_rank, params)
 
         @timeit_debug timer "Weights" get_log_weights!(@view(weights[1:nprt_per_rank]),
-                                                       observations.truth,
-                                                       observations.model,
+                                                       truth_observations,
+                                                       model_observations,
                                                        params.obs_noise_std)
 
         # Gather weights to master rank and resample particles.
@@ -745,7 +755,7 @@ function particle_filter(path_to_input_file::String, rng::AbstractRNG)
         [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
     end;
 
-    return particle_filter(params, rng_vec, init, update_truth!, update_particles!, truth_observations!, particles_observations!)
+    return particle_filter(params, rng_vec, init)
 
 end
 
@@ -782,7 +792,7 @@ function particle_filter(params::Parameters)
         [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
     end;
 
-    return particle_filter(params, rng, init, update_truth!, update_particles!, truth_observations!, particles_observations!)
+    return particle_filter(params, rng, init)
 
 end
 
