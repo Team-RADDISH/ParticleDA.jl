@@ -8,6 +8,7 @@ using DelimitedFiles
 export particle_filter
 
 include("params.jl")
+include("model.jl")
 include("llw2d.jl")
 include("io.jl")
 
@@ -274,13 +275,17 @@ function SummaryStat(X::AbstractVector)
     SummaryStat(m,v,n)
 end
 
-function init_arrays(params::Parameters)
+function init_arrays(params::Parameters, nprt_per_rank)
 
-    return init_arrays(params.nx, params.ny, params.n_state_var, params.nobs, params.nprt, params.master_rank)
+    return init_arrays(params.nx, params.ny, params.n_state_var, params.nobs, nprt_per_rank, params.master_rank)
 
 end
 
-function init_arrays(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::Int, master_rank::Int = 0)
+function init_arrays(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_per_rank::Int, master_rank::Int = 0)
+    # TODO: ideally this will be an argument of the function, to choose a
+    # different datatype.
+    T = Float64
+
     state_avg = zeros(T, nx, ny, n_state_var) # average of particle state vectors
     state_var = zeros(T, nx, ny, n_state_var) # variance of particle state vectors
     state_resampled = Array{T,4}(undef, nx, ny, n_state_var, nprt_per_rank)
@@ -396,9 +401,9 @@ function unpack_statistics!(avg::AbstractArray{T}, var::AbstractArray{T}, statis
     end
 end
 
-function copy_states!(states::StateVectors, resampling_indices::Vector{Int}, my_rank::Int, nprt_per_rank::Int)
+function copy_states!(particles::AbstractArray, resampling_indices::Vector{Int}, my_rank::Int, nprt_per_rank::Int)
 
-    copy_states!(states.particles, states.buffer, resampling_indices, my_rank, nprt_per_rank)
+    copy_states!(particles, states.buffer, resampling_indices, my_rank, nprt_per_rank)
 
 end
 
@@ -451,116 +456,6 @@ function copy_states!(particles::AbstractArray{T,4},
 
 end
 
-### These functions and data strcutures will go into the model
-struct RandomField{F<:GaussianRandomField,X<:AbstractArray,W<:AbstractArray,Z<:AbstractArray}
-    grf::F
-    xi::X
-    w::W
-    z::Z
-end
-
-struct StateVectors{T<:AbstractArray, S<:AbstractArray}
-
-    particles::T
-    buffer::T
-    truth::S
-
-end
-
-struct ObsVectors{T<:AbstractArray,S<:AbstractArray}
-
-    truth::T
-    model::S
-
-end
-
-struct StationVectors{T<:AbstractArray}
-
-    ist::T
-    jst::T
-
-end
-
-struct ModelData
-    states
-    statistics
-    observations
-    stations
-    field_buffer
-    background_grf
-    model_matrices
-end
-get_particles(d::ModelData) = d.states.particles
-get_truth_observations(d::ModelData) = d.observations.truth
-get_model_observations(d::ModelData) = d.observations.model
-function write_initial_state(d::ModelData, weights, params)
-    write_grid(params)
-    write_params(params)
-    write_stations(d.stations.ist, d.stations.jst, params)
-    unpack_statistics!(d.avg_arr, d.var_arr, d.statistics)
-    write_snapshot(d.states.truth, d.avg_arr, d.var_arr, weights, 0, params)
-end
-
-function init(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG}, nprt_per_rank::Int)
-    states, statistics, observations, stations, field_buffer = init_arrays(params)
-
-    background_grf = init_gaussian_random_field_generator(params)
-
-    # Set up tsunami model
-    model_matrices = LLW2d.setup(params.nx,
-                                 params.ny,
-                                 params.bathymetry_setup,
-                                 params.absorber_thickness_fraction,
-                                 params.boundary_damping,
-                                 params.cutoff_depth)
-
-    set_stations!(stations, params)
-
-    set_initial_state!(states, model_matrices, field_buffer, rng, nprt_per_rank, params)
-
-    return ModelData(states, observations, stations, field_buffer, background_grf, model_matrices)
-end
-
-function update_truth!(d::ModelData params)
-    tsunami_update!(@view(d.field_buffer[:, :, 1, 1]),
-                    @view(d.field_buffer[:, :, 2, 1]),
-                    d.states.truth, d.model_matrices, params)
-end
-
-function update_particles!(d::ModelData, nprt_per_rank, params)
-    Threads.@threads for ip in 1:nprt_per_rank
-        tsunami_update!(@view(d.field_buffer[:, :, 1, threadid()]), @view(d.field_buffer[:, :, 2, threadid()]),
-                        @view(d.states.particles[:, :, :, ip]), d.model_matrices, params)
-
-    end
-    add_random_field!(d.states.particles,
-                      d.field_buffer,
-                      d.background_grf,
-                      d.rng,
-                      params.n_state_var,
-                      nprt_per_rank)
-
-end
-
-function truth_observations!(d::ModelData, params)
-    get_obs!(d.observations.truth, d.states.truth, d.stations.ist, d.stations.jst, params)
-    return d.observations.truth
-end
-
-function particles_observations!(d::ModelData, nprt_per_rank, params)
-    for ip in 1:nprt_per_rank
-        get_obs!(@view(observations.model[:,ip]),
-                 @view(states.particles[:, :, :, ip]),
-                 stations.ist,
-                 stations.jst,
-                 params)
-    add_noise!(@view(d.observations.model[:,ip]), d.rng[1], params)
-    end
-    return d.observations.model
-end
-
-### End of model functions
-
 function particle_filter(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG}, init)
 
     if !MPI.Initialized()
@@ -580,23 +475,25 @@ function particle_filter(params::Parameters, rng::AbstractVector{<:Random.Abstra
     end
     timer = TimerOutput()
 
+    nprt_per_rank = Int(params.nprt / MPI.Comm_size(MPI.COMM_WORLD))
+
+    # Do memory allocations
+
     # TODO: ideally this will be an argument of the function, to choose a
     # different datatype.
     T = Float64
 
-    nprt_per_rank = Int(nprt_total / MPI.Comm_size(MPI.COMM_WORLD))
-
-    # Do memory allocations
-
-    if MPI.Comm_rank(MPI.COMM_WORLD) == master_rank
-        weights = Vector{T}(undef, nprt_total)
+    if MPI.Comm_rank(MPI.COMM_WORLD) == params.master_rank
+        weights = Vector{T}(undef, params.nprt)
     else
         weights = Vector{T}(undef, nprt_per_rank)
     end
 
     resampling_indices = Vector{Int}(undef, params.nprt)
 
-    mean_and_var = Array{SummaryStat{T}, 3}(undef, nx, ny, n_state_var)
+    # TODO: these variables should be set in a better way
+    nx, ny, n_state_var = params.nx, params.ny, params.n_state_var
+    statistics = Array{SummaryStat{T}, 3}(undef, nx, ny, n_state_var)
     avg_arr = Array{T,3}(undef, nx, ny, n_state_var)
     var_arr = Array{T,3}(undef, nx, ny, n_state_var)
 
@@ -606,24 +503,18 @@ function particle_filter(params::Parameters, rng::AbstractVector{<:Random.Abstra
 
     # Write initial state + metadata
     if(params.verbose && my_rank == params.master_rank)
-        @timeit_debug timer "IO" write_initial_state(model_data, params)
+        # @timeit_debug timer "IO" write_initial_state(model_data, params)
     end
 
     for it in 1:params.n_time_step
 
         # integrate true synthetic wavefield
-        @timeit_debug timer "True State Update" update_truth!(model_data, params)
-
-        # Get observation from true synthetic wavefield
-        @timeit_debug timer "Observations" truth_observations = truth_observations!(model_data, params)
+        @timeit_debug timer "True State Update" truth_observations = update_truth!(model_data, params)
 
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads.
 
-        @timeit_debug timer "Particle State Update and Process Noise" update_particles!(model_data, nprt_per_rank, params)
-
-        # Add process noise, get observations, add observation noise (to particles)
-        @timeit_debug timer "Observations" model_observations = particles_observations!(model_data, nprt_per_rank, params)
+        @timeit_debug timer "Particle State Update and Process Noise" model_observations = update_particles!(model_data, nprt_per_rank, params)
 
         @timeit_debug timer "Weights" get_log_weights!(@view(weights[1:nprt_per_rank]),
                                                        truth_observations,
@@ -655,15 +546,15 @@ function particle_filter(params::Parameters, rng::AbstractVector{<:Random.Abstra
         # Broadcast resampled particle indices to all ranks
         MPI.Bcast!(resampling_indices, params.master_rank, MPI.COMM_WORLD)
 
-        @timeit_debug timer "State Copy" copy_states!(states, resampling_indices, my_rank, nprt_per_rank)
+        @timeit_debug timer "State Copy" copy_states!(get_particles(model_data), get_buffer(model_data), resampling_indices, my_rank, nprt_per_rank)
 
-        @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, states.particles, params.master_rank)
+        @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, get_particles(model_data), params.master_rank)
 
         if my_rank == params.master_rank && params.verbose
 
             @timeit_debug timer "IO" begin
-                unpack_statistics!(avg_arr, var_arr, statistics)
-                write_snapshot(states.truth, avg_arr, var_arr, weights, it, params)
+                # unpack_statistics!(avg_arr, var_arr, statistics)
+                # write_snapshot(states.truth, avg_arr, var_arr, weights, it, params)
             end
 
         end
@@ -694,14 +585,14 @@ function particle_filter(params::Parameters, rng::AbstractVector{<:Random.Abstra
             timer_chars = MPI.Gather(chr_timer, params.master_rank, MPI.COMM_WORLD)
 
             if my_rank == params.master_rank
-                write_timers(length_timer, my_size, timer_chars, params)
+                # write_timers(length_timer, my_size, timer_chars, params)
             end
         end
     end
 
     unpack_statistics!(avg_arr, var_arr, statistics)
 
-    return states.truth, avg_arr, var_arr
+    return get_truth(model_data), avg_arr, var_arr
 end
 
 # Initialise params struct with user-defined dict of values.
