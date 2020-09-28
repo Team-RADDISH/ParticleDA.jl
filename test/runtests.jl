@@ -62,9 +62,6 @@ end
 @testset "ParticleDA unit tests" begin
     dx = dy = 2e3
 
-    @test ParticleDA.get_distance(3/2000, 4/2000, 0, 0, dx, dy) == 5
-    @test ParticleDA.get_distance(10, 23, 5, 11, dx, dy) == 26000.0
-
     x = collect(reshape(1.0:9.0, 3, 3, 1))
     # stations at (1,1) (2,2) and (3,3) return diagonal of x[3,3]
     ist = [1,2,3]
