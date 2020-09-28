@@ -201,17 +201,17 @@ end
 @testset "ParticleDA integration tests" begin
 
     # Test true state with standard parameters
-    x_true,x_avg,x_var = ParticleDA.particle_filter(joinpath(@__DIR__, "integration_test_1.yaml"))
+    x_true,x_avg,x_var = ParticleDA.run_particle_filter(joinpath(@__DIR__, "integration_test_1.yaml"))
     data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_1")
     @test x_true ≈ data_true
 
     # Test true state with different parameters
-    x_true,x_avg,x_var = ParticleDA.particle_filter(joinpath(@__DIR__, "integration_test_2.yaml"))
+    x_true,x_avg,x_var = ParticleDA.run_particle_filter(joinpath(@__DIR__, "integration_test_2.yaml"))
     data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_2")
     @test x_true ≈ data_true
 
     # Test particle state with ~zero noise
-    x_true,x_avg,x_var = ParticleDA.particle_filter(joinpath(@__DIR__, "integration_test_3.yaml"))
+    x_true,x_avg,x_var = ParticleDA.run_particle_filter(joinpath(@__DIR__, "integration_test_3.yaml"))
     @test x_true ≈ x_avg
     @test x_var .+ 1.0 ≈ ones(size(x_var))
 
@@ -219,13 +219,13 @@ end
 
         # Test particle state with noise
         rng = StableRNG(123)
-        x_true,x_avg,x_var = ParticleDA.particle_filter(joinpath(@__DIR__, "integration_test_4.yaml"), rng)
+        x_true,x_avg,x_var = ParticleDA.run_particle_filter(joinpath(@__DIR__, "integration_test_4.yaml"), rng)
         avg_ref = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_4")
         @test x_avg ≈ avg_ref
 
         # Test that different seed gives different result
         rng = StableRNG(124)
-        x_true,x_avg,x_var = ParticleDA.particle_filter(joinpath(@__DIR__, "integration_test_4.yaml"), rng)
+        x_true,x_avg,x_var = ParticleDA.run_particle_filter(joinpath(@__DIR__, "integration_test_4.yaml"), rng)
         @test !(x_avg ≈ avg_ref)
 
     end

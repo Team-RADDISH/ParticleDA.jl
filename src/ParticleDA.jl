@@ -5,7 +5,7 @@ import Future
 using TimerOutputs
 using DelimitedFiles
 
-export particle_filter
+export run_particle_filter
 
 include("params.jl")
 include("model.jl")
@@ -183,7 +183,7 @@ function copy_states!(particles::AbstractArray{T,4},
 
 end
 
-function particle_filter(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG}, init)
+function run_particle_filter(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG}, init)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -350,7 +350,7 @@ function get_params(path_to_input_file::String)
 
 end
 
-function particle_filter(path_to_input_file::String, rng::AbstractRNG)
+function run_particle_filter(path_to_input_file::String, rng::AbstractRNG)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -373,11 +373,11 @@ function particle_filter(path_to_input_file::String, rng::AbstractRNG)
         [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
     end;
 
-    return particle_filter(params, rng_vec, init)
+    return run_particle_filter(params, rng_vec, init)
 
 end
 
-function particle_filter(path_to_input_file::String = "")
+function run_particle_filter(path_to_input_file::String = "")
 
     if !MPI.Initialized()
         MPI.Init()
@@ -396,11 +396,11 @@ function particle_filter(path_to_input_file::String = "")
 
     params = MPI.bcast(params, 0, MPI.COMM_WORLD)
 
-    return particle_filter(params)
+    return run_particle_filter(params)
 
 end
 
-function particle_filter(params::Parameters)
+function run_particle_filter(params::Parameters)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -410,7 +410,7 @@ function particle_filter(params::Parameters)
         [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
     end;
 
-    return particle_filter(params, rng, init)
+    return run_particle_filter(params, rng, init)
 
 end
 
