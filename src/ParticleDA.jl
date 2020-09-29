@@ -206,23 +206,25 @@ function run_particle_filter(params::Parameters, rng::AbstractVector{<:Random.Ab
 
     # Do memory allocations
 
-    # TODO: ideally this will be an argument of the function, to choose a
-    # different datatype.
-    T = Float64
+    @timeit_debug timer "Filter initialization" begin
+        # TODO: ideally this will be an argument of the function, to choose a
+        # different datatype.
+        T = Float64
 
-    if MPI.Comm_rank(MPI.COMM_WORLD) == params.master_rank
-        weights = Vector{T}(undef, params.nprt)
-    else
-        weights = Vector{T}(undef, nprt_per_rank)
+        if MPI.Comm_rank(MPI.COMM_WORLD) == params.master_rank
+            weights = Vector{T}(undef, params.nprt)
+        else
+            weights = Vector{T}(undef, nprt_per_rank)
+        end
+
+        resampling_indices = Vector{Int}(undef, params.nprt)
+
+        # TODO: these variables should be set in a better way
+        nx, ny, n_state_var = params.nx, params.ny, params.n_state_var
+        statistics = Array{SummaryStat{T}, 3}(undef, nx, ny, n_state_var)
+        avg_arr = Array{T,3}(undef, nx, ny, n_state_var)
+        var_arr = Array{T,3}(undef, nx, ny, n_state_var)
     end
-
-    resampling_indices = Vector{Int}(undef, params.nprt)
-
-    # TODO: these variables should be set in a better way
-    nx, ny, n_state_var = params.nx, params.ny, params.n_state_var
-    statistics = Array{SummaryStat{T}, 3}(undef, nx, ny, n_state_var)
-    avg_arr = Array{T,3}(undef, nx, ny, n_state_var)
-    var_arr = Array{T,3}(undef, nx, ny, n_state_var)
 
     @timeit_debug timer "Initialization" model_data = init(params, rng, nprt_per_rank)
 
