@@ -300,14 +300,14 @@ function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::Strin
 
 end
 
-struct ModelData
-    states
-    observations
-    stations
-    field_buffer
-    background_grf
-    model_matrices
-    rng
+struct ModelData{A,B,C,D,E,F,G}
+    states::A
+    observations::B
+    stations::C
+    field_buffer::D
+    background_grf::E
+    model_matrices::F
+    rng::G
 end
 get_particles(d::ModelData) = d.states.particles
 # TODO: we should probably get rid of the next two functions and find other ways
