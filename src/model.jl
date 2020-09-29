@@ -76,7 +76,6 @@ end
 struct StateVectors{T<:AbstractArray, S<:AbstractArray}
 
     particles::T
-    buffer::T
     truth::S
 
 end
@@ -222,7 +221,6 @@ function init_arrays(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_per_ran
 
     state_avg = zeros(T, nx, ny, n_state_var) # average of particle state vectors
     state_var = zeros(T, nx, ny, n_state_var) # variance of particle state vectors
-    state_resampled = Array{T,4}(undef, nx, ny, n_state_var, nprt_per_rank)
 
     # Model vector for data assimilation
     #   state[:, :, 1, :]: tsunami height eta(nx,ny)
@@ -240,7 +238,7 @@ function init_arrays(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_per_ran
     # Buffer array to be used in the tsunami update
     field_buffer = Array{T}(undef, nx, ny, 2, nthreads())
 
-    return StateVectors(state_particles, state_resampled, state_truth), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), field_buffer
+    return StateVectors(state_particles, state_truth), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), field_buffer
 end
 
 function set_initial_state!(states::StateVectors, model_matrices::LLW2d.Matrices{T},
@@ -313,7 +311,6 @@ get_particles(d::ModelData) = d.states.particles
 # TODO: we should probably get rid of the next two functions and find other ways
 # to pass them around.  `get_truth` is only used as return value of
 # `particle_filter`, we may just return the whole `model_data`.
-get_buffer(d::ModelData) = d.states.buffer
 get_truth(d::ModelData) = d.states.truth
 function write_initial_state(d::ModelData, weights, params)
     write_grid(params)

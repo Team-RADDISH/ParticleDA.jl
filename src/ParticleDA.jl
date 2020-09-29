@@ -128,12 +128,6 @@ function unpack_statistics!(avg::AbstractArray{T}, var::AbstractArray{T}, statis
     end
 end
 
-function copy_states!(particles::AbstractArray, resampling_indices::Vector{Int}, my_rank::Int, nprt_per_rank::Int)
-
-    copy_states!(particles, states.buffer, resampling_indices, my_rank, nprt_per_rank)
-
-end
-
 function copy_states!(particles::AbstractArray{T,4},
                       buffer::AbstractArray{T,4},
                       resampling_indices::Vector{Int},
@@ -224,6 +218,9 @@ function run_particle_filter(params::Parameters, rng::AbstractVector{<:Random.Ab
         statistics = Array{SummaryStat{T}, 3}(undef, nx, ny, n_state_var)
         avg_arr = Array{T,3}(undef, nx, ny, n_state_var)
         var_arr = Array{T,3}(undef, nx, ny, n_state_var)
+
+        # Memory buffer used during copy of the states
+        copy_buffer = Array{T}(undef, nx, ny, n_state_var, nprt_per_rank)
     end
 
     @timeit_debug timer "Model initialization" model_data = init(params, rng, nprt_per_rank)
@@ -277,7 +274,7 @@ function run_particle_filter(params::Parameters, rng::AbstractVector{<:Random.Ab
         MPI.Bcast!(resampling_indices, params.master_rank, MPI.COMM_WORLD)
 
         @timeit_debug timer "get_particles" particles = get_particles(model_data)
-        @timeit_debug timer "State Copy" copy_states!(particles, get_buffer(model_data), resampling_indices, my_rank, nprt_per_rank)
+        @timeit_debug timer "State Copy" copy_states!(particles, copy_buffer, resampling_indices, my_rank, nprt_per_rank)
 
         @timeit_debug timer "get_particles" particles = get_particles(model_data)
         @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, particles, params.master_rank)
