@@ -226,9 +226,10 @@ function run_particle_filter(params::Parameters, rng::AbstractVector{<:Random.Ab
         var_arr = Array{T,3}(undef, nx, ny, n_state_var)
     end
 
-    @timeit_debug timer "Initialization" model_data = init(params, rng, nprt_per_rank)
+    @timeit_debug timer "Model initialization" model_data = init(params, rng, nprt_per_rank)
 
-    @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, get_particles(model_data), params.master_rank)
+    @timeit_debug timer "get_particles" particles = get_particles(model_data)
+    @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, particles, params.master_rank)
 
     # Write initial state + metadata
     if(params.verbose && my_rank == params.master_rank)
@@ -238,7 +239,7 @@ function run_particle_filter(params::Parameters, rng::AbstractVector{<:Random.Ab
     for it in 1:params.n_time_step
 
         # integrate true synthetic wavefield
-        @timeit_debug timer "True State Update" truth_observations = update_truth!(model_data, params)
+        @timeit_debug timer "True State Update and Process Noise" truth_observations = update_truth!(model_data, params)
 
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads.
@@ -275,9 +276,11 @@ function run_particle_filter(params::Parameters, rng::AbstractVector{<:Random.Ab
         # Broadcast resampled particle indices to all ranks
         MPI.Bcast!(resampling_indices, params.master_rank, MPI.COMM_WORLD)
 
-        @timeit_debug timer "State Copy" copy_states!(get_particles(model_data), get_buffer(model_data), resampling_indices, my_rank, nprt_per_rank)
+        @timeit_debug timer "get_particles" particles = get_particles(model_data)
+        @timeit_debug timer "State Copy" copy_states!(particles, get_buffer(model_data), resampling_indices, my_rank, nprt_per_rank)
 
-        @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, get_particles(model_data), params.master_rank)
+        @timeit_debug timer "get_particles" particles = get_particles(model_data)
+        @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, particles, params.master_rank)
 
         if my_rank == params.master_rank && params.verbose
 
