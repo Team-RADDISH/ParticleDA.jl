@@ -1,14 +1,22 @@
-nprt: 100
-n_time_step: 5
-n_integration_step: 50
-time_step: 50.0
-nobs: 256
-nx: 50
-ny: 50
-x_length: 1.0e6
-y_length: 1.0e6
+filter:
+  nprt: 100
+  n_time_step: 5
+  obs_noise_std: 1.0e-16
 
-particle_initial_state: "true"
-sigma: 1.0e-5
-sigma_initial_state: 1.0e-5
-obs_noise_std: 1.0e-16
+model:
+  llw2d:
+    time_step: 50.0
+    n_integration_step: 50
+
+    nobs: 256
+    nx: 50
+    ny: 50
+    x_length: 1.0e6
+    y_length: 1.0e6
+
+    particle_initial_state: "true"
+    sigma: 1.0e-5
+    sigma_initial_state: 1.0e-5
+
+    # This must be the same as the filter.  TODO: fix this
+    obs_noise_std: 1.0e-16

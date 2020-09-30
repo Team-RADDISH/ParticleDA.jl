@@ -9,7 +9,7 @@ export run_particle_filter
 
 include("params.jl")
 include("model.jl")
-include("io.jl")
+# include("io.jl")
 
 using .Default_params
 
@@ -177,7 +177,7 @@ function copy_states!(particles::AbstractArray{T,4},
 
 end
 
-function run_particle_filter(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG}, init)
+function run_particle_filter(filter_params::FilterParameters, model_params_dict::Dict, rng::AbstractVector{<:Random.AbstractRNG}, init)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -187,34 +187,36 @@ function run_particle_filter(params::Parameters, rng::AbstractVector{<:Random.Ab
     my_size = MPI.Comm_size(MPI.COMM_WORLD)
 
     # For now, assume that the particles can be evenly divided between ranks
-    @assert mod(params.nprt, my_size) == 0
+    @assert mod(filter_params.nprt, my_size) == 0
 
-    nprt_per_rank = Int(params.nprt / my_size)
+    nprt_per_rank = Int(filter_params.nprt / my_size)
 
-    if params.enable_timers
+    if filter_params.enable_timers
         TimerOutputs.enable_debug_timings(ParticleDA)
     end
     timer = TimerOutput()
 
-    nprt_per_rank = Int(params.nprt / MPI.Comm_size(MPI.COMM_WORLD))
+    nprt_per_rank = Int(filter_params.nprt / MPI.Comm_size(MPI.COMM_WORLD))
 
     # Do memory allocations
+    @timeit_debug timer "Model initialization" model_data = init(model_params_dict, rng, nprt_per_rank)
 
     @timeit_debug timer "Filter initialization" begin
         # TODO: ideally this will be an argument of the function, to choose a
         # different datatype.
         T = Float64
 
-        if MPI.Comm_rank(MPI.COMM_WORLD) == params.master_rank
-            weights = Vector{T}(undef, params.nprt)
+        if MPI.Comm_rank(MPI.COMM_WORLD) == filter_params.master_rank
+            weights = Vector{T}(undef, filter_params.nprt)
         else
             weights = Vector{T}(undef, nprt_per_rank)
         end
 
-        resampling_indices = Vector{Int}(undef, params.nprt)
+        resampling_indices = Vector{Int}(undef, filter_params.nprt)
 
         # TODO: these variables should be set in a better way
-        nx, ny, n_state_var = params.nx, params.ny, params.n_state_var
+        nx, ny, n_state_var = model_data.model_params.nx, model_data.model_params.ny, model_data.model_params.n_state_var
+
         statistics = Array{SummaryStat{T}, 3}(undef, nx, ny, n_state_var)
         avg_arr = Array{T,3}(undef, nx, ny, n_state_var)
         var_arr = Array{T,3}(undef, nx, ny, n_state_var)
@@ -223,41 +225,39 @@ function run_particle_filter(params::Parameters, rng::AbstractVector{<:Random.Ab
         copy_buffer = Array{T}(undef, nx, ny, n_state_var, nprt_per_rank)
     end
 
-    @timeit_debug timer "Model initialization" model_data = init(params, rng, nprt_per_rank)
-
     @timeit_debug timer "get_particles" particles = get_particles(model_data)
-    @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, particles, params.master_rank)
+    @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, particles, filter_params.master_rank)
 
     # Write initial state + metadata
-    if(params.verbose && my_rank == params.master_rank)
-        # @timeit_debug timer "IO" write_initial_state(model_data, params)
+    if(filter_params.verbose && my_rank == filter_params.master_rank)
+        # @timeit_debug timer "IO" write_initial_state(model_data, filter_params)
     end
 
-    for it in 1:params.n_time_step
+    for it in 1:filter_params.n_time_step
 
         # integrate true synthetic wavefield
-        @timeit_debug timer "True State Update and Process Noise" truth_observations = update_truth!(model_data, params)
+        @timeit_debug timer "True State Update and Process Noise" truth_observations = update_truth!(model_data)
 
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads.
 
-        @timeit_debug timer "Particle State Update and Process Noise" model_observations = update_particles!(model_data, nprt_per_rank, params)
+        @timeit_debug timer "Particle State Update and Process Noise" model_observations = update_particles!(model_data, nprt_per_rank)
 
         @timeit_debug timer "Weights" get_log_weights!(@view(weights[1:nprt_per_rank]),
                                                        truth_observations,
                                                        model_observations,
-                                                       params.obs_noise_std)
+                                                       filter_params.obs_noise_std)
 
         # Gather weights to master rank and resample particles.
         # Doing MPI collectives in place to save memory allocations.
         # This style with if statmeents is recommended instead of MPI.Gather_in_place! which is a bit strange.
         # Note that only master_rank allocates memory for all particles. Other ranks only allocate
         # for their chunk of state.
-        if my_rank == params.master_rank
+        if my_rank == filter_params.master_rank
             @timeit_debug timer "MPI Gather" MPI.Gather!(nothing,
                                                          weights,
                                                          nprt_per_rank,
-                                                         params.master_rank,
+                                                         filter_params.master_rank,
                                                          MPI.COMM_WORLD)
             @timeit_debug timer "Weights" normalized_exp!(weights)
             @timeit_debug timer "Resample" resample!(resampling_indices, weights)
@@ -266,55 +266,55 @@ function run_particle_filter(params::Parameters, rng::AbstractVector{<:Random.Ab
             @timeit_debug timer "MPI Gather" MPI.Gather!(weights,
                                                          nothing,
                                                          nprt_per_rank,
-                                                         params.master_rank,
+                                                         filter_params.master_rank,
                                                          MPI.COMM_WORLD)
         end
 
         # Broadcast resampled particle indices to all ranks
-        MPI.Bcast!(resampling_indices, params.master_rank, MPI.COMM_WORLD)
+        MPI.Bcast!(resampling_indices, filter_params.master_rank, MPI.COMM_WORLD)
 
         @timeit_debug timer "get_particles" particles = get_particles(model_data)
         @timeit_debug timer "State Copy" copy_states!(particles, copy_buffer, resampling_indices, my_rank, nprt_per_rank)
 
         @timeit_debug timer "get_particles" particles = get_particles(model_data)
-        @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, particles, params.master_rank)
+        @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, particles, filter_params.master_rank)
 
-        if my_rank == params.master_rank && params.verbose
+        if my_rank == filter_params.master_rank && filter_params.verbose
 
             @timeit_debug timer "IO" begin
                 # unpack_statistics!(avg_arr, var_arr, statistics)
-                # write_snapshot(states.truth, avg_arr, var_arr, weights, it, params)
+                # write_snapshot(states.truth, avg_arr, var_arr, weights, it, filter_params)
             end
 
         end
 
     end
 
-    if params.enable_timers
+    if filter_params.enable_timers
 
-        if my_rank == params.master_rank
+        if my_rank == filter_params.master_rank
             print_timer(timer)
         end
 
-        if params.verbose
+        if filter_params.verbose
             # Gather string representations of timers from all ranks and write them on master
             str_timer = string(timer)
 
             # Assume the length of the timer string on master is the longest (because master does more stuff)
-            if my_rank == params.master_rank
+            if my_rank == filter_params.master_rank
                 length_timer = length(string(timer))
             else
                 length_timer = nothing
             end
 
-            length_timer = MPI.bcast(length_timer, params.master_rank, MPI.COMM_WORLD)
+            length_timer = MPI.bcast(length_timer, filter_params.master_rank, MPI.COMM_WORLD)
 
             chr_timer = Vector{Char}(rpad(str_timer,length_timer))
 
-            timer_chars = MPI.Gather(chr_timer, params.master_rank, MPI.COMM_WORLD)
+            timer_chars = MPI.Gather(chr_timer, filter_params.master_rank, MPI.COMM_WORLD)
 
-            if my_rank == params.master_rank
-                # write_timers(length_timer, my_size, timer_chars, params)
+            if my_rank == filter_params.master_rank
+                # write_timers(length_timer, my_size, timer_chars, filter_params)
             end
         end
     end
@@ -325,34 +325,32 @@ function run_particle_filter(params::Parameters, rng::AbstractVector{<:Random.Ab
 end
 
 # Initialise params struct with user-defined dict of values.
-function get_params(user_input_dict::Dict)
+function get_params(T, user_input_dict::Dict)
 
     user_input = (; (Symbol(k) => v for (k,v) in user_input_dict)...)
-    params = Parameters(;user_input...)
+    params = T(;user_input...)
 
 end
 
-# Initialise params struct with default values
-get_params() = Parameters()
+get_params(user_input_dict::Dict) = get_params(FilterParameters, user_input_dict)
 
-function get_params(path_to_input_file::String)
+# Initialise params struct with default values
+get_params() = FilterParameters()
+
+function read_input_file(path_to_input_file::String)
 
     # Read input provided in a yaml file. Overwrite default input parameters with the values provided.
     if isfile(path_to_input_file)
         user_input_dict = YAML.load_file(path_to_input_file)
-        params = get_params(user_input_dict)
-        if params.verbose
-            println("Read input parameters from ",path_to_input_file)
-        end
     else
         @warn "Input file " * path_to_input_file * " not found, using default parameters"
-        params = get_params()
+        user_input_dict = Dict()
     end
-    return params
+    return user_input_dict
 
 end
 
-function run_particle_filter(path_to_input_file::String, rng::AbstractRNG)
+function run_particle_filter(path_to_input_file::String, rng::Union{Nothing,AbstractRNG}=nothing)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -361,58 +359,39 @@ function run_particle_filter(path_to_input_file::String, rng::AbstractRNG)
     # Do I/O on rank 0 only and then broadcast params
     if MPI.Comm_rank(MPI.COMM_WORLD) == 0
 
-        params = get_params(path_to_input_file)
+        user_input_dict = read_input_file(path_to_input_file)
 
     else
 
-        params = nothing
+        user_input_dict = nothing
 
     end
 
-    params = MPI.bcast(params, 0, MPI.COMM_WORLD)
+    user_input_dict = MPI.bcast(user_input_dict, 0, MPI.COMM_WORLD)
 
-    rng_vec = let m = rng
-        [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
-    end;
-
-    return run_particle_filter(params, rng_vec, init)
+    return run_particle_filter(user_input_dict, rng)
 
 end
 
-function run_particle_filter(path_to_input_file::String = "")
+function run_particle_filter(user_input_dict::Dict, rng::Union{Nothing,AbstractRNG}=nothing)
 
     if !MPI.Initialized()
         MPI.Init()
     end
 
-    # Do I/O on rank 0 only and then broadcast params
-    if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+    filter_params = get_params(FilterParameters, get(user_input_dict, "filter", Dict()))
+    model_params_dict = get(user_input_dict, "model", Dict())
 
-        params = get_params(path_to_input_file)
-
-    else
-
-        params = nothing
-
-    end
-
-    params = MPI.bcast(params, 0, MPI.COMM_WORLD)
-
-    return run_particle_filter(params)
-
-end
-
-function run_particle_filter(params::Parameters)
-
-    if !MPI.Initialized()
-        MPI.Init()
-    end
-
-    rng = let m = Random.MersenneTwister(params.random_seed + MPI.Comm_rank(MPI.COMM_WORLD))
+    rng = let 
+        m = if isnothing(rng)
+            Random.MersenneTwister(filter_params.random_seed + MPI.Comm_rank(MPI.COMM_WORLD))
+        else
+            rng
+        end
         [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
     end;
 
-    return run_particle_filter(params, rng, init)
+    return run_particle_filter(filter_params, model_params_dict, rng, init)
 
 end
 

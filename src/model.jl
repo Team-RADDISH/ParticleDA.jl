@@ -3,11 +3,58 @@ include("llw2d.jl")
 using .LLW2d
 using .Default_params
 
+Base.@kwdef struct ModelParameters{T<:AbstractFloat}
+
+    nx::Int = 200
+    ny::Int = 200
+    x_length::T = 400.0e3
+    y_length::T = 400.0e3
+    dx::T = x_length / nx
+    dy::T = y_length / ny
+
+    n_state_var::Int = 3
+
+    time_step::T = 50.0
+    n_integration_step::Int = 50
+
+    station_filename::String = ""
+    nobs::Int = 4
+    station_distance_x::T = 20.0e3
+    station_distance_y::T = 20.0e3
+    station_boundary_x::T = 150.0e3
+    station_boundary_y::T = 150.0e3
+
+    source_size::T = 3.0e4
+    bathymetry_setup::T = 3.0e4
+
+    lambda::T = 1.0e4
+    nu::T = 2.5
+    sigma::T = 1.0
+
+    padding::Int = 100
+    primes::Bool = true
+
+    lambda_initial_state::T = 1.0e4
+    nu_initial_state::T = 2.5
+    sigma_initial_state::T = 10.0
+
+    particle_initial_state::String = "zero"
+
+    absorber_thickness_fraction::T = 0.1
+    boundary_damping::T = 0.015
+    cutoff_depth::T = 10.0
+
+    # TODO: this parameter is also in the filter
+    obs_noise_std::T = 1.0
+
+end
+
+
 function get_obs!(obs::AbstractVector{T},
                   state::AbstractArray{T,3},
                   ist::AbstractVector{Int},
                   jst::AbstractVector{Int},
-                  params::Parameters) where T
+                  params::ModelParameters) where T
 
     get_obs!(obs,state,params.nx,ist,jst)
 
@@ -33,7 +80,7 @@ function tsunami_update!(dx_buffer::AbstractMatrix{T},
                          dy_buffer::AbstractMatrix{T},
                          state::AbstractArray{T,3},
                          model_matrices::LLW2d.Matrices{T},
-                         params::Parameters) where T
+                         params::ModelParameters) where T
 
     tsunami_update!(dx_buffer, dy_buffer, state, params.n_integration_step,
                     params.dx, params.dy, params.time_step, model_matrices)
@@ -94,7 +141,7 @@ struct StationVectors{T<:AbstractArray}
 
 end
 
-function get_axes(params::Parameters)
+function get_axes(params::ModelParameters)
 
     return get_axes(params.nx, params.ny, params.dx, params.dy)
 
@@ -108,7 +155,7 @@ function get_axes(nx::Int, ny::Int, dx::Real, dy::Real)
     return x,y
 end
 
-function init_gaussian_random_field_generator(params::Parameters)
+function init_gaussian_random_field_generator(params::ModelParameters)
 
     x, y = get_axes(params)
     return init_gaussian_random_field_generator(params.lambda,params.nu, params.sigma, x, y, params.padding, params.primes)
@@ -161,16 +208,6 @@ function sample_gaussian_random_field!(field::AbstractMatrix{T},
 
 end
 
-function add_random_field!(state::AbstractArray{T,4},
-                           field_buffer::AbstractArray{T,4},
-                           generator::RandomField,
-                           rng::AbstractVector{<:Random.AbstractRNG},
-                           params::Parameters) where T
-
-    add_random_field!(state, field_buffer, generator, rng, params.n_state_var, params.nprt)
-
-end
-
 # Add a gaussian random field to the height in the state vector of all particles
 function add_random_field!(state::AbstractArray{T,4},
                            field_buffer::AbstractArray{T,4},
@@ -193,7 +230,7 @@ function add_random_field!(state::AbstractArray{T,4},
 
 end
 
-function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, params::Parameters) where T
+function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, params::ModelParameters) where T
 
     add_noise!(vec, rng, 0.0, params.obs_noise_std)
 
@@ -208,13 +245,13 @@ function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, mean::T, st
 end
 
 
-function init_arrays(params::Parameters, nprt_per_rank)
+function init_arrays(params::ModelParameters, nprt_per_rank)
 
-    return init_arrays(params.nx, params.ny, params.n_state_var, params.nobs, nprt_per_rank, params.master_rank)
+    return init_arrays(params.nx, params.ny, params.n_state_var, params.nobs, nprt_per_rank)
 
 end
 
-function init_arrays(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_per_rank::Int, master_rank::Int = 0)
+function init_arrays(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_per_rank::Int)
     # TODO: ideally this will be an argument of the function, to choose a
     # different datatype.
     T = Float64
@@ -245,7 +282,7 @@ function set_initial_state!(states::StateVectors, model_matrices::LLW2d.Matrices
                             field_buffer::AbstractArray{T, 4},
                             rng::AbstractVector{<:Random.AbstractRNG},
                             nprt_per_rank::Int,
-                            params::Parameters) where T
+                            params::ModelParameters) where T
 
     # Set true initial state
     LLW2d.initheight!(@view(states.truth[:, :, 1]), model_matrices, params.dx, params.dy, params.source_size)
@@ -272,7 +309,7 @@ function set_initial_state!(states::StateVectors, model_matrices::LLW2d.Matrices
 
 end
 
-function set_stations!(stations::StationVectors, params::Parameters) where T
+function set_stations!(stations::StationVectors, params::ModelParameters) where T
 
     set_stations!(stations.ist,
                   stations.jst,
@@ -298,14 +335,15 @@ function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::Strin
 
 end
 
-struct ModelData{A,B,C,D,E,F,G}
-    states::A
-    observations::B
-    stations::C
-    field_buffer::D
-    background_grf::E
-    model_matrices::F
-    rng::G
+struct ModelData{A,B,C,D,E,F,G,H}
+    model_params::A
+    states::B
+    observations::C
+    stations::D
+    field_buffer::E
+    background_grf::F
+    model_matrices::G
+    rng::H
 end
 get_particles(d::ModelData) = d.states.particles
 # TODO: we should probably get rid of the next two functions and find other ways
@@ -320,47 +358,49 @@ function write_initial_state(d::ModelData, weights, params)
     write_snapshot(d.states.truth, d.avg_arr, d.var_arr, weights, 0, params)
 end
 
-function init(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG}, nprt_per_rank::Int)
-    states, observations, stations, field_buffer = init_arrays(params, nprt_per_rank)
+function init(model_params_dict::Dict, rng::AbstractVector{<:Random.AbstractRNG}, nprt_per_rank::Int)
 
-    background_grf = init_gaussian_random_field_generator(params)
+    model_params = get_params(ModelParameters, get(model_params_dict, "llw2d", Dict()))
+    states, observations, stations, field_buffer = init_arrays(model_params, nprt_per_rank)
+
+    background_grf = init_gaussian_random_field_generator(model_params)
 
     # Set up tsunami model
-    model_matrices = LLW2d.setup(params.nx,
-                                 params.ny,
-                                 params.bathymetry_setup,
-                                 params.absorber_thickness_fraction,
-                                 params.boundary_damping,
-                                 params.cutoff_depth)
+    model_matrices = LLW2d.setup(model_params.nx,
+                                 model_params.ny,
+                                 model_params.bathymetry_setup,
+                                 model_params.absorber_thickness_fraction,
+                                 model_params.boundary_damping,
+                                 model_params.cutoff_depth)
 
-    set_stations!(stations, params)
+    set_stations!(stations, model_params)
 
-    set_initial_state!(states, model_matrices, field_buffer, rng, nprt_per_rank, params)
+    set_initial_state!(states, model_matrices, field_buffer, rng, nprt_per_rank, model_params)
 
-    return ModelData(states, observations, stations, field_buffer, background_grf, model_matrices, rng)
+    return ModelData(model_params, states, observations, stations, field_buffer, background_grf, model_matrices, rng)
 end
 
-function update_truth!(d::ModelData, params)
+function update_truth!(d::ModelData)
     tsunami_update!(@view(d.field_buffer[:, :, 1, 1]),
                     @view(d.field_buffer[:, :, 2, 1]),
-                    d.states.truth, d.model_matrices, params)
+                    d.states.truth, d.model_matrices, d.model_params)
 
     # Get observation from true synthetic wavefield
-    get_obs!(d.observations.truth, d.states.truth, d.stations.ist, d.stations.jst, params)
+    get_obs!(d.observations.truth, d.states.truth, d.stations.ist, d.stations.jst, d.model_params)
     return d.observations.truth
 end
 
-function update_particles!(d::ModelData, nprt_per_rank, params)
+function update_particles!(d::ModelData, nprt_per_rank)
     Threads.@threads for ip in 1:nprt_per_rank
         tsunami_update!(@view(d.field_buffer[:, :, 1, threadid()]), @view(d.field_buffer[:, :, 2, threadid()]),
-                        @view(d.states.particles[:, :, :, ip]), d.model_matrices, params)
+                        @view(d.states.particles[:, :, :, ip]), d.model_matrices, d.model_params)
 
     end
     add_random_field!(d.states.particles,
                       d.field_buffer,
                       d.background_grf,
                       d.rng,
-                      params.n_state_var,
+                      d.model_params.n_state_var,
                       nprt_per_rank)
 
     # Add process noise, get observations, add observation noise (to particles)
@@ -369,8 +409,8 @@ function update_particles!(d::ModelData, nprt_per_rank, params)
                  @view(d.states.particles[:, :, :, ip]),
                  d.stations.ist,
                  d.stations.jst,
-                 params)
-    add_noise!(@view(d.observations.model[:,ip]), d.rng[1], params)
+                 d.model_params)
+        add_noise!(@view(d.observations.model[:,ip]), d.rng[1], d.model_params)
     end
     return d.observations.model
 end

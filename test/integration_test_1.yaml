@@ -1,5 +1,10 @@
-nprt: 1
-n_time_step: 1
-n_integration_step: 251
-time_step: 251.0
-nobs: 4
+filter:
+  nprt: 1
+  n_time_step: 1
+
+model:
+  llw2d:
+    time_step: 251.0
+    n_integration_step: 251
+
+    nobs: 4

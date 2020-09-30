@@ -1,6 +1,6 @@
 module Default_params
 
-export Parameters
+export FilterParameters
 
 """
 Parameters()
@@ -53,29 +53,11 @@ Parameters for ParticleDA run. Arguments:
 * `boundary_damping` : damping for boundaries
 * `cutoff_depth` : Shallowest water depth
 """
-Base.@kwdef struct Parameters{T<:AbstractFloat}
+Base.@kwdef struct FilterParameters{T<:AbstractFloat}
 
     master_rank::Int = 0
 
-    nx::Int = 200
-    ny::Int = 200
-    x_length::T = 400.0e3
-    y_length::T = 400.0e3
-    dx::T = x_length / nx
-    dy::T = y_length / ny
-
-    n_state_var::Int = 3
-
-    station_filename::String = ""
-    nobs::Int = 4
-    station_distance_x::T = 20.0e3
-    station_distance_y::T = 20.0e3
-    station_boundary_x::T = 150.0e3
-    station_boundary_y::T = 150.0e3
-
     n_time_step::Int = 20
-    n_integration_step::Int = 50
-    time_step::T = 50.0
     verbose::Bool = false
 
     output_filename::String = "particle_da.h5"
@@ -89,29 +71,10 @@ Base.@kwdef struct Parameters{T<:AbstractFloat}
 
     nprt::Int = 4
 
-    source_size::T = 3.0e4
-    bathymetry_setup::T = 3.0e4
-
-    lambda::T = 1.0e4
-    nu::T = 2.5
-    sigma::T = 1.0
-
-    padding::Int = 100
-    primes::Bool = true
     obs_noise_std::T = 1.0
-
-    lambda_initial_state::T = 1.0e4
-    nu_initial_state::T = 2.5
-    sigma_initial_state::T = 10.0
 
     random_seed::Int = 12345
     enable_timers::Bool = false
-
-    particle_initial_state::String = "zero"
-
-    absorber_thickness_fraction::T = 0.1
-    boundary_damping::T = 0.015
-    cutoff_depth::T = 10.0
 
 end
 
