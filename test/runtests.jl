@@ -1,7 +1,9 @@
 using ParticleDA
-using LinearAlgebra, Test, HDF5, Random
+using LinearAlgebra, Test, HDF5, Random, YAML
 using MPI
 using StableRNGs
+
+using ParticleDA: ModelParameters, FilterParameters
 
 @testset "LLW2d" begin
     using ParticleDA.LLW2d
@@ -150,52 +152,53 @@ end
     ParticleDA.sample_gaussian_random_field!(f,grf,rnn)
     @test f ≈ [16.2387054353321 5.115956753643808; 5.115956753643809 2.8210669567042155]
 
-    # # Test IO
-    # params = ParticleDA.get_params(joinpath(@__DIR__, "io_unit_test.yaml"))
-    # rm(params.output_filename, force=true)
-    # data1 = collect(reshape(1.0:(params.nx * params.ny), params.nx, params.ny, 1))
-    # data2 = randn(params.nx, params.ny, 1)
-    # tstep = 0
-    # h5open(params.output_filename, "cw") do file
-    #     ParticleDA.write_field(file, @view(data1[:,:,1]), tstep, "m", params.title_syn, "height", "unit test",params)
-    #     ParticleDA.write_field(file, @view(data2[:,:,1]), tstep, "inch", params.title_avg,  "height", "unit test",params)
-    # end
-    # @test h5read(params.output_filename, params.state_prefix * "_" * params.title_syn * "/t0/height") ≈ data1
-    # @test h5read(params.output_filename, params.state_prefix * "_" * params.title_avg * "/t0/height") ≈ data2
-    # attr = h5readattr(params.output_filename, params.state_prefix * "_" * params.title_syn * "/t0/height")
-    # @test attr["Unit"] == "m"
-    # @test attr["Time_step"] == tstep
-    # attr = h5readattr(params.output_filename, params.state_prefix * "_" * params.title_avg * "/t0/height")
-    # @test attr["Unit"] == "inch"
-    # @test attr["Time_step"] == tstep
-    # ParticleDA.write_params(params)
-    # attr = h5readattr(params.output_filename, params.title_params)
-    # @test attr["nx"] == params.nx
-    # @test attr["ny"] == params.ny
-    # @test attr["dx"] == params.dx
-    # @test attr["dy"] == params.dy
-    # @test attr["title_avg"] == params.title_avg
-    # @test attr["title_syn"] == params.title_syn
-    # @test attr["verbose"] == params.verbose
-    # ParticleDA.write_grid(params)
-    # attr = h5readattr(params.output_filename, params.title_grid * "/x")
-    # @test attr["Unit"] == "m"
-    # attr = h5readattr(params.output_filename, params.title_grid * "/y")
-    # @test attr["Unit"] == "m"
+    # Test IO
+    params_dict = YAML.load_file(joinpath(@__DIR__, "io_unit_test.yaml"))
+    filter_params = ParticleDA.get_params(FilterParameters, params_dict["filter"])
+    model_params = ParticleDA.get_params(ModelParameters, params_dict["model"]["llw2d"])
+    rm(filter_params.output_filename, force=true)
+    data1 = collect(reshape(1.0:(model_params.nx * model_params.ny), model_params.nx, model_params.ny, 1))
+    data2 = randn(model_params.nx, model_params.ny, 1)
+    tstep = 0
+    h5open(filter_params.output_filename, "cw") do file
+        ParticleDA.write_field(file, @view(data1[:,:,1]), tstep, "m", model_params.title_syn, "height", "unit test", model_params)
+        ParticleDA.write_field(file, @view(data2[:,:,1]), tstep, "inch", model_params.title_avg,  "height", "unit test", model_params)
+    end
+    @test h5read(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_syn * "/t0/height") ≈ data1
+    @test h5read(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_avg * "/t0/height") ≈ data2
+    attr = h5readattr(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_syn * "/t0/height")
+    @test attr["Unit"] == "m"
+    @test attr["Time_step"] == tstep
+    attr = h5readattr(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_avg * "/t0/height")
+    @test attr["Unit"] == "inch"
+    @test attr["Time_step"] == tstep
+    ParticleDA.write_params(filter_params.output_filename, model_params)
+    attr = h5readattr(filter_params.output_filename, model_params.title_params)
+    @test attr["nx"] == model_params.nx
+    @test attr["ny"] == model_params.ny
+    @test attr["dx"] == model_params.dx
+    @test attr["dy"] == model_params.dy
+    @test attr["title_avg"] == model_params.title_avg
+    @test attr["title_syn"] == model_params.title_syn
+    ParticleDA.write_grid(filter_params.output_filename, model_params)
+    attr = h5readattr(filter_params.output_filename, model_params.title_grid * "/x")
+    @test attr["Unit"] == "m"
+    attr = h5readattr(filter_params.output_filename, model_params.title_grid * "/y")
+    @test attr["Unit"] == "m"
 
-    # stations = ParticleDA.StationVectors(zeros(Int,4), zeros(Int,4))
-    # ParticleDA.set_stations!(stations, params)
-    # @test stations.ist == [5, 5, 10, 10]
-    # @test stations.jst == [5, 10, 5, 10]
-    # ParticleDA.write_stations(stations.ist, stations.jst, params)
-    # @test h5read(params.output_filename, params.title_stations * "/x") ≈ stations.ist .* params.dx
-    # @test h5read(params.output_filename, params.title_stations * "/y") ≈ stations.jst .* params.dy
-    # attr = h5readattr(params.output_filename, params.title_stations * "/x")
-    # @test attr["Unit"] == "m"
-    # attr = h5readattr(params.output_filename, params.title_stations * "/y")
-    # @test attr["Unit"] == "m"
+    stations = ParticleDA.StationVectors(zeros(Int,4), zeros(Int,4))
+    ParticleDA.set_stations!(stations, model_params)
+    @test stations.ist == [5, 5, 10, 10]
+    @test stations.jst == [5, 10, 5, 10]
+    ParticleDA.write_stations(filter_params.output_filename, stations.ist, stations.jst, model_params)
+    @test h5read(filter_params.output_filename, model_params.title_stations * "/x") ≈ stations.ist .* model_params.dx
+    @test h5read(filter_params.output_filename, model_params.title_stations * "/y") ≈ stations.jst .* model_params.dy
+    attr = h5readattr(filter_params.output_filename, model_params.title_stations * "/x")
+    @test attr["Unit"] == "m"
+    attr = h5readattr(filter_params.output_filename, model_params.title_stations * "/y")
+    @test attr["Unit"] == "m"
 
-    # rm(params.output_filename, force=true)
+    rm(filter_params.output_filename, force=true)
 end
 
 @testset "ParticleDA integration tests" begin

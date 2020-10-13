@@ -44,6 +44,14 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     boundary_damping::T = 0.015
     cutoff_depth::T = 10.0
 
+    state_prefix::String = "data"
+    title_avg::String = "avg"
+    title_var::String = "var"
+    title_syn::String = "syn"
+    title_grid::String = "grid"
+    title_stations::String = "stations"
+    title_params::String = "params"
+
     # TODO: this parameter is also in the filter
     obs_noise_std::T = 1.0
 
@@ -350,13 +358,6 @@ get_particles(d::ModelData) = d.states.particles
 # to pass them around.  `get_truth` is only used as return value of
 # `particle_filter`, we may just return the whole `model_data`.
 get_truth(d::ModelData) = d.states.truth
-function write_initial_state(d::ModelData, weights, params)
-    write_grid(params)
-    write_params(params)
-    write_stations(d.stations.ist, d.stations.jst, params)
-    unpack_statistics!(d.avg_arr, d.var_arr, d.statistics)
-    write_snapshot(d.states.truth, d.avg_arr, d.var_arr, weights, 0, params)
-end
 
 function init(model_params_dict::Dict, rng::AbstractVector{<:Random.AbstractRNG}, nprt_per_rank::Int)
 
@@ -413,4 +414,173 @@ function update_particles!(d::ModelData, nprt_per_rank)
         add_noise!(@view(d.observations.model[:,ip]), d.rng[1], d.model_params)
     end
     return d.observations.model
+end
+
+
+### Model IO
+
+function write_params(output_filename, params)
+
+    file = h5open(output_filename, "cw")
+
+    if !exists(file, params.title_params)
+
+        group = g_create(file, params.title_params)
+
+        fields = fieldnames(typeof(params));
+
+        for field in fields
+
+            attrs(group)[string(field)] = getfield(params, field)
+
+        end
+
+    else
+
+        @warn "Write failed, group " * params.title_params * " already exists in " * file.filename * "!"
+
+    end
+
+    close(file)
+
+end
+
+function write_grid(output_filename, params)
+
+    h5open(output_filename, "cw") do file
+
+        if !exists(file, params.title_grid)
+
+            # Write grid axes
+            group = g_create(file, params.title_grid)
+            x,y = get_axes(params)
+            #TODO: use d_write instead of d_create when they fix it in the HDF5 package
+            ds_x,dtype_x = d_create(group, "x", collect(x))
+            ds_y,dtype_x = d_create(group, "y", collect(x))
+            ds_x[1:params.nx] = collect(x)
+            ds_y[1:params.ny] = collect(y)
+            attrs(ds_x)["Unit"] = "m"
+            attrs(ds_y)["Unit"] = "m"
+
+        else
+
+            @warn "Write failed, group " * params.title_grid * " already exists in " * file.filename * "!"
+
+        end
+
+    end
+
+end
+
+function write_stations(output_filename, ist::AbstractVector, jst::AbstractVector, params::ModelParameters) where T
+
+    h5open(output_filename, "cw") do file
+
+        if !exists(file, params.title_stations)
+            group = g_create(file, params.title_stations)
+
+            for (dataset_name, index, d) in zip(("x", "y"), (ist, jst), (params.dx, params.dy))
+                ds, dtype = d_create(group, dataset_name, index)
+                ds[:] = index .* d
+                attrs(ds)["Description"] = "Station coordinates"
+                attrs(ds)["Unit"] = "m"
+            end
+        else
+            @warn "Write failed, group " * params.title_stations * " already exists in " * file.filename * "!"
+        end
+    end
+end
+
+function write_weights(file::HDF5File, weights::AbstractVector, unit::String, it::Int, params::ModelParameters)
+
+    group_name = "weights"
+    dataset_name = "t" * string(it)
+
+    group, subgroup = create_or_open_group(file, group_name)
+
+    if !exists(group, dataset_name)
+        #TODO: use d_write instead of d_create when they fix it in the HDF5 package
+        ds,dtype = d_create(group, dataset_name, weights)
+        ds[:] = weights
+        attrs(ds)["Description"] = "Particle Weights"
+        attrs(ds)["Unit"] = unit
+        attrs(ds)["Time_step"] = it
+        attrs(ds)["Time (s)"] = it * params.time_step
+    else
+        @warn "Write failed, dataset " * group_name * "/" * dataset_name *  " already exists in " * file.filename * "!"
+    end
+
+end
+
+function write_snapshot(output_filename::AbstractString,
+                        truth::AbstractArray{T,3},
+                        avg::AbstractArray{T,3},
+                        var::AbstractArray{T,3},
+                        weights::AbstractVector{T},
+                        it::Int,
+                        params::ModelParameters) where T
+
+    println("Writing output at timestep = ", it)
+
+    h5open(output_filename, "cw") do file
+
+        dset_height = "height"
+        dset_vx = "vx"
+        dset_vy = "vy"
+
+        desc_height = "Ocean surface height"
+        desc_vx = "Ocean surface velocity x-component"
+        desc_vy = "Ocean surface velocity y-component"
+
+        write_field(file, @view(truth[:,:,1]), it, "m", params.title_syn, dset_height, desc_height, params)
+        write_field(file, @view(avg[:,:,1]), it, "m"  , params.title_avg, dset_height, desc_height, params)
+        write_field(file, @view(var[:,:,1]), it, "m^2", params.title_var, dset_height, desc_height, params)
+
+        write_field(file, @view(truth[:,:,2]), it, "m/s",   params.title_syn, dset_vx, desc_vx, params)
+        write_field(file, @view(avg[:,:,2]), it, "m/s"  ,   params.title_avg, dset_vx, desc_vx, params)
+        write_field(file, @view(var[:,:,2]), it, "m^2/s^2", params.title_var, dset_vx, desc_vx, params)
+
+        write_field(file, @view(truth[:,:,3]), it, "m/s",   params.title_syn, dset_vy, desc_vy, params)
+        write_field(file, @view(avg[:,:,3]), it, "m/s"  ,   params.title_avg, dset_vy, desc_vy, params)
+        write_field(file, @view(var[:,:,3]), it, "m^2/s^2", params.title_var, dset_vy, desc_vy, params)
+
+        write_weights(file, weights, "", it, params)
+    end
+
+end
+
+function write_field(file::HDF5File,
+                     field::AbstractMatrix{T},
+                     it::Int,
+                     unit::String,
+                     group::String,
+                     dataset::String,
+                     description::String,
+                     params::ModelParameters) where T
+
+    group_name = params.state_prefix * "_" * group
+    subgroup_name = "t" * string(it)
+    dataset_name = dataset
+
+    group, subgroup = create_or_open_group(file, group_name, subgroup_name)
+
+    if !exists(subgroup, dataset_name)
+        #TODO: use d_write instead of d_create when they fix it in the HDF5 package
+        ds,dtype = d_create(subgroup, dataset_name, field)
+        ds[:,:] = field
+        attrs(ds)["Description"] = description
+        attrs(ds)["Unit"] = unit
+        attrs(ds)["Time_step"] = it
+        attrs(ds)["Time (s)"] = it * params.time_step
+    else
+        @warn "Write failed, dataset " * group_name * "/" * subgroup_name * "/" * dataset_name *  " already exists in " * file.filename * "!"
+    end
+end
+
+function write_initial_state(d::ModelData, filter_params::FilterParameters, avg_arr, var_arr, weights)
+    output_filename = filter_params.output_filename
+    write_grid(output_filename, d.model_params)
+    write_params(output_filename, d.model_params)
+    write_stations(output_filename, d.stations.ist, d.stations.jst, d.model_params)
+    write_snapshot(output_filename, d.states.truth, avg_arr, var_arr, weights, 0, d.model_params)
 end

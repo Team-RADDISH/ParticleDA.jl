@@ -61,13 +61,6 @@ Base.@kwdef struct FilterParameters{T<:AbstractFloat}
     verbose::Bool = false
 
     output_filename::String = "particle_da.h5"
-    state_prefix::String = "data"
-    title_avg::String = "avg"
-    title_var::String = "var"
-    title_syn::String = "syn"
-    title_grid::String = "grid"
-    title_stations::String = "stations"
-    title_params::String = "params"
 
     nprt::Int = 4
 

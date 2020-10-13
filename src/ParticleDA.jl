@@ -9,7 +9,7 @@ export run_particle_filter
 
 include("params.jl")
 include("model.jl")
-# include("io.jl")
+include("io.jl")
 
 using .Default_params
 
@@ -230,7 +230,10 @@ function run_particle_filter(filter_params::FilterParameters, model_params_dict:
 
     # Write initial state + metadata
     if(filter_params.verbose && my_rank == filter_params.master_rank)
-        # @timeit_debug timer "IO" write_initial_state(model_data, filter_params)
+        @timeit_debug timer "IO" begin
+            unpack_statistics!(avg_arr, var_arr, statistics)
+            write_initial_state(model_data, filter_params, avg_arr, var_arr, weights)
+        end
     end
 
     for it in 1:filter_params.n_time_step
@@ -314,7 +317,7 @@ function run_particle_filter(filter_params::FilterParameters, model_params_dict:
             timer_chars = MPI.Gather(chr_timer, filter_params.master_rank, MPI.COMM_WORLD)
 
             if my_rank == filter_params.master_rank
-                # write_timers(length_timer, my_size, timer_chars, filter_params)
+                @timeit_debug timer "IO" write_timers(length_timer, my_size, timer_chars, filter_params)
             end
         end
     end
