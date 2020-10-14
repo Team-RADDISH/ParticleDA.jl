@@ -1,7 +1,15 @@
+module LLW2d
+
+using ParticleDA
+
+using Random, Distributions, Statistics, MPI, Base.Threads, YAML, GaussianRandomFields, HDF5
+using ParticleDA.Default_params
+import Future
+using TimerOutputs
+using DelimitedFiles
+
 include("llw2d.jl")
 
-using .LLW2d
-using .Default_params
 
 Base.@kwdef struct ModelParameters{T<:AbstractFloat}
 
@@ -353,15 +361,14 @@ struct ModelData{A,B,C,D,E,F,G,H}
     model_matrices::G
     rng::H
 end
-get_particles(d::ModelData) = d.states.particles
-# TODO: we should probably get rid of the next two functions and find other ways
-# to pass them around.  `get_truth` is only used as return value of
-# `particle_filter`, we may just return the whole `model_data`.
-get_truth(d::ModelData) = d.states.truth
+ParticleDA.get_particles(d::ModelData) = d.states.particles
+# TODO: we should probably get rid of `get_truth`: it is only used as return
+# value of `particle_filter`, we may just return the whole `model_data`.
+ParticleDA.get_truth(d::ModelData) = d.states.truth
 
 function init(model_params_dict::Dict, rng::AbstractVector{<:Random.AbstractRNG}, nprt_per_rank::Int)
 
-    model_params = get_params(ModelParameters, get(model_params_dict, "llw2d", Dict()))
+    model_params = ParticleDA.get_params(ModelParameters, get(model_params_dict, "llw2d", Dict()))
     states, observations, stations, field_buffer = init_arrays(model_params, nprt_per_rank)
 
     background_grf = init_gaussian_random_field_generator(model_params)
@@ -381,7 +388,7 @@ function init(model_params_dict::Dict, rng::AbstractVector{<:Random.AbstractRNG}
     return ModelData(model_params, states, observations, stations, field_buffer, background_grf, model_matrices, rng)
 end
 
-function update_truth!(d::ModelData)
+function ParticleDA.update_truth!(d::ModelData)
     tsunami_update!(@view(d.field_buffer[:, :, 1, 1]),
                     @view(d.field_buffer[:, :, 2, 1]),
                     d.states.truth, d.model_matrices, d.model_params)
@@ -391,7 +398,7 @@ function update_truth!(d::ModelData)
     return d.observations.truth
 end
 
-function update_particles!(d::ModelData, nprt_per_rank)
+function ParticleDA.update_particles!(d::ModelData, nprt_per_rank)
     Threads.@threads for ip in 1:nprt_per_rank
         tsunami_update!(@view(d.field_buffer[:, :, 1, threadid()]), @view(d.field_buffer[:, :, 2, threadid()]),
                         @view(d.states.particles[:, :, :, ip]), d.model_matrices, d.model_params)
@@ -496,7 +503,7 @@ function write_weights(file::HDF5File, weights::AbstractVector, unit::String, it
     group_name = "weights"
     dataset_name = "t" * string(it)
 
-    group, subgroup = create_or_open_group(file, group_name)
+    group, subgroup = ParticleDA.create_or_open_group(file, group_name)
 
     if !exists(group, dataset_name)
         #TODO: use d_write instead of d_create when they fix it in the HDF5 package
@@ -512,13 +519,13 @@ function write_weights(file::HDF5File, weights::AbstractVector, unit::String, it
 
 end
 
-function write_snapshot(output_filename::AbstractString,
-                        truth::AbstractArray{T,3},
-                        avg::AbstractArray{T,3},
-                        var::AbstractArray{T,3},
-                        weights::AbstractVector{T},
-                        it::Int,
-                        params::ModelParameters) where T
+function ParticleDA.write_snapshot(output_filename::AbstractString,
+                                   truth::AbstractArray{T,3},
+                                   avg::AbstractArray{T,3},
+                                   var::AbstractArray{T,3},
+                                   weights::AbstractVector{T},
+                                   it::Int,
+                                   params::ModelParameters) where T
 
     println("Writing output at timestep = ", it)
 
@@ -549,6 +556,15 @@ function write_snapshot(output_filename::AbstractString,
 
 end
 
+function ParticleDA.write_snapshot(output_filename::AbstractString,
+                                   d::ModelData,
+                                   avg::AbstractArray{T,3},
+                                   var::AbstractArray{T,3},
+                                   weights::AbstractVector{T},
+                                   it::Int) where T
+    return ParticleDA.write_snapshot(output_filename, d.states.truth, avg, var, weights, it, d.model_params)
+end
+
 function write_field(file::HDF5File,
                      field::AbstractMatrix{T},
                      it::Int,
@@ -562,7 +578,7 @@ function write_field(file::HDF5File,
     subgroup_name = "t" * string(it)
     dataset_name = dataset
 
-    group, subgroup = create_or_open_group(file, group_name, subgroup_name)
+    group, subgroup = ParticleDA.create_or_open_group(file, group_name, subgroup_name)
 
     if !exists(subgroup, dataset_name)
         #TODO: use d_write instead of d_create when they fix it in the HDF5 package
@@ -577,10 +593,12 @@ function write_field(file::HDF5File,
     end
 end
 
-function write_initial_state(d::ModelData, filter_params::FilterParameters, avg_arr, var_arr, weights)
+function ParticleDA.write_initial_state(d::ModelData, filter_params::FilterParameters, avg_arr, var_arr, weights)
     output_filename = filter_params.output_filename
     write_grid(output_filename, d.model_params)
     write_params(output_filename, d.model_params)
     write_stations(output_filename, d.stations.ist, d.stations.jst, d.model_params)
-    write_snapshot(output_filename, d.states.truth, avg_arr, var_arr, weights, 0, d.model_params)
+    ParticleDA.write_snapshot(output_filename, d.states.truth, avg_arr, var_arr, weights, 0, d.model_params)
 end
+
+end # module

@@ -1,5 +1,8 @@
 using ParticleDA, MPI
 
+include(joinpath(@__DIR__, "model", "model.jl"))
+using .LLW2d
+
 # Initialise MPI
 MPI.Init()
 
@@ -26,7 +29,7 @@ params = Dict(
 
 # Warmup
 rm("particle_da.h5"; force = true)
-run_particle_filter(params)
+run_particle_filter(LLW2d.init, params)
 # Flush a newline
 println()
 
@@ -34,6 +37,6 @@ println()
 rm("particle_da.h5"; force = true)
 params["filter"]["nprt"] = 2 * my_size
 params["model"]["llw2d"]["nobs"] = 36
-run_particle_filter(params)
+run_particle_filter(LLW2d.init, params)
 # Flush a newline
 println()

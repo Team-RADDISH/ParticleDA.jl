@@ -8,10 +8,17 @@ using DelimitedFiles
 export run_particle_filter
 
 include("params.jl")
-include("model.jl")
 include("io.jl")
 
 using .Default_params
+
+# Functions to extend in the model
+function get_particles end
+function get_truth end
+function update_truth! end
+function update_particles! end
+function write_initial_state end
+function write_snapshot end
 
 # Get weights for particles by evaluating the probability of the observations predicted by the model
 # from independent normal pdfs for each observation.
@@ -177,7 +184,7 @@ function copy_states!(particles::AbstractArray{T,4},
 
 end
 
-function run_particle_filter(filter_params::FilterParameters, model_params_dict::Dict, rng::AbstractVector{<:Random.AbstractRNG}, init)
+function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict, rng::AbstractVector{<:Random.AbstractRNG})
 
     if !MPI.Initialized()
         MPI.Init()
@@ -285,8 +292,8 @@ function run_particle_filter(filter_params::FilterParameters, model_params_dict:
         if my_rank == filter_params.master_rank && filter_params.verbose
 
             @timeit_debug timer "IO" begin
-                # unpack_statistics!(avg_arr, var_arr, statistics)
-                # write_snapshot(states.truth, avg_arr, var_arr, weights, it, filter_params)
+                unpack_statistics!(avg_arr, var_arr, statistics)
+                write_snapshot(filter_params.output_filename, model_data, avg_arr, var_arr, weights, it)
             end
 
         end
@@ -353,7 +360,7 @@ function read_input_file(path_to_input_file::String)
 
 end
 
-function run_particle_filter(path_to_input_file::String, rng::Union{Nothing,AbstractRNG}=nothing)
+function run_particle_filter(init, path_to_input_file::String, rng::Union{Nothing,AbstractRNG}=nothing)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -372,11 +379,11 @@ function run_particle_filter(path_to_input_file::String, rng::Union{Nothing,Abst
 
     user_input_dict = MPI.bcast(user_input_dict, 0, MPI.COMM_WORLD)
 
-    return run_particle_filter(user_input_dict, rng)
+    return run_particle_filter(init, user_input_dict, rng)
 
 end
 
-function run_particle_filter(user_input_dict::Dict, rng::Union{Nothing,AbstractRNG}=nothing)
+function run_particle_filter(init, user_input_dict::Dict, rng::Union{Nothing,AbstractRNG}=nothing)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -385,7 +392,7 @@ function run_particle_filter(user_input_dict::Dict, rng::Union{Nothing,AbstractR
     filter_params = get_params(FilterParameters, get(user_input_dict, "filter", Dict()))
     model_params_dict = get(user_input_dict, "model", Dict())
 
-    rng = let 
+    rng = let
         m = if isnothing(rng)
             Random.MersenneTwister(filter_params.random_seed + MPI.Comm_rank(MPI.COMM_WORLD))
         else
@@ -394,7 +401,7 @@ function run_particle_filter(user_input_dict::Dict, rng::Union{Nothing,AbstractR
         [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
     end;
 
-    return run_particle_filter(filter_params, model_params_dict, rng, init)
+    return run_particle_filter(init, filter_params, model_params_dict, rng)
 
 end
 
