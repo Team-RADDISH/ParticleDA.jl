@@ -2,10 +2,8 @@ module LLW2d
 
 using ParticleDA
 
-using Random, Distributions, Statistics, MPI, Base.Threads, YAML, GaussianRandomFields, HDF5
+using Random, Distributions, Base.Threads, GaussianRandomFields, HDF5
 using ParticleDA.Default_params
-import Future
-using TimerOutputs
 using DelimitedFiles
 
 include("llw2d.jl")

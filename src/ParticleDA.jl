@@ -1,9 +1,8 @@
 module ParticleDA
 
-using Random, Distributions, Statistics, MPI, Base.Threads, YAML, GaussianRandomFields, HDF5
+using Random, Distributions, Statistics, MPI, Base.Threads, YAML, HDF5
 import Future
 using TimerOutputs
-using DelimitedFiles
 
 export run_particle_filter
 
