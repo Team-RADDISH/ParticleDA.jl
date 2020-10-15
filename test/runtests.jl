@@ -225,13 +225,15 @@ end
 
         # Test particle state with noise
         rng = StableRNG(123)
-        x_true,x_avg,x_var = ParticleDA.run_particle_filter(LLW2d.init, joinpath(@__DIR__, "integration_test_4.yaml"), rng)
+        init_with_rng = (model_params_dict, nprt_per_rank, my_rank) -> LLW2d.init(model_params_dict, nprt_per_rank, my_rank, rng)
+        x_true,x_avg,x_var = ParticleDA.run_particle_filter(init_with_rng, joinpath(@__DIR__, "integration_test_4.yaml"))
         avg_ref = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_4")
         @test x_avg ≈ avg_ref
 
         # Test that different seed gives different result
         rng = StableRNG(124)
-        x_true,x_avg,x_var = ParticleDA.run_particle_filter(LLW2d.init, joinpath(@__DIR__, "integration_test_4.yaml"), rng)
+        init_with_rng = (model_params_dict, nprt_per_rank, my_rank) -> LLW2d.init(model_params_dict, nprt_per_rank, my_rank, rng)
+        x_true,x_avg,x_var = ParticleDA.run_particle_filter(init_with_rng, joinpath(@__DIR__, "integration_test_4.yaml"))
         @test !(x_avg ≈ avg_ref)
 
     end

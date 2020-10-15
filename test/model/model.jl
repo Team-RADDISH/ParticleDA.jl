@@ -5,9 +5,9 @@ using ParticleDA
 using Random, Distributions, Base.Threads, GaussianRandomFields, HDF5
 using ParticleDA.Default_params
 using DelimitedFiles
+import Future
 
 include("llw2d.jl")
-
 
 Base.@kwdef struct ModelParameters{T<:AbstractFloat}
 
@@ -22,6 +22,8 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
 
     time_step::T = 50.0
     n_integration_step::Int = 50
+
+    random_seed::Int = 12345
 
     station_filename::String = ""
     nobs::Int = 4
@@ -364,10 +366,19 @@ ParticleDA.get_particles(d::ModelData) = d.states.particles
 # value of `particle_filter`, we may just return the whole `model_data`.
 ParticleDA.get_truth(d::ModelData) = d.states.truth
 
-function init(model_params_dict::Dict, rng::AbstractVector{<:Random.AbstractRNG}, nprt_per_rank::Int)
+function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, _rng::Union{Random.AbstractRNG,Nothing}=nothing)
 
     model_params = ParticleDA.get_params(ModelParameters, get(model_params_dict, "llw2d", Dict()))
     states, observations, stations, field_buffer = init_arrays(model_params, nprt_per_rank)
+
+    rng = let
+        m = if isnothing(_rng)
+            Random.MersenneTwister(model_params.random_seed + my_rank)
+        else
+            _rng
+        end
+        [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
+    end
 
     background_grf = init_gaussian_random_field_generator(model_params)
 

@@ -1,7 +1,6 @@
 module ParticleDA
 
-using Random, Distributions, Statistics, MPI, Base.Threads, YAML, HDF5
-import Future
+using Distributions, Statistics, MPI, Base.Threads, YAML, HDF5
 using TimerOutputs
 
 export run_particle_filter
@@ -68,7 +67,7 @@ function resample!(resampled_indices::AbstractVector{Int}, weight::AbstractVecto
     #TODO: Do we need to sort state by weight here?
 
     weight_cdf = cumsum(weight)
-    u0 = nprt_inv * Random.rand(T)
+    u0 = nprt_inv * rand(T)
 
     # Note: To parallelise this loop, updates to k and u have to be atomic.
     # TODO: search for better parallel implementations
@@ -183,7 +182,7 @@ function copy_states!(particles::AbstractArray{T,4},
 
 end
 
-function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict, rng::AbstractVector{<:Random.AbstractRNG})
+function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -205,7 +204,7 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
     nprt_per_rank = Int(filter_params.nprt / MPI.Comm_size(MPI.COMM_WORLD))
 
     # Do memory allocations
-    @timeit_debug timer "Model initialization" model_data = init(model_params_dict, rng, nprt_per_rank)
+    @timeit_debug timer "Model initialization" model_data = init(model_params_dict, nprt_per_rank, my_rank)
 
     @timeit_debug timer "Filter initialization" begin
         # TODO: ideally this will be an argument of the function, to choose a
@@ -359,7 +358,7 @@ function read_input_file(path_to_input_file::String)
 
 end
 
-function run_particle_filter(init, path_to_input_file::String, rng::Union{Nothing,AbstractRNG}=nothing)
+function run_particle_filter(init, path_to_input_file::String)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -378,29 +377,16 @@ function run_particle_filter(init, path_to_input_file::String, rng::Union{Nothin
 
     user_input_dict = MPI.bcast(user_input_dict, 0, MPI.COMM_WORLD)
 
-    return run_particle_filter(init, user_input_dict, rng)
+    return run_particle_filter(init, user_input_dict)
 
 end
 
-function run_particle_filter(init, user_input_dict::Dict, rng::Union{Nothing,AbstractRNG}=nothing)
-
-    if !MPI.Initialized()
-        MPI.Init()
-    end
+function run_particle_filter(init, user_input_dict::Dict)
 
     filter_params = get_params(FilterParameters, get(user_input_dict, "filter", Dict()))
     model_params_dict = get(user_input_dict, "model", Dict())
 
-    rng = let
-        m = if isnothing(rng)
-            Random.MersenneTwister(filter_params.random_seed + MPI.Comm_rank(MPI.COMM_WORLD))
-        else
-            rng
-        end
-        [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
-    end;
-
-    return run_particle_filter(init, filter_params, model_params_dict, rng)
+    return run_particle_filter(init, filter_params, model_params_dict)
 
 end
 
