@@ -205,6 +205,7 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
     # Do memory allocations
     @timeit_debug timer "Model initialization" model_data = init(model_params_dict, nprt_per_rank, my_rank)
 
+    # TODO: put the body of this block in a function
     @timeit_debug timer "Filter initialization" begin
         # TODO: ideally this will be an argument of the function, to choose a
         # different datatype.
