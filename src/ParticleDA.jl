@@ -244,7 +244,7 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
     for it in 1:filter_params.n_time_step
 
         # integrate true synthetic wavefield
-        @timeit_debug timer "True State Update and Process Noise" truth_observations = update_truth!(model_data)
+        @timeit_debug timer "True State Update and Process Noise" truth_observations = update_truth!(model_data, nprt_per_rank)
 
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads.

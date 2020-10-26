@@ -397,7 +397,7 @@ function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, _rn
     return ModelData(model_params, states, observations, stations, field_buffer, background_grf, model_matrices, rng)
 end
 
-function ParticleDA.update_truth!(d::ModelData)
+function ParticleDA.update_truth!(d::ModelData, _)
     tsunami_update!(@view(d.field_buffer[:, :, 1, 1]),
                     @view(d.field_buffer[:, :, 2, 1]),
                     d.states.truth, d.model_matrices, d.model_params)
