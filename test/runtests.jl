@@ -7,8 +7,8 @@ using ParticleDA: FilterParameters
 
 include(joinpath(@__DIR__, "model", "model.jl"))
 
-using .LLW2d
-using .LLW2d: ModelParameters
+using .Model, .Model.LLW2d
+using .Model: ModelParameters
 
 @testset "LLW2d" begin
     dx = dy = 2e3
@@ -72,7 +72,7 @@ end
     ist = [1,2,3]
     jst = [1,2,3]
     obs = Vector{Float64}(undef, 3)
-    LLW2d.get_obs!(obs,x,3,ist,jst)
+    Model.get_obs!(obs,x,3,ist,jst)
     @test obs ≈ [1.,5.,9.]
 
     y = [1.0, 2.0]
@@ -133,7 +133,7 @@ end
         size(model_matrices.land_filter_e) == (nx, ny)
     dxeta = Matrix{Float64}(undef, nx, ny)
     dyeta = Matrix{Float64}(undef, nx, ny)
-    LLW2d.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, model_matrices)
+    Model.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, model_matrices)
     @test x ≈ x0
 
     # Initialise and update a tsunami on a small grid
@@ -142,17 +142,17 @@ end
     LLW2d.initheight!(eta, model_matrices, dx, dy, s)
     @test eta[2,2] ≈ 1.0
     @test sum(eta) ≈ 4.0
-    LLW2d.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, model_matrices)
+    Model.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, model_matrices)
     @test sum(eta, dims=1) ≈ [0.98161253125 1.8161253125 0.98161253125 0.073549875 0.0 0.0 0.0 0.0 0.0 0.0]
     @test sum(eta, dims=2) ≈ [0.98161253125 1.8161253125 0.98161253125 0.073549875 0.0 0.0 0.0 0.0 0.0 0.0]'
 
     # Test gaussian random field sampling
     x = 1.:2.
     y = 1.:2.
-    grf = LLW2d.init_gaussian_random_field_generator(1.0,1.0,1.0,x,y,0,false)
+    grf = Model.init_gaussian_random_field_generator(1.0,1.0,1.0,x,y,0,false)
     f = zeros(2, 2)
     rnn = [9.,9.,9.,9.]
-    LLW2d.sample_gaussian_random_field!(f,grf,rnn)
+    Model.sample_gaussian_random_field!(f,grf,rnn)
     @test f ≈ [16.2387054353321 5.115956753643808; 5.115956753643809 2.8210669567042155]
 
     # Test IO
@@ -164,8 +164,8 @@ end
     data2 = randn(model_params.nx, model_params.ny, 1)
     tstep = 0
     h5open(filter_params.output_filename, "cw") do file
-        LLW2d.write_field(file, @view(data1[:,:,1]), tstep, "m", model_params.title_syn, "height", "unit test", model_params)
-        LLW2d.write_field(file, @view(data2[:,:,1]), tstep, "inch", model_params.title_avg,  "height", "unit test", model_params)
+        Model.write_field(file, @view(data1[:,:,1]), tstep, "m", model_params.title_syn, "height", "unit test", model_params)
+        Model.write_field(file, @view(data2[:,:,1]), tstep, "inch", model_params.title_avg,  "height", "unit test", model_params)
     end
     @test h5read(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_syn * "/t0/height") ≈ data1
     @test h5read(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_avg * "/t0/height") ≈ data2
@@ -175,7 +175,7 @@ end
     attr = h5readattr(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_avg * "/t0/height")
     @test attr["Unit"] == "inch"
     @test attr["Time_step"] == tstep
-    LLW2d.write_params(filter_params.output_filename, model_params)
+    Model.write_params(filter_params.output_filename, model_params)
     attr = h5readattr(filter_params.output_filename, model_params.title_params)
     @test attr["nx"] == model_params.nx
     @test attr["ny"] == model_params.ny
@@ -183,17 +183,17 @@ end
     @test attr["dy"] == model_params.dy
     @test attr["title_avg"] == model_params.title_avg
     @test attr["title_syn"] == model_params.title_syn
-    LLW2d.write_grid(filter_params.output_filename, model_params)
+    Model.write_grid(filter_params.output_filename, model_params)
     attr = h5readattr(filter_params.output_filename, model_params.title_grid * "/x")
     @test attr["Unit"] == "m"
     attr = h5readattr(filter_params.output_filename, model_params.title_grid * "/y")
     @test attr["Unit"] == "m"
 
-    stations = LLW2d.StationVectors(zeros(Int,4), zeros(Int,4))
-    LLW2d.set_stations!(stations, model_params)
+    stations = Model.StationVectors(zeros(Int,4), zeros(Int,4))
+    Model.set_stations!(stations, model_params)
     @test stations.ist == [5, 5, 10, 10]
     @test stations.jst == [5, 10, 5, 10]
-    LLW2d.write_stations(filter_params.output_filename, stations.ist, stations.jst, model_params)
+    Model.write_stations(filter_params.output_filename, stations.ist, stations.jst, model_params)
     @test h5read(filter_params.output_filename, model_params.title_stations * "/x") ≈ stations.ist .* model_params.dx
     @test h5read(filter_params.output_filename, model_params.title_stations * "/y") ≈ stations.jst .* model_params.dy
     attr = h5readattr(filter_params.output_filename, model_params.title_stations * "/x")
@@ -207,17 +207,17 @@ end
 @testset "ParticleDA integration tests" begin
 
     # Test true state with standard parameters
-    x_true,x_avg,x_var = ParticleDA.run_particle_filter(LLW2d.init, joinpath(@__DIR__, "integration_test_1.yaml"))
+    x_true,x_avg,x_var = ParticleDA.run_particle_filter(Model.init, joinpath(@__DIR__, "integration_test_1.yaml"))
     data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_1")
     @test x_true ≈ data_true
 
     # Test true state with different parameters
-    x_true,x_avg,x_var = ParticleDA.run_particle_filter(LLW2d.init, joinpath(@__DIR__, "integration_test_2.yaml"))
+    x_true,x_avg,x_var = ParticleDA.run_particle_filter(Model.init, joinpath(@__DIR__, "integration_test_2.yaml"))
     data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_2")
     @test x_true ≈ data_true
 
     # Test particle state with ~zero noise
-    x_true,x_avg,x_var = ParticleDA.run_particle_filter(LLW2d.init, joinpath(@__DIR__, "integration_test_3.yaml"))
+    x_true,x_avg,x_var = ParticleDA.run_particle_filter(Model.init, joinpath(@__DIR__, "integration_test_3.yaml"))
     @test x_true ≈ x_avg
     @test x_var .+ 1.0 ≈ ones(size(x_var))
 
@@ -225,14 +225,14 @@ end
 
         # Test particle state with noise
         rng = StableRNG(123)
-        init_with_rng = (model_params_dict, nprt_per_rank, my_rank) -> LLW2d.init(model_params_dict, nprt_per_rank, my_rank, rng)
+        init_with_rng = (model_params_dict, nprt_per_rank, my_rank) -> Model.init(model_params_dict, nprt_per_rank, my_rank, rng)
         x_true,x_avg,x_var = ParticleDA.run_particle_filter(init_with_rng, joinpath(@__DIR__, "integration_test_4.yaml"))
         avg_ref = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_4")
         @test x_avg ≈ avg_ref
 
         # Test that different seed gives different result
         rng = StableRNG(124)
-        init_with_rng = (model_params_dict, nprt_per_rank, my_rank) -> LLW2d.init(model_params_dict, nprt_per_rank, my_rank, rng)
+        init_with_rng = (model_params_dict, nprt_per_rank, my_rank) -> Model.init(model_params_dict, nprt_per_rank, my_rank, rng)
         x_true,x_avg,x_var = ParticleDA.run_particle_filter(init_with_rng, joinpath(@__DIR__, "integration_test_4.yaml"))
         @test !(x_avg ≈ avg_ref)
 

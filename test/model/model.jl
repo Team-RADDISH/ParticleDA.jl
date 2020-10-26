@@ -1,4 +1,4 @@
-module LLW2d
+module Model
 
 using ParticleDA
 
@@ -8,6 +8,7 @@ using DelimitedFiles
 import Future
 
 include("llw2d.jl")
+using .LLW2d
 
 Base.@kwdef struct ModelParameters{T<:AbstractFloat}
 
