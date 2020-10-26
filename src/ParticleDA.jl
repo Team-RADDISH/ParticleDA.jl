@@ -15,7 +15,6 @@ function get_particles end
 function get_truth end
 function update_truth! end
 function update_particles! end
-function write_initial_state end
 function write_snapshot end
 
 # Get weights for particles by evaluating the probability of the observations predicted by the model
@@ -233,11 +232,11 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
     @timeit_debug timer "get_particles" particles = get_particles(model_data)
     @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, particles, filter_params.master_rank)
 
-    # Write initial state + metadata
+    # Write initial state (time = 0) + metadata
     if(filter_params.verbose && my_rank == filter_params.master_rank)
         @timeit_debug timer "IO" begin
             unpack_statistics!(avg_arr, var_arr, statistics)
-            write_initial_state(model_data, filter_params, avg_arr, var_arr, weights)
+            write_snapshot(filter_params.output_filename, model_data, avg_arr, var_arr, weights, 0)
         end
     end
 

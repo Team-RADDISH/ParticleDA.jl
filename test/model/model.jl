@@ -571,6 +571,14 @@ function ParticleDA.write_snapshot(output_filename::AbstractString,
                                    var::AbstractArray{T,3},
                                    weights::AbstractVector{T},
                                    it::Int) where T
+
+    if it == 0
+        # These are written only at the initial state it == 0
+        write_grid(output_filename, d.model_params)
+        write_params(output_filename, d.model_params)
+        write_stations(output_filename, d.stations.ist, d.stations.jst, d.model_params)
+    end
+
     return ParticleDA.write_snapshot(output_filename, d.states.truth, avg, var, weights, it, d.model_params)
 end
 
@@ -600,14 +608,6 @@ function write_field(file::HDF5File,
     else
         @warn "Write failed, dataset " * group_name * "/" * subgroup_name * "/" * dataset_name *  " already exists in " * file.filename * "!"
     end
-end
-
-function ParticleDA.write_initial_state(d::ModelData, filter_params::FilterParameters, avg_arr, var_arr, weights)
-    output_filename = filter_params.output_filename
-    write_grid(output_filename, d.model_params)
-    write_params(output_filename, d.model_params)
-    write_stations(output_filename, d.stations.ist, d.stations.jst, d.model_params)
-    ParticleDA.write_snapshot(output_filename, d.states.truth, avg_arr, var_arr, weights, 0, d.model_params)
 end
 
 end # module
