@@ -22,7 +22,7 @@ function write_snapshot end
 function get_log_weights!(weight::AbstractVector{T},
                           obs::AbstractVector{T},
                           obs_model::AbstractMatrix{T},
-                          obs_noise_std::T) where T
+                          weight_std::T) where T
 
     nobs = size(obs_model,1)
     @assert size(obs,1) == nobs
@@ -30,7 +30,7 @@ function get_log_weights!(weight::AbstractVector{T},
     weight .= 1.0
 
     for iobs = 1:nobs
-        weight .+= logpdf.(Normal(obs[iobs], obs_noise_std), @view(obs_model[iobs,:]))
+        weight .+= logpdf.(Normal(obs[iobs], weight_std), @view(obs_model[iobs,:]))
     end
 
 end
@@ -254,7 +254,7 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
         @timeit_debug timer "Weights" get_log_weights!(@view(weights[1:nprt_per_rank]),
                                                        truth_observations,
                                                        model_observations,
-                                                       filter_params.obs_noise_std)
+                                                       filter_params.weight_std)
 
         # Gather weights to master rank and resample particles.
         # Doing MPI collectives in place to save memory allocations.

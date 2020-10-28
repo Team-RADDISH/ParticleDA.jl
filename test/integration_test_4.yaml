@@ -1,7 +1,7 @@
 filter:
   nprt: 100
   n_time_step: 5
-  obs_noise_std: 1.0e-16
+  weight_std: 1.0e-16
 
 model:
   llw2d:
@@ -18,5 +18,4 @@ model:
     sigma: 1.0e-5
     sigma_initial_state: 1.0e-5
 
-    # This must be the same as the filter.  TODO: fix this
     obs_noise_std: 1.0e-16

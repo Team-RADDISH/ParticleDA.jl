@@ -1,7 +1,7 @@
 filter:
   nprt: 4
   n_time_step: 5
-  obs_noise_std: 1.0e-16
+  weight_std: 1.0e-16
 
 model:
   llw2d:
@@ -17,3 +17,5 @@ model:
     particle_initial_state: "true"
     sigma: 1.0e-16
     sigma_initial_state: 1.0e-16
+
+    obs_noise_std: 1.0e-16
