@@ -11,10 +11,53 @@ include("io.jl")
 using .Default_params
 
 # Functions to extend in the model
+"""
+    ParticleDA.get_particle(model_data) -> particles
+
+Return the vector of particles.  This method is intended to be extended by the
+user with the above signature, specifying the type of `model_data`.
+"""
 function get_particles end
+
+"""
+    ParticleDA.get_truth(model_data) -> truth_observations
+
+Return the vector of true observations.  This method is intended to be extended
+by the user with the above signature, specifying the type of `model_data`.
+"""
 function get_truth end
+
+"""
+    ParticleDA.update_truth!(model_data, nprt_per_rank::Int) -> truth_observations
+
+Update the true observations using the dynamic of the model and return the
+vector of the true observations.  `nprt_per_rank` is the number of particles per
+each MPI rank.  This method is intended to be extended by the user with the
+above signature, specifying the type of `model_data`.
+"""
 function update_truth! end
+
+"""
+    ParticleDA.update_particles!(model_data, nprt_per_rank::Int) -> particles_observations
+
+Update the particles using the dynamic of the model and return the vector of the
+particles.  `nprt_per_rank` is the number of particles per each MPI rank.  This
+method is intended to be extended by the user with the above signature,
+specifying the type of `model_data`.
+"""
 function update_particles! end
+
+"""
+    ParticleDA.write_snapshot(output_filename, model_data, avg_arr, var_arr, weights, it)
+
+Write a snapshot of the data after an update of the particles to the HDF5 file
+`output_filename`.  `avg_arr` is the array of the mean of the particles,
+`var_arr` is the array of the standard deviation of the particles, `weights` is
+the array of the weigths of the particles, `it` is the index of the time step
+(`it==0` is the initial state, before moving forward the model for the first
+time).  This method is intended to be extended by the user with the above
+signature, specifying the type of `model_data`.
+"""
 function write_snapshot end
 
 # Get weights for particles by evaluating the probability of the observations predicted by the model
@@ -358,6 +401,12 @@ function read_input_file(path_to_input_file::String)
 
 end
 
+"""
+    run_particle_filter(init, path_to_input_file::String)
+
+Run the particle filter.  `init` is the function which initialise the model,
+`path_to_input_file` is the path to the YAML file with the input parameters.
+"""
 function run_particle_filter(init, path_to_input_file::String)
 
     if !MPI.Initialized()
@@ -381,6 +430,12 @@ function run_particle_filter(init, path_to_input_file::String)
 
 end
 
+"""
+    run_particle_filter(init, user_input_dict::Dict)
+
+Run the particle filter.  `init` is the function which initialise the model,
+`user_input_dict` is the list of input parameters, as a `Dict`.
+"""
 function run_particle_filter(init, user_input_dict::Dict)
 
     filter_params = get_params(FilterParameters, get(user_input_dict, "filter", Dict()))
