@@ -6,7 +6,7 @@ makedocs(
 )
 
 deploydocs(
-    repo = "https://github.com/Team-RADDISH/ParticleDA.jl",
+    repo = "github.com/Team-RADDISH/ParticleDA.jl",
     target = "build",
     deps = nothing,
     make = nothing,
