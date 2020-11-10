@@ -1,92 +1,71 @@
 module ParticleDA
 
-using Random, Distributions, Statistics, MPI, Base.Threads, YAML, GaussianRandomFields, HDF5
-import Future
+using Distributions, Statistics, MPI, Base.Threads, YAML, HDF5
 using TimerOutputs
-using DelimitedFiles
 
-export tdac
+export run_particle_filter
 
 include("params.jl")
-include("llw2d.jl")
 include("io.jl")
 
 using .Default_params
-using .LLW2d
 
-# grid-to-grid distance
-get_distance(i0, j0, i1, j1, dx, dy) =
-    sqrt((float(i0 - i1) * dx) ^ 2 + (float(j0 - j1) * dy) ^ 2)
+# Functions to extend in the model
+"""
+    ParticleDA.get_particle(model_data) -> particles
 
-function get_obs!(obs::AbstractVector{T},
-                  state::AbstractArray{T,3},
-                  ist::AbstractVector{Int},
-                  jst::AbstractVector{Int},
-                  params::Parameters) where T
+Return the vector of particles.  This method is intended to be extended by the
+user with the above signature, specifying the type of `model_data`.
+"""
+function get_particles end
 
-    get_obs!(obs,state,params.nx,ist,jst)
+"""
+    ParticleDA.get_truth(model_data) -> truth_observations
 
-end
+Return the vector of true observations.  This method is intended to be extended
+by the user with the above signature, specifying the type of `model_data`.
+"""
+function get_truth end
 
-# Return observation data at stations from given model state
-function get_obs!(obs::AbstractVector{T},
-                  state::AbstractArray{T,3},
-                  nx::Integer,
-                  ist::AbstractVector{Int},
-                  jst::AbstractVector{Int}) where T
-    @assert length(obs) == length(ist) == length(jst)
+"""
+    ParticleDA.update_truth!(model_data, nprt_per_rank::Int) -> truth_observations
 
-    for i in eachindex(obs)
-        ii = ist[i]
-        jj = jst[i]
-        iptr = (jj - 1) * nx + ii
-        obs[i] = state[iptr]
-    end
-end
+Update the true observations using the dynamic of the model and return the
+vector of the true observations.  `nprt_per_rank` is the number of particles per
+each MPI rank.  This method is intended to be extended by the user with the
+above signature, specifying the type of `model_data`.
+"""
+function update_truth! end
 
-function tsunami_update!(dx_buffer::AbstractMatrix{T},
-                         dy_buffer::AbstractMatrix{T},
-                         state::AbstractArray{T,3},
-                         model_matrices::LLW2d.Matrices{T},
-                         params::Parameters) where T
+"""
+    ParticleDA.update_particles!(model_data, nprt_per_rank::Int) -> particles_observations
 
-    tsunami_update!(dx_buffer, dy_buffer, state, params.n_integration_step,
-                    params.dx, params.dy, params.time_step, model_matrices)
+Update the particles using the dynamic of the model and return the vector of the
+particles.  `nprt_per_rank` is the number of particles per each MPI rank.  This
+method is intended to be extended by the user with the above signature,
+specifying the type of `model_data`.
+"""
+function update_particles! end
 
-end
+"""
+    ParticleDA.write_snapshot(output_filename, model_data, avg_arr, var_arr, weights, it)
 
-# Update tsunami wavefield with LLW2d in-place.
-function tsunami_update!(dx_buffer::AbstractMatrix{T},
-                         dy_buffer::AbstractMatrix{T},
-                         state::AbstractArray{T,3},
-                         nt::Int,
-                         dx::Real,
-                         dy::Real,
-                         time_interval::Real,
-                         model_matrices::LLW2d.Matrices{T}) where T
-
-    eta_a = @view(state[:, :, 1])
-    mm_a  = @view(state[:, :, 2])
-    nn_a  = @view(state[:, :, 3])
-    eta_f = @view(state[:, :, 1])
-    mm_f  = @view(state[:, :, 2])
-    nn_f  = @view(state[:, :, 3])
-
-    dt = time_interval / nt
-
-    for it in 1:nt
-        # Parts of model vector are aliased to tsunami heiht and velocities
-        LLW2d.timestep!(dx_buffer, dy_buffer, eta_f, mm_f, nn_f, eta_a, mm_a, nn_a, model_matrices, dx, dy, dt)
-    end
-
-end
+Write a snapshot of the data after an update of the particles to the HDF5 file
+`output_filename`.  `avg_arr` is the array of the mean of the particles,
+`var_arr` is the array of the standard deviation of the particles, `weights` is
+the array of the weigths of the particles, `it` is the index of the time step
+(`it==0` is the initial state, before moving forward the model for the first
+time).  This method is intended to be extended by the user with the above
+signature, specifying the type of `model_data`.
+"""
+function write_snapshot end
 
 # Get weights for particles by evaluating the probability of the observations predicted by the model
 # from independent normal pdfs for each observation.
 function get_log_weights!(weight::AbstractVector{T},
                           obs::AbstractVector{T},
                           obs_model::AbstractMatrix{T},
-                          obs_noise_std::T) where T
+                          weight_std::T) where T
 
     nobs = size(obs_model,1)
     @assert size(obs,1) == nobs
@@ -94,7 +73,7 @@ function get_log_weights!(weight::AbstractVector{T},
     weight .= 1.0
 
     for iobs = 1:nobs
-        weight .+= logpdf.(Normal(obs[iobs], obs_noise_std), @view(obs_model[iobs,:]))
+        weight .+= logpdf.(Normal(obs[iobs], weight_std), @view(obs_model[iobs,:]))
     end
 
 end
@@ -130,7 +109,7 @@ function resample!(resampled_indices::AbstractVector{Int}, weight::AbstractVecto
     #TODO: Do we need to sort state by weight here?
 
     weight_cdf = cumsum(weight)
-    u0 = nprt_inv * Random.rand(T)
+    u0 = nprt_inv * rand(T)
 
     # Note: To parallelise this loop, updates to k and u have to be atomic.
     # TODO: search for better parallel implementations
@@ -148,130 +127,10 @@ function resample!(resampled_indices::AbstractVector{Int}, weight::AbstractVecto
 
 end
 
-function get_axes(params::Parameters)
-
-    return get_axes(params.nx, params.ny, params.dx, params.dy)
-
-end
-
-function get_axes(nx::Int, ny::Int, dx::Real, dy::Real)
-
-    x = range(0, length=nx, step=dx)
-    y = range(0, length=ny, step=dy)
-
-    return x,y
-end
-
-struct RandomField{F<:GaussianRandomField,X<:AbstractArray,W<:AbstractArray,Z<:AbstractArray}
-    grf::F
-    xi::X
-    w::W
-    z::Z
-end
-
-function init_gaussian_random_field_generator(params::Parameters)
-
-    x, y = get_axes(params)
-    return init_gaussian_random_field_generator(params.lambda,params.nu, params.sigma, x, y, params.padding, params.primes)
-
-end
-
-# Initialize a gaussian random field generating function using the Matern covariance kernel
-# and circulant embedding generation method
-# TODO: Could generalise this
-function init_gaussian_random_field_generator(lambda::T,
-                                              nu::T,
-                                              sigma::T,
-                                              x::AbstractVector{T},
-                                              y::AbstractVector{T},
-                                              pad::Int,
-                                              primes::Bool) where T
-
-    # Let's limit ourselves to two-dimensional fields
-    dim = 2
-
-    cov = CovarianceFunction(dim, Matern(lambda, nu, σ = sigma))
-    grf = GaussianRandomField(cov, CirculantEmbedding(), x, y, minpadding=pad, primes=primes)
-    v = grf.data[1]
-    xi = Array{eltype(grf.cov)}(undef, size(v)..., nthreads())
-    w = Array{complex(float(eltype(v)))}(undef, size(v)..., nthreads())
-    z = Array{eltype(grf.cov)}(undef, length.(grf.pts)..., nthreads())
-
-    return RandomField(grf, xi, w, z)
-end
-
-# Get a random sample from random_field_generator using random number generator rng
-function sample_gaussian_random_field!(field::AbstractMatrix{T},
-                                       random_field_generator::RandomField,
-                                       rng::Random.AbstractRNG) where T
-
-    @. @view(random_field_generator.xi[:,:,threadid()]) = randn((rng,), T)
-    sample_gaussian_random_field!(field, random_field_generator, @view(random_field_generator.xi[:,:,threadid()]))
-
-end
-
-# Get a random sample from random_field_generator using random_numbers
-function sample_gaussian_random_field!(field::AbstractMatrix{T},
-                                       random_field_generator::RandomField,
-                                       random_numbers::AbstractArray{T}) where T
-
-    field .= GaussianRandomFields._sample!(@view(random_field_generator.w[:,:,threadid()]),
-                                           @view(random_field_generator.z[:,:,threadid()]),
-                                           random_field_generator.grf,
-                                           random_numbers)
-
-end
-
-function add_random_field!(state::AbstractArray{T,4},
-                           field_buffer::AbstractArray{T,4},
-                           generator::RandomField,
-                           rng::AbstractVector{<:Random.AbstractRNG},
-                           params::Parameters) where T
-
-    add_random_field!(state, field_buffer, generator, rng, params.n_state_var, params.nprt)
-
-end
-
-# Add a gaussian random field to the height in the state vector of all particles
-function add_random_field!(state::AbstractArray{T,4},
-                           field_buffer::AbstractArray{T,4},
-                           generator::RandomField,
-                           rng::AbstractVector{<:Random.AbstractRNG},
-                           nvar::Int,
-                           nprt::Int) where T
-
-    Threads.@threads for ip in 1:nprt
-
-        for ivar in 1:nvar
-
-            sample_gaussian_random_field!(@view(field_buffer[:, :, 1, threadid()]), generator, rng[threadid()])
-            # Add the random field only to the height component.
-            @view(state[:, :, ivar, ip]) .+= @view(field_buffer[:, :, 1, threadid()])
-
-        end
-
-    end
-
-end
-
-function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, params::Parameters) where T
-
-    add_noise!(vec, rng, 0.0, params.obs_noise_std)
-
-end
-
-# Add a (mean, std) normal distributed random number to each element of vec
-function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, mean::T, std::T) where T
-
-    d = truncated(Normal(mean, std), 0.0, Inf)
-    @. vec += rand((rng,), d)
-
-end
-
-struct SummaryStat
-    avg::Float64
-    var::Float64
-    n::Float64
+struct SummaryStat{T}
+    avg::T
+    var::T
+    n::Int
 end
 
 function SummaryStat(X::AbstractVector)
@@ -279,132 +138,6 @@ function SummaryStat(X::AbstractVector)
     v = varm(X,m, corrected=true)
     n = length(X)
     SummaryStat(m,v,n)
-end
-
-struct StateVectors{T<:AbstractArray, S<:AbstractArray}
-
-    particles::T
-    buffer::T
-    truth::S
-
-end
-
-struct ObsVectors{T<:AbstractArray,S<:AbstractArray}
-
-    truth::T
-    model::S
-
-end
-
-struct StationVectors{T<:AbstractArray}
-
-    ist::T
-    jst::T
-
-end
-
-function init_arrays(params::Parameters)
-
-    return init_arrays(params.nx, params.ny, params.n_state_var, params.nobs, params.nprt, params.master_rank)
-
-end
-
-function init_arrays(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_total::Int, master_rank::Int = 0)
-
-    # TODO: ideally this will be an argument of the function, to choose a
-    # different datatype.
-    T = Float64
-
-    nprt_per_rank = Int(nprt_total / MPI.Comm_size(MPI.COMM_WORLD))
-
-    # Do memory allocations
-
-    if MPI.Comm_rank(MPI.COMM_WORLD) == master_rank
-        weights = Vector{T}(undef, nprt_total)
-    else
-        weights = Vector{T}(undef, nprt_per_rank)
-    end
-
-    state_avg = zeros(T, nx, ny, n_state_var) # average of particle state vectors
-    state_var = zeros(T, nx, ny, n_state_var) # variance of particle state vectors
-    state_resampled = Array{T,4}(undef, nx, ny, n_state_var, nprt_per_rank)
-
-    # Model vector for data assimilation
-    #   state[:, :, 1, :]: tsunami height eta(nx,ny)
-    #   state[:, :, 2, :]: vertically integrated velocity Mx(nx,ny)
-    #   state[:, :, 3, :]: vertically integrated velocity Mx(nx,ny)
-    state_particles = zeros(T, nx, ny, n_state_var, nprt_per_rank)
-    state_truth = zeros(T, nx, ny, n_state_var) # model vector: true wavefield (observation)
-    obs_truth = Vector{T}(undef, nobs)          # observed tsunami height
-    obs_model = Matrix{T}(undef, nobs, nprt_per_rank) # forecasted tsunami height
-
-    # station location in digital grids
-    ist = Vector{Int}(undef, nobs)
-    jst = Vector{Int}(undef, nobs)
-
-    # Buffer array to be used in the tsunami update
-    field_buffer = Array{T}(undef, nx, ny, 2, nthreads())
-
-    mean_and_var = Array{SummaryStat, 3}(undef, nx, ny, n_state_var)
-
-    return StateVectors(state_particles, state_resampled, state_truth), mean_and_var, ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), weights, field_buffer
-end
-
-function set_initial_state!(states::StateVectors, model_matrices::LLW2d.Matrices{T},
-                            field_buffer::AbstractArray{T, 4},
-                            rng::AbstractVector{<:Random.AbstractRNG},
-                            nprt_per_rank::Int,
-                            params::Parameters) where T
-
-    # Set true initial state
-    LLW2d.initheight!(@view(states.truth[:, :, 1]), model_matrices, params.dx, params.dy, params.source_size)
-
-    # Create generator for the initial random field
-    x,y = get_axes(params)
-    initial_grf = init_gaussian_random_field_generator(params.lambda_initial_state,
-                                                       params.nu_initial_state,
-                                                       params.sigma_initial_state,
-                                                       x,
-                                                       y,
-                                                       params.padding,
-                                                       params.primes)
-
-    # Since states.particles is initially created as `zeros` we don't need to set it to 0 here
-    # to get the default behaviour
-
-    if params.particle_initial_state == "true"
-        states.particles .= states.truth
-    end
-
-    # Add samples of the initial random field to all particles
-    add_random_field!(states.particles, field_buffer, initial_grf, rng, params.n_state_var, nprt_per_rank)
-
-end
-
-function set_stations!(stations::StationVectors, params::Parameters) where T
-
-    set_stations!(stations.ist,
-                  stations.jst,
-                  params.station_filename,
-                  params.station_distance_x,
-                  params.station_distance_y,
-                  params.station_boundary_x,
-                  params.station_boundary_y,
-                  params.dx,
-                  params.dy)
-
-end
-
-function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::String, distance_x::T, distance_y::T, boundary_x::T, boundary_y::T, dx::T, dy::T) where T
-
-    if filename != ""
-        coords = readdlm(filename, ',', Float64, '\n'; comments=true, comment_char='#')
-        ist .= floor.(Int, coords[:,1] / dx)
-        jst .= floor.(Int, coords[:,2] / dy)
-    else
-        LLW2d.set_stations!(ist,jst,distance_x,distance_y,boundary_x,boundary_y,dx,dy)
-    end
-
 end
 
 function stats_reduction(S1::SummaryStat, S2::SummaryStat)
@@ -422,9 +155,9 @@ function stats_reduction(S1::SummaryStat, S2::SummaryStat)
 
 end
 
-function get_mean_and_var!(statistics::Array{SummaryStat,3},
-                                    particles::AbstractArray{T,4},
-                                    master_rank::Int) where T
+function get_mean_and_var!(statistics::Array{SummaryStat{T},3},
+                           particles::AbstractArray{T,4},
+                           master_rank::Int) where T
 
     Threads.@threads for idx in CartesianIndices(statistics)
         statistics[idx] = SummaryStat(@view(particles[idx,:]))
@@ -434,18 +167,12 @@ function get_mean_and_var!(statistics::Array{SummaryStat,3},
 
 end
 
-function unpack_statistics!(avg::AbstractArray{T}, var::AbstractArray{T}, statistics::AbstractArray{SummaryStat}) where T
+function unpack_statistics!(avg::AbstractArray{T}, var::AbstractArray{T}, statistics::AbstractArray{SummaryStat{T}}) where T
 
     for idx in CartesianIndices(statistics)
         avg[idx] = statistics[idx].avg
         var[idx] = statistics[idx].var
     end
-end
-
-function copy_states!(states::StateVectors, resampling_indices::Vector{Int}, my_rank::Int, nprt_per_rank::Int)
-
-    copy_states!(states.particles, states.buffer, resampling_indices, my_rank, nprt_per_rank)
-
 end
 
 function copy_states!(particles::AbstractArray{T,4},
@@ -497,7 +224,7 @@ function copy_states!(particles::AbstractArray{T,4},
 
 end
 
-function tdac(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG})
+function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -507,107 +234,81 @@ function tdac(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG})
     my_size = MPI.Comm_size(MPI.COMM_WORLD)
 
     # For now, assume that the particles can be evenly divided between ranks
-    @assert mod(params.nprt, my_size) == 0
+    @assert mod(filter_params.nprt, my_size) == 0
 
-    nprt_per_rank = Int(params.nprt / my_size)
+    nprt_per_rank = Int(filter_params.nprt / my_size)
 
-    if params.enable_timers
+    if filter_params.enable_timers
         TimerOutputs.enable_debug_timings(ParticleDA)
     end
     timer = TimerOutput()
 
-    @timeit_debug timer "Initialization" begin
+    nprt_per_rank = Int(filter_params.nprt / MPI.Comm_size(MPI.COMM_WORLD))
 
-        states, statistics, observations, stations, weights, field_buffer = init_arrays(params)
+    # Do memory allocations
+    @timeit_debug timer "Model initialization" model_data = init(model_params_dict, nprt_per_rank, my_rank)
 
-        background_grf = init_gaussian_random_field_generator(params)
+    # TODO: put the body of this block in a function
+    @timeit_debug timer "Filter initialization" begin
+        # TODO: ideally this will be an argument of the function, to choose a
+        # different datatype.
+        T = Float64
 
-        # Set up tsunami model
-        model_matrices = LLW2d.setup(params.nx,
-                                     params.ny,
-                                     params.bathymetry_setup,
-                                     params.absorber_thickness_fraction,
-                                     params.boundary_damping,
-                                     params.cutoff_depth)
+        if MPI.Comm_rank(MPI.COMM_WORLD) == filter_params.master_rank
+            weights = Vector{T}(undef, filter_params.nprt)
+        else
+            weights = Vector{T}(undef, nprt_per_rank)
+        end
 
-        set_stations!(stations, params)
+        resampling_indices = Vector{Int}(undef, filter_params.nprt)
 
-        set_initial_state!(states, model_matrices, field_buffer, rng, nprt_per_rank, params)
+        # TODO: these variables should be set in a better way
+        nx, ny, n_state_var = model_data.model_params.nx, model_data.model_params.ny, model_data.model_params.n_state_var
 
-        resampling_indices = Vector{Int}(undef,params.nprt)
+        statistics = Array{SummaryStat{T}, 3}(undef, nx, ny, n_state_var)
+        avg_arr = Array{T,3}(undef, nx, ny, n_state_var)
+        var_arr = Array{T,3}(undef, nx, ny, n_state_var)
 
-        avg_arr = Array{Float64,3}(undef, params.nx, params.ny, params.n_state_var)
-        var_arr = Array{Float64,3}(undef, params.nx, params.ny, params.n_state_var)
-
+        # Memory buffer used during copy of the states
+        copy_buffer = Array{T}(undef, nx, ny, n_state_var, nprt_per_rank)
     end
 
-    @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, states.particles, params.master_rank)
+    @timeit_debug timer "get_particles" particles = get_particles(model_data)
+    @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, particles, filter_params.master_rank)
 
-    # Write initial state + metadata
-    if(params.verbose && my_rank == params.master_rank)
-
+    # Write initial state (time = 0) + metadata
+    if(filter_params.verbose && my_rank == filter_params.master_rank)
         @timeit_debug timer "IO" begin
-            write_grid(params)
-            write_params(params)
-            write_stations(stations.ist, stations.jst, params)
             unpack_statistics!(avg_arr, var_arr, statistics)
-            write_snapshot(states.truth, avg_arr, var_arr, weights, 0, params)
+            write_snapshot(filter_params.output_filename, model_data, avg_arr, var_arr, weights, 0)
         end
     end
 
-    for it in 1:params.n_time_step
+    for it in 1:filter_params.n_time_step
 
         # integrate true synthetic wavefield
-        @timeit_debug timer "True State Update" tsunami_update!(@view(field_buffer[:, :, 1, 1]),
-                                                                @view(field_buffer[:, :, 2, 1]),
-                                                                states.truth, model_matrices, params)
-
-        # Get observation from true synthetic wavefield
-        @timeit_debug timer "Observations" get_obs!(observations.truth, states.truth, stations.ist, stations.jst, params)
+        @timeit_debug timer "True State Update and Process Noise" truth_observations = update_truth!(model_data, nprt_per_rank)
 
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads.
 
-        @timeit_debug timer "Particle State Update" Threads.@threads for ip in 1:nprt_per_rank
-
-            tsunami_update!(@view(field_buffer[:, :, 1, threadid()]), @view(field_buffer[:, :, 2, threadid()]),
-                            @view(states.particles[:, :, :, ip]), model_matrices, params)
-
-        end
-
-
-        @timeit_debug timer "Process Noise" add_random_field!(states.particles,
-                                                              field_buffer,
-                                                              background_grf,
-                                                              rng,
-                                                              params.n_state_var,
-                                                              nprt_per_rank)
-
-        # Add process noise, get observations, add observation noise (to particles)
-        @timeit_debug timer "Observations" for ip in 1:nprt_per_rank
-            get_obs!(@view(observations.model[:,ip]),
-                     @view(states.particles[:, :, :, ip]),
-                     stations.ist,
-                     stations.jst,
-                     params)
-            add_noise!(@view(observations.model[:,ip]), rng[1], params)
-        end
+        @timeit_debug timer "Particle State Update and Process Noise" model_observations = update_particles!(model_data, nprt_per_rank)
 
         @timeit_debug timer "Weights" get_log_weights!(@view(weights[1:nprt_per_rank]),
-                                                         observations.truth,
-                                                         observations.model,
-                                                         params.obs_noise_std)
+                                                       truth_observations,
+                                                       model_observations,
+                                                       filter_params.weight_std)
 
         # Gather weights to master rank and resample particles.
         # Doing MPI collectives in place to save memory allocations.
         # This style with if statmeents is recommended instead of MPI.Gather_in_place! which is a bit strange.
         # Note that only master_rank allocates memory for all particles. Other ranks only allocate
         # for their chunk of state.
-        if my_rank == params.master_rank
+        if my_rank == filter_params.master_rank
             @timeit_debug timer "MPI Gather" MPI.Gather!(nothing,
                                                          weights,
                                                          nprt_per_rank,
-                                                         params.master_rank,
+                                                         filter_params.master_rank,
                                                          MPI.COMM_WORLD)
             @timeit_debug timer "Weights" normalized_exp!(weights)
             @timeit_debug timer "Resample" resample!(resampling_indices, weights)
@@ -616,91 +317,97 @@ function tdac(params::Parameters, rng::AbstractVector{<:Random.AbstractRNG})
             @timeit_debug timer "MPI Gather" MPI.Gather!(weights,
                                                          nothing,
                                                          nprt_per_rank,
-                                                         params.master_rank,
+                                                         filter_params.master_rank,
                                                          MPI.COMM_WORLD)
         end
 
         # Broadcast resampled particle indices to all ranks
-        MPI.Bcast!(resampling_indices, params.master_rank, MPI.COMM_WORLD)
+        MPI.Bcast!(resampling_indices, filter_params.master_rank, MPI.COMM_WORLD)
 
-        @timeit_debug timer "State Copy" copy_states!(states, resampling_indices, my_rank, nprt_per_rank)
+        @timeit_debug timer "get_particles" particles = get_particles(model_data)
+        @timeit_debug timer "State Copy" copy_states!(particles, copy_buffer, resampling_indices, my_rank, nprt_per_rank)
 
-        @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, states.particles, params.master_rank)
+        @timeit_debug timer "get_particles" particles = get_particles(model_data)
+        @timeit_debug timer "Mean and Var" get_mean_and_var!(statistics, particles, filter_params.master_rank)
 
-        if my_rank == params.master_rank && params.verbose
+        if my_rank == filter_params.master_rank && filter_params.verbose
 
             @timeit_debug timer "IO" begin
                 unpack_statistics!(avg_arr, var_arr, statistics)
-                write_snapshot(states.truth, avg_arr, var_arr, weights, it, params)
+                write_snapshot(filter_params.output_filename, model_data, avg_arr, var_arr, weights, it)
             end
 
         end
 
     end
 
-    if params.enable_timers
+    if filter_params.enable_timers
 
-        if my_rank == params.master_rank
+        if my_rank == filter_params.master_rank
             print_timer(timer)
         end
 
-        if params.verbose
+        if filter_params.verbose
             # Gather string representations of timers from all ranks and write them on master
             str_timer = string(timer)
 
             # Assume the length of the timer string on master is the longest (because master does more stuff)
-            if my_rank == params.master_rank
+            if my_rank == filter_params.master_rank
                 length_timer = length(string(timer))
             else
                 length_timer = nothing
             end
 
-            length_timer = MPI.bcast(length_timer, params.master_rank, MPI.COMM_WORLD)
+            length_timer = MPI.bcast(length_timer, filter_params.master_rank, MPI.COMM_WORLD)
 
             chr_timer = Vector{Char}(rpad(str_timer,length_timer))
 
-            timer_chars = MPI.Gather(chr_timer, params.master_rank, MPI.COMM_WORLD)
+            timer_chars = MPI.Gather(chr_timer, filter_params.master_rank, MPI.COMM_WORLD)
 
-            if my_rank == params.master_rank
-                write_timers(length_timer, my_size, timer_chars, params)
+            if my_rank == filter_params.master_rank
+                @timeit_debug timer "IO" write_timers(length_timer, my_size, timer_chars, filter_params)
             end
         end
     end
 
     unpack_statistics!(avg_arr, var_arr, statistics)
 
-    return states.truth, avg_arr, var_arr
+    return get_truth(model_data), avg_arr, var_arr
 end
 
 # Initialise params struct with user-defined dict of values.
-function get_params(user_input_dict::Dict)
+function get_params(T, user_input_dict::Dict)
 
     user_input = (; (Symbol(k) => v for (k,v) in user_input_dict)...)
-    params = Parameters(;user_input...)
+    params = T(;user_input...)
 
 end
 
-# Initialise params struct with default values
-get_params() = Parameters()
+get_params(user_input_dict::Dict) = get_params(FilterParameters, user_input_dict)
 
-function get_params(path_to_input_file::String)
+# Initialise params struct with default values
+get_params() = FilterParameters()
+
+function read_input_file(path_to_input_file::String)
 
     # Read input provided in a yaml file. Overwrite default input parameters with the values provided.
     if isfile(path_to_input_file)
         user_input_dict = YAML.load_file(path_to_input_file)
-        params = get_params(user_input_dict)
-        if params.verbose
-            println("Read input parameters from ",path_to_input_file)
-        end
     else
         @warn "Input file " * path_to_input_file * " not found, using default parameters"
-        params = get_params()
+        user_input_dict = Dict()
     end
-    return params
+    return user_input_dict
 
 end
 
-function tdac(path_to_input_file::String, rng::AbstractRNG)
+"""
+    run_particle_filter(init, path_to_input_file::String)
+
+Run the particle filter.  `init` is the function which initialise the model,
+`path_to_input_file` is the path to the YAML file with the input parameters.
+"""
+function run_particle_filter(init, path_to_input_file::String)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -709,58 +416,32 @@ function tdac(path_to_input_file::String, rng::AbstractRNG)
     # Do I/O on rank 0 only and then broadcast params
     if MPI.Comm_rank(MPI.COMM_WORLD) == 0
 
-        params = get_params(path_to_input_file)
+        user_input_dict = read_input_file(path_to_input_file)
 
     else
 
-        params = nothing
+        user_input_dict = nothing
 
     end
 
-    params = MPI.bcast(params, 0, MPI.COMM_WORLD)
+    user_input_dict = MPI.bcast(user_input_dict, 0, MPI.COMM_WORLD)
 
-    rng_vec = let m = rng
-        [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
-    end;
-
-    return tdac(params, rng_vec)
+    return run_particle_filter(init, user_input_dict)
 
 end
 
-function tdac(path_to_input_file::String = "")
+"""
+    run_particle_filter(init, user_input_dict::Dict)
 
-    if !MPI.Initialized()
-        MPI.Init()
-    end
+Run the particle filter.  `init` is the function which initialise the model,
+`user_input_dict` is the list of input parameters, as a `Dict`.
+"""
+function run_particle_filter(init, user_input_dict::Dict)
 
-    # Do I/O on rank 0 only and then broadcast params
-    if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+    filter_params = get_params(FilterParameters, get(user_input_dict, "filter", Dict()))
+    model_params_dict = get(user_input_dict, "model", Dict())
 
-        params = get_params(path_to_input_file)
-
-    else
-
-        params = nothing
-
-    end
-
-    params = MPI.bcast(params, 0, MPI.COMM_WORLD)
-
-    return tdac(params)
-
-end
-
-function tdac(params::Parameters)
-
-    if !MPI.Initialized()
-        MPI.Init()
-    end
-
-    rng = let m = Random.MersenneTwister(params.random_seed + MPI.Comm_rank(MPI.COMM_WORLD))
-        [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
-    end;
-
-    return tdac(params, rng)
+    return run_particle_filter(init, filter_params, model_params_dict)
 
 end
 

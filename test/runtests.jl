@@ -1,11 +1,16 @@
 using ParticleDA
-using LinearAlgebra, Test, HDF5, Random
+using LinearAlgebra, Test, HDF5, Random, YAML
 using MPI
 using StableRNGs
 
-@testset "LLW2d" begin
-    using ParticleDA.LLW2d
+using ParticleDA: FilterParameters
 
+include(joinpath(@__DIR__, "model", "model.jl"))
+
+using .Model, .Model.LLW2d
+using .Model: ModelParameters
+
+@testset "LLW2d" begin
     dx = dy = 2e3
 
     ### set_stations!
@@ -62,15 +67,12 @@ end
 @testset "ParticleDA unit tests" begin
     dx = dy = 2e3
 
-    @test ParticleDA.get_distance(3/2000, 4/2000, 0, 0, dx, dy) == 5
-    @test ParticleDA.get_distance(10, 23, 5, 11, dx, dy) == 26000.0
-
     x = collect(reshape(1.0:9.0, 3, 3, 1))
     # stations at (1,1) (2,2) and (3,3) return diagonal of x[3,3]
     ist = [1,2,3]
     jst = [1,2,3]
     obs = Vector{Float64}(undef, 3)
-    ParticleDA.get_obs!(obs,x,3,ist,jst)
+    Model.get_obs!(obs,x,3,ist,jst)
     @test obs ≈ [1.,5.,9.]
 
     y = [1.0, 2.0]
@@ -122,7 +124,7 @@ end
     nt = 1
     # 0 input gives 0 output
     x0 = x = zeros(nx, ny, 3)
-    model_matrices = ParticleDA.LLW2d.setup(nx,ny,3.0e4, 0.1, 0.015, 10.0)
+    model_matrices = LLW2d.setup(nx,ny,3.0e4, 0.1, 0.015, 10.0)
     @test size(model_matrices.absorbing_boundary) ==
         size(model_matrices.ocean_depth) ==
         size(model_matrices.x_averaged_depth) ==
@@ -131,90 +133,91 @@ end
         size(model_matrices.land_filter_e) == (nx, ny)
     dxeta = Matrix{Float64}(undef, nx, ny)
     dyeta = Matrix{Float64}(undef, nx, ny)
-    ParticleDA.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, model_matrices)
+    Model.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, model_matrices)
     @test x ≈ x0
 
     # Initialise and update a tsunami on a small grid
     s = 4e3
     eta = reshape(@view(x[1:nx*ny]), nx, ny)
-    ParticleDA.LLW2d.initheight!(eta, model_matrices, dx, dy, s)
+    LLW2d.initheight!(eta, model_matrices, dx, dy, s)
     @test eta[2,2] ≈ 1.0
     @test sum(eta) ≈ 4.0
-    ParticleDA.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, model_matrices)
+    Model.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, model_matrices)
     @test sum(eta, dims=1) ≈ [0.98161253125 1.8161253125 0.98161253125 0.073549875 0.0 0.0 0.0 0.0 0.0 0.0]
     @test sum(eta, dims=2) ≈ [0.98161253125 1.8161253125 0.98161253125 0.073549875 0.0 0.0 0.0 0.0 0.0 0.0]'
 
     # Test gaussian random field sampling
     x = 1.:2.
     y = 1.:2.
-    grf = ParticleDA.init_gaussian_random_field_generator(1.0,1.0,1.0,x,y,0,false)
+    grf = Model.init_gaussian_random_field_generator(1.0,1.0,1.0,x,y,0,false)
     f = zeros(2, 2)
     rnn = [9.,9.,9.,9.]
-    ParticleDA.sample_gaussian_random_field!(f,grf,rnn)
+    Model.sample_gaussian_random_field!(f,grf,rnn)
     @test f ≈ [16.2387054353321 5.115956753643808; 5.115956753643809 2.8210669567042155]
 
     # Test IO
-    params = ParticleDA.get_params(joinpath(@__DIR__, "io_unit_test.yaml"))
-    rm(params.output_filename, force=true)
-    data1 = collect(reshape(1.0:(params.nx * params.ny), params.nx, params.ny, 1))
-    data2 = randn(params.nx, params.ny, 1)
+    params_dict = YAML.load_file(joinpath(@__DIR__, "io_unit_test.yaml"))
+    filter_params = ParticleDA.get_params(FilterParameters, params_dict["filter"])
+    model_params = ParticleDA.get_params(ModelParameters, params_dict["model"]["llw2d"])
+    rm(filter_params.output_filename, force=true)
+    data1 = collect(reshape(1.0:(model_params.nx * model_params.ny), model_params.nx, model_params.ny, 1))
+    data2 = randn(model_params.nx, model_params.ny, 1)
     tstep = 0
-    h5open(params.output_filename, "cw") do file
-        ParticleDA.write_field(file, @view(data1[:,:,1]), tstep, "m", params.title_syn, "height", "unit test",params)
-        ParticleDA.write_field(file, @view(data2[:,:,1]), tstep, "inch", params.title_avg,  "height", "unit test",params)
+    h5open(filter_params.output_filename, "cw") do file
+        Model.write_field(file, @view(data1[:,:,1]), tstep, "m", model_params.title_syn, "height", "unit test", model_params)
+        Model.write_field(file, @view(data2[:,:,1]), tstep, "inch", model_params.title_avg,  "height", "unit test", model_params)
     end
-    @test h5read(params.output_filename, params.state_prefix * "_" * params.title_syn * "/t0/height") ≈ data1
-    @test h5read(params.output_filename, params.state_prefix * "_" * params.title_avg * "/t0/height") ≈ data2
-    attr = h5readattr(params.output_filename, params.state_prefix * "_" * params.title_syn * "/t0/height")
+    @test h5read(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_syn * "/t0/height") ≈ data1
+    @test h5read(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_avg * "/t0/height") ≈ data2
+    attr = h5readattr(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_syn * "/t0/height")
     @test attr["Unit"] == "m"
     @test attr["Time_step"] == tstep
-    attr = h5readattr(params.output_filename, params.state_prefix * "_" * params.title_avg * "/t0/height")
+    attr = h5readattr(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_avg * "/t0/height")
     @test attr["Unit"] == "inch"
     @test attr["Time_step"] == tstep
-    ParticleDA.write_params(params)
-    attr = h5readattr(params.output_filename, params.title_params)
-    @test attr["nx"] == params.nx
-    @test attr["ny"] == params.ny
-    @test attr["dx"] == params.dx
-    @test attr["dy"] == params.dy
-    @test attr["title_avg"] == params.title_avg
-    @test attr["title_syn"] == params.title_syn
-    @test attr["verbose"] == params.verbose
-    ParticleDA.write_grid(params)
-    attr = h5readattr(params.output_filename, params.title_grid * "/x")
+    Model.write_params(filter_params.output_filename, model_params)
+    attr = h5readattr(filter_params.output_filename, model_params.title_params)
+    @test attr["nx"] == model_params.nx
+    @test attr["ny"] == model_params.ny
+    @test attr["dx"] == model_params.dx
+    @test attr["dy"] == model_params.dy
+    @test attr["title_avg"] == model_params.title_avg
+    @test attr["title_syn"] == model_params.title_syn
+    Model.write_grid(filter_params.output_filename, model_params)
+    attr = h5readattr(filter_params.output_filename, model_params.title_grid * "/x")
     @test attr["Unit"] == "m"
-    attr = h5readattr(params.output_filename, params.title_grid * "/y")
+    attr = h5readattr(filter_params.output_filename, model_params.title_grid * "/y")
     @test attr["Unit"] == "m"
 
-    stations = ParticleDA.StationVectors(zeros(Int,4), zeros(Int,4))
-    ParticleDA.set_stations!(stations, params)
+    stations = Model.StationVectors(zeros(Int,4), zeros(Int,4))
+    Model.set_stations!(stations, model_params)
     @test stations.ist == [5, 5, 10, 10]
     @test stations.jst == [5, 10, 5, 10]
-    ParticleDA.write_stations(stations.ist, stations.jst, params)
-    @test h5read(params.output_filename, params.title_stations * "/x") ≈ stations.ist .* params.dx
-    @test h5read(params.output_filename, params.title_stations * "/y") ≈ stations.jst .* params.dy
-    attr = h5readattr(params.output_filename, params.title_stations * "/x")
+    Model.write_stations(filter_params.output_filename, stations.ist, stations.jst, model_params)
+    @test h5read(filter_params.output_filename, model_params.title_stations * "/x") ≈ stations.ist .* model_params.dx
+    @test h5read(filter_params.output_filename, model_params.title_stations * "/y") ≈ stations.jst .* model_params.dy
+    attr = h5readattr(filter_params.output_filename, model_params.title_stations * "/x")
     @test attr["Unit"] == "m"
-    attr = h5readattr(params.output_filename, params.title_stations * "/y")
+    attr = h5readattr(filter_params.output_filename, model_params.title_stations * "/y")
     @test attr["Unit"] == "m"
 
-    rm(params.output_filename, force=true)
+    rm(filter_params.output_filename, force=true)
 end
 
 @testset "ParticleDA integration tests" begin
 
     # Test true state with standard parameters
-    x_true,x_avg,x_var = ParticleDA.tdac(joinpath(@__DIR__, "integration_test_1.yaml"))
+    x_true,x_avg,x_var = ParticleDA.run_particle_filter(Model.init, joinpath(@__DIR__, "integration_test_1.yaml"))
     data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_1")
     @test x_true ≈ data_true
 
     # Test true state with different parameters
-    x_true,x_avg,x_var = ParticleDA.tdac(joinpath(@__DIR__, "integration_test_2.yaml"))
+    x_true,x_avg,x_var = ParticleDA.run_particle_filter(Model.init, joinpath(@__DIR__, "integration_test_2.yaml"))
     data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_2")
     @test x_true ≈ data_true
 
     # Test particle state with ~zero noise
-    x_true,x_avg,x_var = ParticleDA.tdac(joinpath(@__DIR__, "integration_test_3.yaml"))
+    x_true,x_avg,x_var = ParticleDA.run_particle_filter(Model.init, joinpath(@__DIR__, "integration_test_3.yaml"))
     @test x_true ≈ x_avg
     @test x_var .+ 1.0 ≈ ones(size(x_var))
 
@@ -222,13 +225,15 @@ end
 
         # Test particle state with noise
         rng = StableRNG(123)
-        x_true,x_avg,x_var = ParticleDA.tdac(joinpath(@__DIR__, "integration_test_4.yaml"), rng)
+        init_with_rng = (model_params_dict, nprt_per_rank, my_rank) -> Model.init(model_params_dict, nprt_per_rank, my_rank, rng)
+        x_true,x_avg,x_var = ParticleDA.run_particle_filter(init_with_rng, joinpath(@__DIR__, "integration_test_4.yaml"))
         avg_ref = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_4")
         @test x_avg ≈ avg_ref
 
         # Test that different seed gives different result
         rng = StableRNG(124)
-        x_true,x_avg,x_var = ParticleDA.tdac(joinpath(@__DIR__, "integration_test_4.yaml"), rng)
+        init_with_rng = (model_params_dict, nprt_per_rank, my_rank) -> Model.init(model_params_dict, nprt_per_rank, my_rank, rng)
+        x_true,x_avg,x_var = ParticleDA.run_particle_filter(init_with_rng, joinpath(@__DIR__, "integration_test_4.yaml"))
         @test !(x_avg ≈ avg_ref)
 
     end

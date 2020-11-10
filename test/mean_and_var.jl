@@ -18,7 +18,7 @@ for i = 1:my_size
     MPI.Barrier(MPI.COMM_WORLD)
 end
 
-stats = Array{ParticleDA.SummaryStat,3}(undef, 1, 1, 1)
+stats = Array{ParticleDA.SummaryStat{Float64},3}(undef, 1, 1, 1)
 ParticleDA.get_mean_and_var!(stats,reshape(local_particles,1,1,1,nprt_per_rank),0)
 
 global_particles = MPI.Gather(local_particles, 0, MPI.COMM_WORLD)
