@@ -1,6 +1,8 @@
 using FFTW
 using LinearAlgebra
 using Test
+using SparseArrays
+using Random
 
 Base.@kwdef struct TestParameters{T<:AbstractFloat}
 
@@ -17,6 +19,8 @@ Base.@kwdef struct TestParameters{T<:AbstractFloat}
     sigma_obs::T = 1.0
     nobs = 4
 
+    nprt = 2
+
 end
 
 struct StationVectors{T<:AbstractArray}
@@ -26,6 +30,20 @@ struct StationVectors{T<:AbstractArray}
 
 end
 
+struct Matrices{T<:AbstractArray, S<:AbstractArray, U<:AbstractArray}
+
+    rho_bar::S
+    R12::T
+    R21_bar::T
+    R22::T # Covariance between observation stations
+    R22_inv::T # Inverse of R22
+    R12_invR22::T
+    Lambda::S
+    K::U
+    L::T
+    mu20::T
+
+end
 
 # Covariance function r(x,y), equation 1 in Dietrich and Newsam 96
 function covariance(x::T, y::T, params::TestParameters) where T
@@ -58,44 +76,49 @@ function extended_covariance(x::T, y::T, params::TestParameters) where T
 end
 
 # Covariance between observations and the extended grid /bar R_21, from equation 11 in Dietrich & Newsam 96
-function covariance_stations_extended_grid!(cov::AbstractArray{T,3}, params::TestParameters, stations::StationVectors) where T
+function covariance_stations_extended_grid!(cov::AbstractMatrix{T}, params::TestParameters, stations::StationVectors) where T
 
-    xid = (0:2*params.nx - 1)'
-    yid = (0:2*params.ny - 1)
+    xid = 0:2*params.nx - 1
+    yid = 0:2*params.ny - 1
 
-    @assert size(cov,1) == params.nobs
-    @assert size(cov,2) == length(xid)
-    @assert size(cov,3) == length(yid)
+    c = CartesianIndices((xid, yid))[:]
 
-    # TODO: Use CartesianIndices instead of i
+    linear_xid = map(i->i[1], c)
+    linear_yid = map(i->i[2], c)
+
+    @assert size(cov) == (params.nobs, length(c))
+
     for (i,ist,jst) in zip(1:params.nobs, stations.ist, stations.jst)
-        x = abs.(xid .- ist) .* params.dx
-        y = abs.(yid .- jst) .* params.dy
-        cov[i,:,:] = extended_covariance.(x, y, Ref(params))
+        x = abs.(linear_xid .- ist) * params.dx
+        y = abs.(linear_yid .- jst) * params.dy
+        cov[i,:] = extended_covariance.(x, y, Ref(params))[:]
     end
 
 end
 
-function covariance_stations_grid!(cov::AbstractArray{T,3}, params::TestParameters, stations::StationVectors) where T
+function covariance_stations_grid!(cov::AbstractMatrix{T}, params::TestParameters, stations::StationVectors) where T
 
-    xid = (0:params.nx)'
-    yid = (0:params.ny)
+    xid = 0:params.nx
+    yid = 0:params.ny
 
-    @assert size(cov,1) == params.nobs
-    @assert size(cov,2) == length(xid)
-    @assert size(cov,3) == length(yid)
+    c = CartesianIndices((xid, yid))[:]
 
-    # TODO: Use CartesianIndices instead of i
+    @assert size(cov) == (length(c), params.nobs)
+
+    linear_xid = map(i->i[1], c)
+    linear_yid = map(i->i[2], c)
+
     for (i,ist,jst) in zip(1:params.nobs, stations.ist, stations.jst)
-        x = abs.(xid .- ist) .* params.dx
-        y = abs.(yid .- jst) .* params.dy
-        cov[i,:,:] = extended_covariance.(x, y, Ref(params))
+        x = abs.(linear_xid .- ist) .* params.dx
+        y = abs.(linear_yid .- jst) .* params.dy
+        cov[:,i] = extended_covariance.(x, y, Ref(params))
     end
 
 end
 
-# Covariance between observations R_22, from equation 11 in in Dietrich & Newsam 96
-function covariance_stations!(cov::AbstractArray{T,2}, params::TestParameters, stations::StationVectors) where T
+# Covariance between observations R_22, from equation 3 in in Dietrich & Newsam 96
+# TODO: Ask Alex why we add sigma^2 on the diagonal
+function covariance_stations!(cov::AbstractMatrix{T}, params::TestParameters, stations::StationVectors) where T
 
     x = abs.(stations.ist .- stations.ist') * params.dx
     y = abs.(stations.jst' .- stations.jst) * params.dy
@@ -103,60 +126,212 @@ function covariance_stations!(cov::AbstractArray{T,2}, params::TestParameters, s
     @assert size(cov) == size(x)
     @assert size(cov) == size(y)
 
-    cov .= covariance.(x, y, Ref(params)) + I(length(stations.ist)) * params.sigma_obs^2
+    cov .= covariance.(x, y, Ref(params)) + I(params.nobs) * params.sigma_obs^2
 
 end
 
-function normalized_2d_fft!(transformed_array::AbstractArray{T}, array::AbstractArray{T}, params::TestParameters) where T
+# First column vector rho_bar of covariance matrix among pairs of points of the extended grid R11_bar,
+# from Dietrich & Newsam 96 described in text between equations 11 and 12
+function first_column_covariance_extended_grid!(rho::AbstractVector{T}, params::TestParameters) where T
+
+    xid = 0:2*params.nx - 1
+    yid = 0:2*params.ny - 1
+
+    c = CartesianIndices((xid, yid))[:]
+
+    linear_xid = map(i->i[1], c)
+    linear_yid = map(i->i[2], c)
+
+    @assert length(rho) == length(c)
+
+    x = linear_xid * params.dx
+    y = linear_yid * params.dy
+    rho .= extended_covariance.(x, y, Ref(params))[:]
+
+
+end
+
+function normalized_2d_fft!(transformed_array::AbstractArray{T}, array::AbstractArray{S}, params::TestParameters) where {T,S}
 
     normalization_factor = 1.0 / sqrt(4 * params.nx * params.ny)
     transformed_array .= fft(array) .* normalization_factor
 
 end
 
-function normalized_inverse_2d_fft!(transformed_array::AbstractArray{T}, array::AbstractArray{T}, params::TestParameters) where T
+function normalized_2d_fft!(transformed_vector::AbstractVector{T}, vector::AbstractVector{S}, params::TestParameters) where {T,S}
+
+    normalization_factor = 1.0 / sqrt(4 * params.nx * params.ny)
+    transformed_vector .= fft(reshape(vector, 2*params.nx, 2*params.ny))[:] .* normalization_factor
+
+end
+
+function normalized_inverse_2d_fft!(transformed_array::AbstractArray{T}, array::AbstractArray{S}, params::TestParameters) where {T,S}
 
     normalization_factor = sqrt(4 * params.nx * params.ny)
     transformed_array .= ifft(array) .* normalization_factor
 
 end
 
-# Decomposition of R11, equation 12 of Deitrich and Newsam
-function WΛWH_decomposition!(transformed_array::AbstractArray{T}, array::AbstractArray{T}, params::TestParameters) where T
+function normalized_inverse_2d_fft!(transformed_vector::AbstractVector{T}, vector::AbstractVector{S}, params::TestParameters) where {T,S}
 
-    @assert size(array) == (params.nx + 1, params.ny + 1)
-
-    extended_array = zeros(2*params.nx, 2*params.ny)
-
-    extended_array[1:params.nx+1, 1:params.ny+1] .= array
-
-    x = 1:2*params.nx * params.dx
-    y = 1:2*params.ny * params.dy
-
-    cov_ext = covariance.(x',y, Ref(params))
-
-    #TODO: Ask Alex about dimension of bar_rho and multiplication with Diagonal(Lambda)
+    normalization_factor = sqrt(4 * params.nx * params.ny)
+    transformed_vector .= ifft(reshape(vector, 2 * params.nx, 2 * params.ny))[:] .* normalization_factor
 
 end
 
-function calculate_mean_height!(mean::AbstractArray{T,3}, height::AbstractArray{T,3}, buffer::AbstractArray{T,2},
-                                covariance_stations::AbstractMatrix{T}, inv_covariance_stations::AbstractMatrix{T},
-                                observations::AbstractVector{T}, params::TestParameters)
+# Decomposition of R11, equation 12 of Deitrich and Newsam
+function WΛWH_decomposition!(transformed_array::AbstractArray{T}, array::AbstractArray{T},
+                             offline_matrices::Matrices, params::TestParameters) where T
 
-    mu20 = params.sigma_obs^(-2) * (covariance_stations - I(params.nobs) * params.sigma_obs)
-    mu21 = zeros(2*params.nx, 2*params.ny)
-    mu22 = zeros(2*params.nx, 2*params.ny)
+    @assert size(array) == (params.nx + 1, params.ny + 1)
 
-    buffer = inv_covariance_stations * (mu20 * observations)
+    extended_array = zeros(ComplexF64, 2*params.nx, 2*params.ny)
+
+    extended_array[1:params.nx+1, 1:params.ny+1] .= array
+
+    normalized_inverse_2d_fft!(extended_array, extended_array, params)
+    normalized_2d_fft!(extended_array, reshape(offline_matrices.Lambda, 2*params.nx, 2*params.ny).*extended_array, params)
+
+    transformed_array .= real.(@view(extended_array[1:params.nx+1, 1:params.ny+1]))
+
+end
+
+# Get a vector of values of field at positions of [stations.ist, stations.jst]
+function get_values_at_stations(field::AbstractMatrix{T}, stations::StationVectors) where T
+
+    values = zeros(T, length(stations.ist))
+
+    for (num,(i,j)) in enumerate(zip(stations.ist, stations.jst))
+        values[num] = field[i,j]
+    end
+
+    return values
+
+end
+
+function init_offline_matrices(params, stations)
+
+    n1 = (params.nx + 1) * (params.ny + 1) # number of elements in original grid
+    n1_bar = 4 * params.nx * params.ny # number of elements in extended grid
+
+    F = Float64
+    C = ComplexF64
+
+    matrices = Matrices(Vector{F}(undef, n1_bar), #rho_bar
+                        Matrix{F}(undef, n1, params.nobs), #R12
+                        Matrix{F}(undef, params.nobs, n1_bar), #R21_bar
+                        Matrix{F}(undef, params.nobs, params.nobs), #R22
+                        Matrix{F}(undef, params.nobs, params.nobs), #R22_inv
+                        Matrix{F}(undef, n1, params.nobs), #R12_invR22
+                        Vector{F}(undef, n1_bar), #Lambda (diagonal elements)
+                        Matrix{C}(undef, params.nobs, n1_bar), #K
+                        Matrix{F}(undef, params.nobs, params.nobs), #L
+                        Matrix{F}(undef, params.nobs, params.nobs) #mu20
+                        )
+
+    first_column_covariance_extended_grid!(matrices.rho_bar, params)
+    covariance_stations_grid!(matrices.R12, params, stations)
+    covariance_stations_extended_grid!(matrices.R21_bar, params, stations)
+    covariance_stations!(matrices.R22, params, stations)
+    matrices.R22_inv .= inv(matrices.R22)
+    matrices.R12_invR22 .= matrices.R12 * matrices.R22_inv
+
+    fourier_coeffs = Vector{ComplexF64}(undef, n1_bar)
+    normalized_2d_fft!(fourier_coeffs, matrices.rho_bar, params)
+    matrices.Lambda .= sqrt(4 * params.nx * params.ny) * real.(fourier_coeffs)   
+
+    WHbar_R12 = Matrix{C}(undef, n1_bar, params.nobs)
+    for i in 1:params.nobs
+        normalized_inverse_2d_fft!(@view(WHbar_R12[:,i]), @view(matrices.R21_bar[i,:]), params)
+    end
+    KH = Diagonal(matrices.Lambda)^(-1/2)*WHbar_R12
+    matrices.K .= KH'
     
-    WΛWH_decomposition(mu21, buffer, params)
-    WΛWH_decomposition(mu22, buffer, params)
+    A = real.(matrices.R22 - matrices.K*KH)
+    if ishermitian(A)
+        matrices.L .= cholesky(A).L
+    end
+
+    matrices.mu20 .= params.sigma_obs^(-2) * (matrices.R22 - I(params.nobs) * params.sigma_obs)
+    
+    return matrices
+    
+end
+
+# Calculate the mean for the optimal proposal of the height
+function calculate_mean_height!(mean::AbstractArray{T,3}, height::AbstractArray{T,3},
+                                buffer1::AbstractMatrix{T}, buffer2::AbstractMatrix{T},
+                                offline_matrices::Matrices, observations::AbstractVector{T},
+                                stations::StationVectors, params::TestParameters) where T
+
+    # The arguments for the WΛWH decompositions are matrices that only have nonzero values
+    # at the indices of the stations. Store them as sparse arrays to save space.
+    mu21 = sparse(stations.ist, stations.jst,
+                  offline_matrices.R22_inv * (offline_matrices.mu20 * observations),
+                  params.nx+1, params.ny+1)
+    mu22 = params.sigma_obs^(-2) * sparse(stations.ist, stations.jst,
+                                          observations,
+                                          params.nx+1, params.ny+1)
+
+    # Compute WΛWH decompositions, results are dense matrices, store them in buffers
+    # These correspond to mu21 and mu22 in Alex's code
+    WΛWH_decomposition!(buffer1, mu21, offline_matrices, params)
+    WΛWH_decomposition!(buffer2, mu22, offline_matrices, params)
+
+    # Compute the difference of the decomposition results, store in buffer1
+    # This corresponds to mu2 in Alex's code.
+    # TODO: Check if WΛWH is linear and you could swap the order
+    buffer2 .-= buffer1
+
+    mu10 = Vector{T}(undef, params.nobs)
+    
+    # Loop over particles
+    for iprt = 1:params.nprt
+
+        mu10 .= offline_matrices.R22_inv * get_values_at_stations(@view(height[iprt,:,:]), stations)
+        mu10_sparse = sparse(stations.ist, stations.jst, mu10, params.nx+1, params.ny+1)
+        
+        # Compute decomposition of height values at stations times the inverse covariance matrix
+        # The argument corresponds to mu10 and the outcome to mu11 in Alex's code
+        WΛWH_decomposition!(buffer1, mu10_sparse, offline_matrices, params)
+
+        # Compute the mean for the ith particle using mu2 and mu11
+        # Skip storing the temporary mu1 in Alex's code
+        mean[iprt,:,:] .= @view(height[iprt,:,:]) - buffer1 + buffer2
+
+    end
+
+end
+
+function sample_height_proposal!(samples::AbstractArray{T,3}, height::AbstractArray{T,3}, offline_matrices::Matrices,
+                                 buffer1::AbstractMatrix{T}, buffer2::AbstractMatrix{T},
+                                 observations::AbstractVector{T}, stations::StationVectors, params::TestParameters,
+                                 rng::Random.AbstractRNG) where T
+
+    @assert params.nprt % 2 == 0 "Number of particles must be even"
+
+    calculate_mean_height!(mean, height, buffer1, buffer2,
+                           offline_matrices, observations, stations, params)
+
+    nd = Normal(0,1)
+
+    for iprt in 1:params.nprt/2
+        # TODO randn(ComplexF64) seems to set variance = 1/2. Could not find how to change that.
+        # Can I create a Normal(0,1) distribution of complex type?
+        # TODO we could pre-create all our random numbers in one go before the loop, would that be faster?
+        e1 = rand(rng, nd, 2*params.ny) + rand(rnd, nd, 2*params.ny)im
+        e2 = rand(rng, nd, params.nobs) + rand(rng, nd, params.nobs)im
+
+        # This gives the vector z1_bar
+        WΛWH_decomposition!(buffer1, Diagonal(offline_matrices.Lambda)^(1/2) * e1, params)
+        buffer2 .= offline_matrices.K * e1 + offline_matrices.L * e2
+    end
 
 end
 
 @testset "Optimal Filter unit tests" begin
     params = TestParameters()
-    stations = StationVectors([0,0,1,1],[0,1,0,1])
+    stations = StationVectors([1,1,2,2],[1,2,1,2])
     cov_ext = extended_covariance(0.0, 1.0, params)
     @test cov_ext ≈ exp(-1/20)
     @test cov_ext ≈ extended_covariance(4.0, 1.0, params)
@@ -168,14 +343,26 @@ end
     normalized_inverse_2d_fft!(arr3,arr2,params)
     @test arr ≈ arr3
 
-    cov_1 = zeros(params.nobs,2*params.nx,2*params.ny)
-    cov_2 = zeros(params.nobs,1+params.nx,1+params.ny)
+    cov_1 = zeros(params.nobs,4*params.nx*params.ny)
+    cov_2 = zeros((1+params.nx)*(1+params.ny), params.nobs)
     cov_3 = zeros(params.nobs,params.nobs)
     covariance_stations_extended_grid!(cov_1,params,stations)
     covariance_stations_grid!(cov_2,params,stations)
     covariance_stations!(cov_3,params,stations)
-    @test norm(cov_1) ≈ 36.25505783799344
-    @test norm(cov_2) ≈ 20.107727592303476
-    @test norm(cov_3) ≈ 5.261629704099609
+    @test all(isfinite.(cov_1))
+    @test all(isfinite.(cov_2))
+    @test all(isfinite.(cov_3))
     @test cov_3 == Symmetric(cov_3)
+
+    Random.seed!(123)
+    mean = Array{Float64}(undef, params.nprt, params.nx+1, params.ny+1)
+    height = rand(params.nprt, params.nx+1, params.ny+1)
+    obs = rand(params.nobs)
+    buf1 = Matrix{Float64}(undef, params.nx+1, params.ny+1)
+    buf2 = copy(buf1)
+    mat = init_offline_matrices(params, stations)
+    @test minimum(mat.Lambda) > 0.0
+    calculate_mean_height!(mean, height, buf1, buf2, mat, obs, stations, params)
+    @test all(isfinite.(mean))
+    
 end
