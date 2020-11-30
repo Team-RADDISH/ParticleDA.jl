@@ -3,6 +3,7 @@ using LinearAlgebra
 using Test
 using SparseArrays
 using Random
+using Distributions
 
 Base.@kwdef struct TestParameters{T<:AbstractFloat}
 
@@ -30,7 +31,7 @@ struct StationVectors{T<:AbstractArray}
 
 end
 
-struct Matrices{T<:AbstractArray, S<:AbstractArray, U<:AbstractArray}
+struct OfflineMatrices{T<:AbstractArray, S<:AbstractArray, U<:AbstractArray}
 
     rho_bar::S
     R12::T
@@ -42,6 +43,20 @@ struct Matrices{T<:AbstractArray, S<:AbstractArray, U<:AbstractArray}
     K::U
     L::T
     mu20::T
+
+    buf1::T
+    buf2::T
+
+end
+
+
+struct OnlineMatrices{T<:AbstractVector, S<:AbstractArray}
+
+    z1_bar::T
+    z2::T
+
+    Z1::S
+    Z2::S
 
 end
 
@@ -151,7 +166,7 @@ function first_column_covariance_extended_grid!(rho::AbstractVector{T}, params::
 
 end
 
-function normalized_2d_fft!(transformed_array::AbstractArray{T}, array::AbstractArray{S}, params::TestParameters) where {T,S}
+function normalized_2d_fft!(transformed_array::AbstractMatrix{T}, array::AbstractMatrix{S}, params::TestParameters) where {T,S}
 
     normalization_factor = 1.0 / sqrt(4 * params.nx * params.ny)
     transformed_array .= fft(array) .* normalization_factor
@@ -165,7 +180,7 @@ function normalized_2d_fft!(transformed_vector::AbstractVector{T}, vector::Abstr
 
 end
 
-function normalized_inverse_2d_fft!(transformed_array::AbstractArray{T}, array::AbstractArray{S}, params::TestParameters) where {T,S}
+function normalized_inverse_2d_fft!(transformed_array::AbstractMatrix{T}, array::AbstractMatrix{S}, params::TestParameters) where {T,S}
 
     normalization_factor = sqrt(4 * params.nx * params.ny)
     transformed_array .= ifft(array) .* normalization_factor
@@ -180,8 +195,8 @@ function normalized_inverse_2d_fft!(transformed_vector::AbstractVector{T}, vecto
 end
 
 # Decomposition of R11, equation 12 of Deitrich and Newsam
-function WΛWH_decomposition!(transformed_array::AbstractArray{T}, array::AbstractArray{T},
-                             offline_matrices::Matrices, params::TestParameters) where T
+function WΛWH_decomposition!(transformed_array::AbstractMatrix{T}, array::AbstractMatrix{T},
+                             offline_matrices::OfflineMatrices, params::TestParameters) where T
 
     @assert size(array) == (params.nx + 1, params.ny + 1)
 
@@ -209,25 +224,28 @@ function get_values_at_stations(field::AbstractMatrix{T}, stations::StationVecto
 
 end
 
-function init_offline_matrices(params, stations)
+function init_offline_matrices(params::TestParameters, stations::StationVectors)
 
     n1 = (params.nx + 1) * (params.ny + 1) # number of elements in original grid
-    n1_bar = 4 * params.nx * params.ny # number of elements in extended grid
+    n1_bar = 4 * params.nx * params.ny     # number of elements in extended grid
 
     F = Float64
     C = ComplexF64
 
-    matrices = Matrices(Vector{F}(undef, n1_bar), #rho_bar
-                        Matrix{F}(undef, n1, params.nobs), #R12
-                        Matrix{F}(undef, params.nobs, n1_bar), #R21_bar
-                        Matrix{F}(undef, params.nobs, params.nobs), #R22
-                        Matrix{F}(undef, params.nobs, params.nobs), #R22_inv
-                        Matrix{F}(undef, n1, params.nobs), #R12_invR22
-                        Vector{F}(undef, n1_bar), #Lambda (diagonal elements)
-                        Matrix{C}(undef, params.nobs, n1_bar), #K
-                        Matrix{F}(undef, params.nobs, params.nobs), #L
-                        Matrix{F}(undef, params.nobs, params.nobs) #mu20
-                        )
+    matrices = OfflineMatrices(Vector{F}(undef, n1_bar),                   #rho_bar
+                               Matrix{F}(undef, n1, params.nobs),          #R12
+                               Matrix{F}(undef, params.nobs, n1_bar),      #R21_bar
+                               Matrix{F}(undef, params.nobs, params.nobs), #R22
+                               Matrix{F}(undef, params.nobs, params.nobs), #R22_inv
+                               Matrix{F}(undef, n1, params.nobs),          #R12_invR22
+                               Vector{F}(undef, n1_bar),                   #Lambda (diagonal elements)
+                               Matrix{C}(undef, params.nobs, n1_bar),      #K
+                               Matrix{F}(undef, params.nobs, params.nobs), #L
+                               Matrix{F}(undef, params.nobs, params.nobs), #mu20
+
+                               Matrix{F}(undef, params.nx+1, params.ny+1), #buf1
+                               Matrix{F}(undef, params.nx+1, params.ny+1)  #buf2
+                               )
 
     first_column_covariance_extended_grid!(matrices.rho_bar, params)
     covariance_stations_grid!(matrices.R12, params, stations)
@@ -238,7 +256,7 @@ function init_offline_matrices(params, stations)
 
     fourier_coeffs = Vector{ComplexF64}(undef, n1_bar)
     normalized_2d_fft!(fourier_coeffs, matrices.rho_bar, params)
-    matrices.Lambda .= sqrt(4 * params.nx * params.ny) * real.(fourier_coeffs)   
+    matrices.Lambda .= sqrt(4 * params.nx * params.ny) * real.(fourier_coeffs)
 
     WHbar_R12 = Matrix{C}(undef, n1_bar, params.nobs)
     for i in 1:params.nobs
@@ -246,22 +264,39 @@ function init_offline_matrices(params, stations)
     end
     KH = Diagonal(matrices.Lambda)^(-1/2)*WHbar_R12
     matrices.K .= KH'
-    
+
     A = real.(matrices.R22 - matrices.K*KH)
     if ishermitian(A)
         matrices.L .= cholesky(A).L
     end
 
     matrices.mu20 .= params.sigma_obs^(-2) * (matrices.R22 - I(params.nobs) * params.sigma_obs)
-    
+
     return matrices
-    
+
+end
+
+function init_online_matrices(params::TestParameters)
+
+    n1 = (params.nx + 1) * (params.ny + 1) # number of elements in original grid
+    n1_bar = 4 * params.nx * params.ny # number of elements in extended grid
+
+    C = ComplexF64
+
+    matrices = OnlineMatrices(Vector{C}(undef, n1_bar),
+                              Vector{C}(undef, params.nobs),
+                              Matrix{C}(undef, params.nx+1, params.ny+1),
+                              Matrix{C}(undef, params.nx+1, params.ny+1)
+                              )
+
+    return matrices
+
+
 end
 
 # Calculate the mean for the optimal proposal of the height
 function calculate_mean_height!(mean::AbstractArray{T,3}, height::AbstractArray{T,3},
-                                buffer1::AbstractMatrix{T}, buffer2::AbstractMatrix{T},
-                                offline_matrices::Matrices, observations::AbstractVector{T},
+                                offline_matrices::OfflineMatrices, observations::AbstractVector{T},
                                 stations::StationVectors, params::TestParameters) where T
 
     # The arguments for the WΛWH decompositions are matrices that only have nonzero values
@@ -275,56 +310,69 @@ function calculate_mean_height!(mean::AbstractArray{T,3}, height::AbstractArray{
 
     # Compute WΛWH decompositions, results are dense matrices, store them in buffers
     # These correspond to mu21 and mu22 in Alex's code
-    WΛWH_decomposition!(buffer1, mu21, offline_matrices, params)
-    WΛWH_decomposition!(buffer2, mu22, offline_matrices, params)
+    WΛWH_decomposition!(offline_matrices.buf1, mu21, offline_matrices, params)
+    WΛWH_decomposition!(offline_matrices.buf2, mu22, offline_matrices, params)
 
-    # Compute the difference of the decomposition results, store in buffer1
+    # Compute the difference of the decomposition results, store in offline_matrices.buf1
     # This corresponds to mu2 in Alex's code.
     # TODO: Check if WΛWH is linear and you could swap the order
-    buffer2 .-= buffer1
+    offline_matrices.buf2 .-= offline_matrices.buf1
 
     mu10 = Vector{T}(undef, params.nobs)
-    
+
     # Loop over particles
     for iprt = 1:params.nprt
 
         mu10 .= offline_matrices.R22_inv * get_values_at_stations(@view(height[iprt,:,:]), stations)
         mu10_sparse = sparse(stations.ist, stations.jst, mu10, params.nx+1, params.ny+1)
-        
+
         # Compute decomposition of height values at stations times the inverse covariance matrix
         # The argument corresponds to mu10 and the outcome to mu11 in Alex's code
-        WΛWH_decomposition!(buffer1, mu10_sparse, offline_matrices, params)
+        WΛWH_decomposition!(offline_matrices.buf1, mu10_sparse, offline_matrices, params)
 
         # Compute the mean for the ith particle using mu2 and mu11
         # Skip storing the temporary mu1 in Alex's code
-        mean[iprt,:,:] .= @view(height[iprt,:,:]) - buffer1 + buffer2
+        mean[iprt,:,:] .= @view(height[iprt,:,:]) - offline_matrices.buf1 + offline_matrices.buf2
 
     end
 
 end
 
-function sample_height_proposal!(samples::AbstractArray{T,3}, height::AbstractArray{T,3}, offline_matrices::Matrices,
-                                 buffer1::AbstractMatrix{T}, buffer2::AbstractMatrix{T},
+function sample_height_proposal!(samples::AbstractArray{T,3}, height::AbstractArray{T,3}, mean::AbstractArray{T,3},
+                                 offline_matrices::OfflineMatrices, online_matrices::OnlineMatrices,
                                  observations::AbstractVector{T}, stations::StationVectors, params::TestParameters,
-                                 rng::Random.AbstractRNG) where T
+                                 rng::Random.AbstractRNG) where {T,S}
 
     @assert params.nprt % 2 == 0 "Number of particles must be even"
 
-    calculate_mean_height!(mean, height, buffer1, buffer2,
-                           offline_matrices, observations, stations, params)
+    calculate_mean_height!(mean, height, offline_matrices, observations, stations, params)
 
+    #TODO: Can you create a Normal(0,1) distribution of complex type?
     nd = Normal(0,1)
 
-    for iprt in 1:params.nprt/2
+    i_n1 = LinearIndices((params.nx+1, params.ny+1))
+    i_n1_bar = LinearIndices((2*params.nx, 2*params.ny))
+
+    for iprt in 1:2:params.nprt
         # TODO randn(ComplexF64) seems to set variance = 1/2. Could not find how to change that.
-        # Can I create a Normal(0,1) distribution of complex type?
         # TODO we could pre-create all our random numbers in one go before the loop, would that be faster?
-        e1 = rand(rng, nd, 2*params.ny) + rand(rnd, nd, 2*params.ny)im
+        e1 = rand(rng, nd, 4*params.nx*params.ny) + rand(rng, nd, 4*params.nx*params.ny)im
         e2 = rand(rng, nd, params.nobs) + rand(rng, nd, params.nobs)im
 
         # This gives the vector z1_bar
-        WΛWH_decomposition!(buffer1, Diagonal(offline_matrices.Lambda)^(1/2) * e1, params)
-        buffer2 .= offline_matrices.K * e1 + offline_matrices.L * e2
+        normalized_2d_fft!(online_matrices.z1_bar, Diagonal(offline_matrices.Lambda)^(1/2) * e1, params)
+
+        # This is the vector z2
+        online_matrices.z2 .= offline_matrices.K * e1 + offline_matrices.L * e2
+
+        # Restrict z1_bar to Omega1 and reshape into an array
+        online_matrices.Z1 .= online_matrices.z1_bar[i_n1_bar[1:params.nx+1,1:params.nx+1]]
+        # Multiply z2 with R12*R22^-1 and reshape the result into an array
+        online_matrices.Z2 .= (offline_matrices.R12_invR22 * online_matrices.z2)[i_n1]
+
+        samples[iprt,    :,:] .= mean[iprt,:,:] + real.(online_matrices.Z1) - real.(online_matrices.Z2)
+        samples[iprt + 1,:,:] .= mean[iprt,:,:] + imag.(online_matrices.Z1) - imag.(online_matrices.Z2)
+
     end
 
 end
@@ -354,15 +402,20 @@ end
     @test all(isfinite.(cov_3))
     @test cov_3 == Symmetric(cov_3)
 
-    Random.seed!(123)
+    seed = 123
+    Random.seed!(seed)
     mean = Array{Float64}(undef, params.nprt, params.nx+1, params.ny+1)
     height = rand(params.nprt, params.nx+1, params.ny+1)
     obs = rand(params.nobs)
-    buf1 = Matrix{Float64}(undef, params.nx+1, params.ny+1)
-    buf2 = copy(buf1)
-    mat = init_offline_matrices(params, stations)
-    @test minimum(mat.Lambda) > 0.0
-    calculate_mean_height!(mean, height, buf1, buf2, mat, obs, stations, params)
+    mat_off = init_offline_matrices(params, stations)
+    @test minimum(mat_off.Lambda) > 0.0
+    calculate_mean_height!(mean, height, mat_off, obs, stations, params)
     @test all(isfinite.(mean))
-    
+
+    rng = Random.MersenneTwister(seed)
+    mat_on = init_online_matrices(params)
+    samples = Array{Float64}(undef, params.nprt, params.nx+1, params.ny+1)
+    sample_height_proposal!(samples, height, mean, mat_off, mat_on, obs, stations, params, rng)
+    @test all(isfinite.(samples))
+
 end
