@@ -428,3 +428,47 @@ end
     @test all(isfinite.(samples))
 
 end
+
+@testset "Optimal Filter validation" begin
+
+    seed = 123
+    Random.seed!(seed)
+    rng = Random.MersenneTwister(seed)
+    
+    include("/Users/tkoskela/git_repos/raddish/mini_apps/optimal_particle_filter/Sample_Optimal_Height_Proposal.jl");
+    
+    params = TestParameters(nprt=2)
+    stations = StationVectors(st.st_ij[:,1], st.st_ij[:,2])
+    
+    h(x,y) = 1 - (x-params.nx-1)^2 - (y-params.ny-1)^2 + randn()
+    height = zeros(params.nprt, params.nx+1, params.ny+1)
+    x = (1:params.nx+1) .* params.dx
+    y = (1:params.ny+1) .* params.dy
+    for i = 1:params.nprt
+        height[i,:,:] = h.(x',y)
+    end
+    
+    obs = zeros(params.nobs)
+    for i = 1:params.nobs
+        obs[i] = height[1,stations.ist[i], stations.jst[i]] + rand()
+    end
+    
+    mean_height = Array{Float64}(undef, params.nprt, params.nx+1, params.ny+1)
+    samples = Array{Float64}(undef, params.nprt, params.nx+1, params.ny+1)
+    
+    mat_off = init_offline_matrices(params, stations)
+    mat_on = init_online_matrices(params)
+    
+    calculate_mean_height!(mean_height, height, mat_off, obs, stations, params)
+    sample_height_proposal!(samples, height, mean_height, mat_off, mat_on, obs, stations, params, rng)
+    
+    Yobs_t = copy(obs)
+    FH_t = copy(reshape(height, params.nprt, (params.nx+1)*(params.ny+1)))
+
+    Mean_height = Calculate_Mean(FH_t, th, st, Yobs_t, Sobs, gr)
+    Samples = Sample_Height_Proposal(FH_t, th, st, Yobs_t, Sobs, gr)
+
+    @test mean_height ≈ reshape(Mean_height, params.nprt, params.nx+1, params.ny+1)
+    @test samples ≈ reshape(Samples, params.nprt, params.nx+1, params.ny+1)
+    
+end
