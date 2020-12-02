@@ -380,6 +380,25 @@ function sample_height_proposal!(samples::AbstractArray{T,3}, height::AbstractAr
 
 end
 
+function get_log_weights!(log_weights::AbstractVector{T},
+                          obs_model::AbstractMatrix{T},
+                          obs::AbstractVector{T},
+                          matrices::OfflineMatrices) where T
+
+    #TODO: Is this just the same as get_log_weights! in ParticleDA with R22_inv as cov_obs?
+
+    nprt = size(obs_model,1)
+
+    for iprt in 1:nprt
+
+        log_weights[iprt] = -0.5 * (obs - obs_model[i,:])' * matrices.R22_inv * (obs - obs_model[i,:])
+
+    end
+
+    #Normalization is done in a separate function due to parallelism optimisation
+
+end
+
 @testset "Optimal Filter unit tests" begin
 
     seed = 123
