@@ -93,8 +93,8 @@ end
 # Covariance between observations and the extended grid /bar R_21, from equation 11 in Dietrich & Newsam 96
 function covariance_stations_extended_grid!(cov::AbstractMatrix{T}, params::TestParameters, stations::StationVectors) where T
 
-    xid = 0:2*params.nx - 1
-    yid = 0:2*params.ny - 1
+    xid = 1:2*params.nx
+    yid = 1:2*params.ny
 
     c = CartesianIndices((xid, yid))[:]
 
@@ -113,8 +113,8 @@ end
 
 function covariance_stations_grid!(cov::AbstractMatrix{T}, params::TestParameters, stations::StationVectors) where T
 
-    xid = 0:params.nx
-    yid = 0:params.ny
+    xid = 1:params.nx+1
+    yid = 1:params.ny+1
 
     c = CartesianIndices((xid, yid))[:]
 
@@ -149,8 +149,8 @@ end
 # from Dietrich & Newsam 96 described in text between equations 11 and 12
 function first_column_covariance_extended_grid!(rho::AbstractVector{T}, params::TestParameters) where T
 
-    xid = 0:2*params.nx - 1
-    yid = 0:2*params.ny - 1
+    xid = 1:2*params.nx
+    yid = 1:2*params.ny
 
     c = CartesianIndices((xid, yid))[:]
 
@@ -159,8 +159,8 @@ function first_column_covariance_extended_grid!(rho::AbstractVector{T}, params::
 
     @assert length(rho) == length(c)
 
-    x = linear_xid * params.dx
-    y = linear_yid * params.dy
+    x = (linear_xid .- 1) * params.dx
+    y = (linear_yid .- 1) * params.dy
     rho .= extended_covariance.(x, y, Ref(params))[:]
 
 
@@ -440,7 +440,7 @@ using BenchmarkTools
     include("/Users/tkoskela/git_repos/raddish/mini_apps/optimal_particle_filter/Sample_Optimal_Height_Proposal.jl");
 
     params = TestParameters(nprt=2)
-    stations = StationVectors(st.st_ij[:,1], st.st_ij[:,2])
+    stations = StationVectors(st.st_ij[:,1].+1, st.st_ij[:,2].+1)
 
     h(x,y) = 1 - (x-params.nx-1)^2 - (y-params.ny-1)^2 + randn()
     height = zeros(params.nprt, params.nx+1, params.ny+1)
