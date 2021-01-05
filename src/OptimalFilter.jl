@@ -111,6 +111,7 @@ function covariance_stations_extended_grid!(cov::AbstractMatrix{T}, params::Test
 
 end
 
+# Covariance between stations and the original grid R_21, from equations 3-4 in Dietrich & Newsam 96
 function covariance_stations_grid!(cov::AbstractMatrix{T}, params::TestParameters, stations::StationVectors) where T
 
     xid = 1:params.nx+1
@@ -131,7 +132,7 @@ function covariance_stations_grid!(cov::AbstractMatrix{T}, params::TestParameter
 
 end
 
-# Covariance between observations R_22, from equation 3 in in Dietrich & Newsam 96
+# Covariance between observations R_22, from equationd 3-4 in in Dietrich & Newsam 96
 # TODO: Ask Alex why we add sigma^2 on the diagonal
 function covariance_stations!(cov::AbstractMatrix{T}, params::TestParameters, stations::StationVectors) where T
 
@@ -166,6 +167,9 @@ function first_column_covariance_extended_grid!(rho::AbstractVector{T}, params::
 
 end
 
+# Normalized two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
+# Operates on the 2d data stored as a matrix.
+# From Dietrich & Newsam 96 in text following equation 12
 function normalized_2d_fft!(transformed_array::AbstractMatrix{T}, array::AbstractMatrix{S}, params::TestParameters) where {T,S}
 
     normalization_factor = 1.0 / sqrt(4 * params.nx * params.ny)
@@ -173,6 +177,9 @@ function normalized_2d_fft!(transformed_array::AbstractMatrix{T}, array::Abstrac
 
 end
 
+# Normalized two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
+# Operates on the 2d data stored as a vector.
+# From Dietrich & Newsam 96 in text following equation 12
 function normalized_2d_fft!(transformed_vector::AbstractVector{T}, vector::AbstractVector{S}, params::TestParameters) where {T,S}
 
     normalization_factor = 1.0 / sqrt(4 * params.nx * params.ny)
@@ -180,6 +187,9 @@ function normalized_2d_fft!(transformed_vector::AbstractVector{T}, vector::Abstr
 
 end
 
+# Normalized inverse two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
+# Operates on the 2d data stored as a matrix.
+# From Dietrich & Newsam 96 in text following equation 12
 function normalized_inverse_2d_fft!(transformed_array::AbstractMatrix{T}, array::AbstractMatrix{S}, params::TestParameters) where {T,S}
 
     normalization_factor = sqrt(4 * params.nx * params.ny)
@@ -187,6 +197,9 @@ function normalized_inverse_2d_fft!(transformed_array::AbstractMatrix{T}, array:
 
 end
 
+# Normalized inverse two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
+# Operates on the 2d data stored as a vector.
+# From Dietrich & Newsam 96 in text following equation 12
 function normalized_inverse_2d_fft!(transformed_vector::AbstractVector{T}, vector::AbstractVector{S}, params::TestParameters) where {T,S}
 
     normalization_factor = sqrt(4 * params.nx * params.ny)
@@ -227,6 +240,7 @@ function get_values_at_stations(field::AbstractMatrix{T}, stations::StationVecto
 
 end
 
+# Allocate and compute matrices that do not depend on time-dependent variables (height and observations).
 function init_offline_matrices(params::TestParameters, stations::StationVectors)
 
     n1 = (params.nx + 1) * (params.ny + 1) # number of elements in original grid
@@ -279,6 +293,7 @@ function init_offline_matrices(params::TestParameters, stations::StationVectors)
 
 end
 
+# Allocate memory for matrices that will be updated during the time stepping loop.
 function init_online_matrices(params::TestParameters)
 
     n1 = (params.nx + 1) * (params.ny + 1) # number of elements in original grid
@@ -386,12 +401,14 @@ function get_log_weights!(log_weights::AbstractVector{T},
                           matrices::OfflineMatrices) where T
 
     #TODO: Is this just the same as get_log_weights! in ParticleDA with R22_inv as cov_obs?
+    # DONE: No, ParticleDA.get_log_weights! fails with
+    # ERROR: PosDefException: matrix is not Hermitian; Cholesky factorization failed.
 
     nprt = size(obs_model,1)
 
     for iprt in 1:nprt
 
-        log_weights[iprt] = -0.5 * (obs - obs_model[i,:])' * matrices.R22_inv * (obs - obs_model[i,:])
+        log_weights[iprt] = -0.5 * (obs - obs_model[iprt,:])' * matrices.R22_inv * (obs - obs_model[iprt,:])
 
     end
 
@@ -489,16 +506,16 @@ using BenchmarkTools
     Mean_height = Calculate_Mean(FH_t, th, st, Yobs_t, Sobs, gr)
     Samples = Sample_Height_Proposal(FH_t, th, st, Yobs_t, Sobs, gr)
 
-    print("old mean height: ")
-    @btime Mean_height = Calculate_Mean(FH_t, th, st, Yobs_t, Sobs, gr)
-    print("new mean height: ")
-    @btime calculate_mean_height!(mean_height, height, mat_off, obs, stations, params)
-    print("old sampling: ")
-    @btime Samples = Sample_Height_Proposal(FH_t, th, st, Yobs_t, Sobs, gr)
-    print("new sampling: ")
-    @btime sample_height_proposal!(samples, height, mean_height, mat_off, mat_on, obs, stations, params, rng)
-
     @test mean_height ≈ reshape(Mean_height, params.nprt, params.nx+1, params.ny+1)
     @test samples ≈ reshape(Samples, params.nprt, params.nx+1, params.ny+1)
+
+    print("old mean height: ")
+    @btime Mean_height = Calculate_Mean($FH_t, $th, $st, $Yobs_t, $Sobs, $gr)
+    print("new mean height: ")
+    @btime calculate_mean_height!($mean_height, $height, $mat_off, $obs, $stations, $params)
+    print("old sampling: ")
+    @btime Samples = Sample_Height_Proposal($FH_t, $th, $st, $Yobs_t, $Sobs, $gr)
+    print("new sampling: ")
+    @btime sample_height_proposal!($samples, $height, $mean_height, $mat_off, $mat_on, $obs, $stations, $params, $rng)
 
 end
