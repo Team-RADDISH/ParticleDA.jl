@@ -273,7 +273,7 @@ function init_offline_matrices(params::TestParameters, stations::StationVectors)
     KH = Diagonal(matrices.Lambda)^(-1/2)*WHbar_R12
     matrices.K .= KH'
 
-    A = real.(matrices.R22 .- matrices.K.*KH)
+    A = real.(matrices.R22 .- matrices.K*KH)
     if ishermitian(A)
         matrices.L .= cholesky(A).L
     end
