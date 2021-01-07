@@ -332,7 +332,7 @@ function calculate_mean_height!(mean::AbstractArray{T,3}, height::AbstractArray{
     # Loop over particles
     for iprt = 1:params.nprt
 
-        mu10 .= offline_matrices.R22_inv * get_values_at_stations(@view(height[iprt,:,:]), stations)
+        mul!(mu10, offline_matrices.R22_inv, get_values_at_stations(@view(height[iprt,:,:]), stations))
         mu10_sparse = sparse(stations.ist, stations.jst, mu10, params.nx+1, params.ny+1)
 
         # Compute decomposition of height values at stations times the inverse covariance matrix
