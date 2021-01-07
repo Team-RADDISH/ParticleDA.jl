@@ -70,17 +70,17 @@ end
 # Extended covariance function /bar r(x,y), equation 8 of Dietrich and Newsam 96
 function extended_covariance(x::T, y::T, params::TestParameters) where T
 
-    if (0 <= x) & (x <= params.x_length)
+    if 0 <= x <= params.x_length
         x_ext = x
-    elseif (params.x_length <= x) & (x <= 2 * params.x_length)
+    elseif params.x_length <= x <= 2 * params.x_length
         x_ext = 2 * params.x_length - x
     else
         @error "value of x is out of bounds"
     end
 
-    if (0 <= y) & (y <= params.y_length)
+    if 0 <= y <= params.y_length
         y_ext = y
-    elseif (params.y_length <= y) & (y <= 2 * params.y_length)
+    elseif params.y_length <= y <= 2 * params.y_length
         y_ext = 2 * params.y_length - y
     else
         @error "value of y is out of bounds"
@@ -104,9 +104,9 @@ function covariance_stations_extended_grid!(cov::AbstractMatrix{T}, params::Test
     @assert size(cov) == (params.nobs, length(c))
 
     for (i,ist,jst) in zip(1:params.nobs, stations.ist, stations.jst)
-        x = abs.(linear_xid .- ist) * params.dx
-        y = abs.(linear_yid .- jst) * params.dy
-        cov[i,:] = extended_covariance.(x, y, Ref(params))[:]
+        cov[i,:] .= extended_covariance.(abs.(linear_xid .- ist) .* params.dx,
+                                         abs.(linear_yid .- jst) .* params.dy,
+                                         (params,))
     end
 
 end
@@ -135,13 +135,9 @@ end
 # TODO: Ask Alex why we add sigma^2 on the diagonal
 function covariance_stations!(cov::AbstractMatrix{T}, params::TestParameters, stations::StationVectors) where T
 
-    x = abs.(stations.ist .- stations.ist') * params.dx
-    y = abs.(stations.jst' .- stations.jst) * params.dy
-
-    @assert size(cov) == size(x)
-    @assert size(cov) == size(y)
-
-    cov .= covariance.(x, y, Ref(params)) + I(params.nobs) * params.sigma_obs^2
+    cov .= covariance.(abs.(stations.ist .- stations.ist') .* params.dx,
+                       abs.(stations.jst' .- stations.jst) .* params.dy,
+                       (params,)) .+ I(params.nobs) .* params.sigma_obs.^2
 
 end
 
@@ -154,14 +150,9 @@ function first_column_covariance_extended_grid!(rho::AbstractVector{T}, params::
 
     c = CartesianIndices((xid, yid))[:]
 
-    linear_xid = map(i->i[1], c)
-    linear_yid = map(i->i[2], c)
-
-    @assert length(rho) == length(c)
-
-    x = (linear_xid .- 1) * params.dx
-    y = (linear_yid .- 1) * params.dy
-    rho .= extended_covariance.(x, y, Ref(params))[:]
+    rho .= extended_covariance.((getindex.(c, 1) .- 1) .* params.dx,
+                                (getindex.(c, 2) .- 1) .* params.dy,
+                                (params,))
 
 
 end
@@ -259,7 +250,7 @@ function init_offline_matrices(params::TestParameters, stations::StationVectors)
 
     fourier_coeffs = Vector{ComplexF64}(undef, n1_bar)
     normalized_inverse_2d_fft!(fourier_coeffs, matrices.rho_bar, params)
-    matrices.Lambda .= sqrt(4 * params.nx * params.ny) * real.(fourier_coeffs)
+    matrices.Lambda .= sqrt(4 * params.nx * params.ny) .* real.(fourier_coeffs)
 
     WHbar_R12 = Matrix{C}(undef, n1_bar, params.nobs)
     for i in 1:params.nobs
@@ -268,12 +259,12 @@ function init_offline_matrices(params::TestParameters, stations::StationVectors)
     KH = Diagonal(matrices.Lambda)^(-1/2)*WHbar_R12
     matrices.K .= KH'
 
-    A = real.(matrices.R22 - matrices.K*KH)
+    A = real.(matrices.R22 .- matrices.K.*KH)
     if ishermitian(A)
         matrices.L .= cholesky(A).L
     end
 
-    matrices.mu20 .= params.sigma_obs^(-2) * (matrices.R22 - I(params.nobs) * params.sigma_obs^2)
+    matrices.mu20 .= params.sigma_obs^(-2) .* (matrices.R22 .- I(params.nobs) .* params.sigma_obs^2)
 
     return matrices
 
@@ -335,7 +326,7 @@ function calculate_mean_height!(mean::AbstractArray{T,3}, height::AbstractArray{
 
         # Compute the mean for the ith particle using mu2 and mu11
         # Skip storing the temporary mu1 in Alex's code
-        mean[iprt,:,:] .= @view(height[iprt,:,:]) - offline_matrices.buf1 + offline_matrices.buf2
+        mean[iprt,:,:] .= @view(height[iprt,:,:]) .- offline_matrices.buf1 .+ offline_matrices.buf2
 
     end
 
