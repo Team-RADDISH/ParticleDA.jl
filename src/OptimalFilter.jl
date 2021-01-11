@@ -488,7 +488,6 @@ using BenchmarkTools
     mat_off = init_offline_matrices(params, stations)
     mat_on = init_online_matrices(params)
 
-    calculate_mean_height!(mean_height, height, mat_off, obs, stations, params)
     sample_height_proposal!(samples, height, mean_height, mat_off, mat_on, obs, stations, params, rng)
 
     Yobs_t = copy(obs)
