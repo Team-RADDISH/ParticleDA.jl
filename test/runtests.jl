@@ -27,14 +27,17 @@ using .Model: ModelParameters
     @test jst == [75, 85, 95, 75, 85, 95, 75, 85, 95]
 
     ### initheight!
-    eta = ones(2, 2)
-    ocean_depth  = ones(2, 2)
-    LLW2d.initheight!(eta, ocean_depth, dx, dy, 3e4)
+    nx = 2
+    ny = 2
+    eta = ones(nx, ny)
+    ocean_depth  = ones(nx, ny)
+    peak_position = [floor(Int, nx/4) * dx, floor(Int, ny/4) * dy]
+    LLW2d.initheight!(eta, ocean_depth, dx, dy, 3e4, 1.0, peak_position)
     @test eta ≈ [0.978266982572228  0.9463188389826958;
                  0.9463188389826958 0.9154140546161575]
     eta = ones(2, 2)
     ocean_depth  = zeros(2, 2)
-    LLW2d.initheight!(eta, ocean_depth, dx, dy, 3e4)
+    LLW2d.initheight!(eta, ocean_depth, dx, dy, 3e4, 1.0, peak_position)
     @test eta ≈ zeros(2, 2)
 
     # timestep.  TODO: add real tests.  So far we're just making sure code won't
@@ -138,8 +141,9 @@ end
 
     # Initialise and update a tsunami on a small grid
     s = 4e3
-    eta = reshape(@view(x[1:nx*ny]), nx, ny)
-    LLW2d.initheight!(eta, model_matrices, dx, dy, s)
+    peak_position = [floor(Int, nx/4) * dx, floor(Int, ny/4) * dy]
+    eta = @view(x[:,:,1])
+    LLW2d.initheight!(eta, model_matrices, dx, dy, s, 1.0, peak_position)
     @test eta[2,2] ≈ 1.0
     @test sum(eta) ≈ 4.0
     Model.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, model_matrices)

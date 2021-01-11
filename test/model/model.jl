@@ -80,6 +80,8 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
 
     source_size::T = 3.0e4
     bathymetry_setup::T = 3.0e4
+    peak_height = 1.0
+    peak_position = [floor(Int, nx / 4) * dx, floor(Int, ny / 4) * dy]
 
     lambda::T = 1.0e4
     nu::T = 2.5
@@ -346,7 +348,8 @@ function set_initial_state!(states::StateVectors, model_matrices::LLW2d.Matrices
                             params::ModelParameters) where T
 
     # Set true initial state
-    LLW2d.initheight!(@view(states.truth[:, :, 1]), model_matrices, params.dx, params.dy, params.source_size)
+    LLW2d.initheight!(@view(states.truth[:, :, 1]), model_matrices, params.dx, params.dy,
+                      params.source_size, params.peak_height, params.peak_position)
 
     # Create generator for the initial random field
     x,y = get_axes(params)
