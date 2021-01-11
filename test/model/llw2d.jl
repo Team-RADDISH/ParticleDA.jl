@@ -205,41 +205,46 @@ function setup(nx::Int,
                     land_filter_m, land_filter_n, land_filter_e)
 end
 
-# Initializes height with a cosine wave with a peak height of 1.0
-# located at 1/4 of x and y axis.
+# Calculates the initial surface height at point x,y
+function get_initial_height(x::T, y::T, peak_x::T, peak_y::T, peak_height::T, cutoff::T) where T
+
+    dx = peak_x - x
+    dy = peak_y - y
+    distance_to_peak = sqrt(dx^2 + dy^2)
+
+    if distance_to_peak <= cutoff
+        return peak_height / 4.0 * ((1 + cospi(dx / cutoff)) * (1 + cospi(dy / cutoff)))
+    else
+        return 0.0        
+    end
+    
+end
+
+# Initializes the surface height on all points of the grid
 function initheight!(height::AbstractMatrix{T},
                      ocean_depth::AbstractMatrix{T},
-                     dx::Real,dy::Real,cutoff_distance::Real) where T
+                     dx::Real,dy::Real,cutoff_distance::Real,
+                     peak_height::Real, peak_position::AbstractVector{T}) where T
 
     @assert size(height) == size(ocean_depth)
 
     nx, ny = size(height)
 
-    peak_position = [floor(Int, nx / 4) * dx, floor(Int, ny / 4) * dy]
-    distance_to_peak = zeros(2)
+    x = (1:nx) .* dx
+    y = (1:ny) .* dy
 
-    for iy in 1:ny
-        for ix in 1:nx
-            vector_to_peak = peak_position - [ix * dx, iy * dy]
-            distance_to_peak = sqrt(sum((vector_to_peak).^2))
-
-            if distance_to_peak <= cutoff_distance && ocean_depth[ix, iy] >= eps(T)
-                height[ix, iy] = 0.25 * ((1 + cospi(vector_to_peak[1] / cutoff_distance))
-                                         * (1 + cospi(vector_to_peak[2] / cutoff_distance)))
-            else
-                height[ix, iy] = 0.0
-            end
-        end
-    end
-
-    return height
+    height .= get_initial_height.(x', y, peak_position[1], peak_position[2], peak_height, cutoff_distance)
+    height[ocean_depth .< eps(T)] .= 0.0
+    
 end
 
+# Initializes the surface height on all points of the grid
 function initheight!(height::AbstractMatrix{T},
                      matrices::Matrices{T},
-                     dx::Real,dy::Real,cutoff_distance::Real) where T
+                     dx::Real,dy::Real,cutoff_distance::Real,
+                     peak_height::Real, peak_position::AbstractVector{T}) where T
     # Unpack the relevant field of `matrices`
-    return initheight!(height, matrices.ocean_depth, dx, dy, cutoff_distance)
+    initheight!(height, matrices.ocean_depth, dx, dy, cutoff_distance, peak_height, peak_position)
 end
 
 end # module
