@@ -461,6 +461,7 @@ function ParticleDA.update_particles!(d::ModelData, nprt_per_rank)
                         @view(d.states.particles[:, :, :, ip]), d.model_matrices, d.model_params)
 
     end
+    # Add process noise
     add_random_field!(d.states.particles,
                       d.field_buffer,
                       d.background_grf,
@@ -468,14 +469,13 @@ function ParticleDA.update_particles!(d::ModelData, nprt_per_rank)
                       d.model_params.n_state_var,
                       nprt_per_rank)
 
-    # Add process noise, get observations, add observation noise (to particles)
+    # get observations
     for ip in 1:nprt_per_rank
         get_obs!(@view(d.observations.model[:,ip]),
                  @view(d.states.particles[:, :, :, ip]),
                  d.stations.ist,
                  d.stations.jst,
                  d.model_params)
-        add_noise!(@view(d.observations.model[:,ip]), d.rng[1], d.model_params)
     end
     return d.observations.model
 end
