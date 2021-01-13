@@ -3,7 +3,7 @@ module ParticleDA
 using Distributions, Statistics, MPI, Base.Threads, YAML, HDF5
 using TimerOutputs
 
-export run_particle_filter
+export run_particle_filter, BootstrapFilter
 
 include("params.jl")
 include("io.jl")
@@ -224,7 +224,9 @@ function copy_states!(particles::AbstractArray{T,4},
 
 end
 
-function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict)
+struct BootstrapFilter end
+
+function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict, ::Type{BootstrapFilter})
 
     if !MPI.Initialized()
         MPI.Init()
@@ -407,7 +409,7 @@ end
 Run the particle filter.  `init` is the function which initialise the model,
 `path_to_input_file` is the path to the YAML file with the input parameters.
 """
-function run_particle_filter(init, path_to_input_file::String)
+function run_particle_filter(init, path_to_input_file::String, filter_type)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -426,7 +428,7 @@ function run_particle_filter(init, path_to_input_file::String)
 
     user_input_dict = MPI.bcast(user_input_dict, 0, MPI.COMM_WORLD)
 
-    return run_particle_filter(init, user_input_dict)
+    return run_particle_filter(init, user_input_dict, filter_type)
 
 end
 
@@ -436,12 +438,12 @@ end
 Run the particle filter.  `init` is the function which initialise the model,
 `user_input_dict` is the list of input parameters, as a `Dict`.
 """
-function run_particle_filter(init, user_input_dict::Dict)
+function run_particle_filter(init, user_input_dict::Dict, filter_type)
 
     filter_params = get_params(FilterParameters, get(user_input_dict, "filter", Dict()))
     model_params_dict = get(user_input_dict, "model", Dict())
 
-    return run_particle_filter(init, filter_params, model_params_dict)
+    return run_particle_filter(init, filter_params, model_params_dict, filter_type)
 
 end
 
