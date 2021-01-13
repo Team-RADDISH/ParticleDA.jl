@@ -1,18 +1,18 @@
 using .Default_params
 
-function create_or_open_group(file::HDF5File, group_name::String, subgroup_name::String = "None")
+function create_or_open_group(file::HDF5.File, group_name::String, subgroup_name::String = "None")
 
-    if !exists(file, group_name)
-        group = g_create(file, group_name)
+    if !haskey(file, group_name)
+        group = create_group(file, group_name)
     else
-        group = g_open(file, group_name)
+        group = open_group(file, group_name)
     end
 
     if subgroup_name != "None"
-        if !exists(group, subgroup_name)
-            subgroup = g_create(group, subgroup_name)
+        if !haskey(group, subgroup_name)
+            subgroup = create_group(group, subgroup_name)
         else
-            subgroup = g_open(group, subgroup_name)
+            subgroup = open_group(group, subgroup_name)
         end
     else
         subgroup = nothing
@@ -34,18 +34,18 @@ function write_timers(length::Int, size::Int, chars::AbstractVector{Char}, filen
 
     h5open(filename, "cw") do file
 
-        if !exists(file, group_name)
-            group = g_create(file, group_name)
+        if !haskey(file, group_name)
+            group = create_group(file, group_name)
         else
-            group = g_open(file, group_name)
+            group = open_group(file, group_name)
         end
 
         for i in 1:size
             timer_string = String(chars[(i - 1) * length + 1 : i * length])
             dataset_name = "rank" * string(i-1)
 
-            if !exists(group, dataset_name)
-                ds,dtype = d_create(group, dataset_name, timer_string)
+            if !haskey(group, dataset_name)
+                ds,dtype = create_dataset(group, dataset_name, timer_string)
                 write(ds,timer_string)
             else
                 @warn "Write failed, dataset " * group_name * "/" * dataset_name *  " already exists in " * file.filename * "!"
