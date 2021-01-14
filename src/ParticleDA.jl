@@ -325,9 +325,8 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
         # Note that only master_rank allocates memory for all particles. Other ranks only allocate
         # for their chunk of state.
         if my_rank == filter_params.master_rank
-            @timeit_debug timer "MPI Gather" MPI.Gather!(nothing,
-                                                         filter_data.weights,
-                                                         nprt_per_rank,
+            @timeit_debug timer "MPI Gather" MPI.Gather!(MPI.IN_PLACE,
+                                                         UBuffer(filter_data.weights, nprt_per_rank),
                                                          filter_params.master_rank,
                                                          MPI.COMM_WORLD)
             @timeit_debug timer "Weights" normalized_exp!(filter_data.weights)
@@ -336,7 +335,6 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
         else
             @timeit_debug timer "MPI Gather" MPI.Gather!(filter_data.weights,
                                                          nothing,
-                                                         nprt_per_rank,
                                                          filter_params.master_rank,
                                                          MPI.COMM_WORLD)
         end
