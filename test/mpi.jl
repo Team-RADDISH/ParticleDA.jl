@@ -29,7 +29,7 @@ params = Dict(
 
 # Warmup
 rm("particle_da.h5"; force = true)
-run_particle_filter(Model.init, params, BootstrapFilter)
+run_particle_filter(Model.init, params, BootstrapFilter())
 # Flush a newline
 println()
 
@@ -37,6 +37,6 @@ println()
 rm("particle_da.h5"; force = true)
 params["filter"]["nprt"] = 2 * my_size
 params["model"]["llw2d"]["nobs"] = 36
-run_particle_filter(Model.init, params, BootstrapFilter)
+run_particle_filter(Model.init, params, BootstrapFilter())
 # Flush a newline
 println()
