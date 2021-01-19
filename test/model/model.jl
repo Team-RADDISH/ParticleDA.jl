@@ -468,7 +468,9 @@ function ParticleDA.update_particles!(d::ModelData, nprt_per_rank)
                       d.rng,
                       d.model_params.n_state_var,
                       nprt_per_rank)
+end
 
+function ParticleDA.get_observations!(d::ModelData, nprt_per_rank)
     # get observations
     for ip in 1:nprt_per_rank
         get_obs!(@view(d.observations.model[:,ip]),

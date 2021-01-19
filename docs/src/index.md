@@ -68,6 +68,7 @@ be used by [`run_particle_filter`](@ref):
 ParticleDA.get_particles
 ParticleDA.get_truth
 ParticleDA.update_truth!
+ParticleDA.get_observations!
 ParticleDA.update_particles!
 ParticleDA.write_snapshot
 ```
