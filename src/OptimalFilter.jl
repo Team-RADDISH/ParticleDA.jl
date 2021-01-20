@@ -98,14 +98,11 @@ function covariance_stations_extended_grid!(cov::AbstractMatrix{T}, params::Test
 
     c = CartesianIndices((xid, yid))[:]
 
-    linear_xid = map(i->i[1], c)
-    linear_yid = map(i->i[2], c)
-
     @assert size(cov) == (params.nobs, length(c))
 
     for (i,ist,jst) in zip(1:params.nobs, stations.ist, stations.jst)
-        cov[i,:] .= extended_covariance.(abs.(linear_xid .- ist) .* params.dx,
-                                         abs.(linear_yid .- jst) .* params.dy,
+        cov[i,:] .= extended_covariance.(abs.(getindex.(c, 1) .- ist) .* params.dx,
+                                         abs.(getindex.(c, 2) .- jst) .* params.dy,
                                          (params,))
     end
 
@@ -121,13 +118,10 @@ function covariance_stations_grid!(cov::AbstractMatrix{T}, params::TestParameter
 
     @assert size(cov) == (length(c), params.nobs)
 
-    linear_xid = map(i->i[1], c)
-    linear_yid = map(i->i[2], c)
-
     for (i,ist,jst) in zip(1:params.nobs, stations.ist, stations.jst)
-        x = abs.(linear_xid .- ist) .* params.dx
-        y = abs.(linear_yid .- jst) .* params.dy
-        cov[:,i] = extended_covariance.(x, y, Ref(params))
+        cov[:,i] .= extended_covariance.(abs.(getindex.(c, 1) .- ist) .* params.dx,
+                                         abs.(getindex.(c, 2) .- jst) .* params.dy,
+                                         Ref(params))
     end
 
 end
@@ -365,22 +359,22 @@ function sample_height_proposal!(samples::AbstractArray{T,3}, height::AbstractAr
     for iprt in 1:2:params.nprt
         # TODO randn(ComplexF64) seems to set variance = 1/2. Could not find how to change that.
         # TODO we could pre-create all our random numbers in one go before the loop, would that be faster?
-        e1 = rand(rng, nd, 4*params.nx*params.ny) + rand(rng, nd, 4*params.nx*params.ny)im
-        e2 = rand(rng, nd, params.nobs) + rand(rng, nd, params.nobs)im
+        e1 = rand(rng, nd, 4*params.nx*params.ny) .+ rand(rng, nd, 4*params.nx*params.ny)im
+        e2 = rand(rng, nd, params.nobs) .+ rand(rng, nd, params.nobs)im
 
         # This gives the vector z1_bar
         normalized_inverse_2d_fft!(online_matrices.z1_bar, Diagonal(offline_matrices.Lambda)^(1/2) * e1, params)
 
         # This is the vector z2
-        online_matrices.z2 .= offline_matrices.K * e1 + offline_matrices.L * e2
+        online_matrices.z2 .= offline_matrices.K * e1 .+ offline_matrices.L * e2
 
         # Restrict z1_bar to Omega1 and reshape into an array
         online_matrices.Z1 .= online_matrices.z1_bar[i_n1_bar[1:params.nx+1,1:params.nx+1]]
         # Multiply z2 with R12*R22^-1 and reshape the result into an array
         online_matrices.Z2 .= (offline_matrices.R12_invR22 * online_matrices.z2)[i_n1]
 
-        samples[iprt,    :,:] .= mean[iprt,    :,:] + real.(online_matrices.Z1) - real.(online_matrices.Z2)
-        samples[iprt + 1,:,:] .= mean[iprt + 1,:,:] + imag.(online_matrices.Z1) - imag.(online_matrices.Z2)
+        samples[iprt,    :,:] .= @view(mean[iprt,    :,:]) .+ real.(online_matrices.Z1 .- online_matrices.Z2)
+        samples[iprt + 1,:,:] .= @view(mean[iprt + 1,:,:]) .+ imag.(online_matrices.Z1 .- online_matrices.Z2)
 
     end
 
