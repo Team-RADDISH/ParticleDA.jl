@@ -80,6 +80,8 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
 
     source_size::T = 3.0e4
     bathymetry_setup::T = 3.0e4
+    peak_height = 1.0
+    peak_position = [floor(Int, nx / 4) * dx, floor(Int, ny / 4) * dy]
 
     lambda::T = 1.0e4
     nu::T = 2.5
@@ -346,7 +348,8 @@ function set_initial_state!(states::StateVectors, model_matrices::LLW2d.Matrices
                             params::ModelParameters) where T
 
     # Set true initial state
-    LLW2d.initheight!(@view(states.truth[:, :, 1]), model_matrices, params.dx, params.dy, params.source_size)
+    LLW2d.initheight!(@view(states.truth[:, :, 1]), model_matrices, params.dx, params.dy,
+                      params.source_size, params.peak_height, params.peak_position)
 
     # Create generator for the initial random field
     x,y = get_axes(params)
@@ -458,6 +461,7 @@ function ParticleDA.update_particles!(d::ModelData, nprt_per_rank)
                         @view(d.states.particles[:, :, :, ip]), d.model_matrices, d.model_params)
 
     end
+    # Add process noise
     add_random_field!(d.states.particles,
                       d.field_buffer,
                       d.background_grf,
@@ -465,14 +469,13 @@ function ParticleDA.update_particles!(d::ModelData, nprt_per_rank)
                       d.model_params.n_state_var,
                       nprt_per_rank)
 
-    # Add process noise, get observations, add observation noise (to particles)
+    # get observations
     for ip in 1:nprt_per_rank
         get_obs!(@view(d.observations.model[:,ip]),
                  @view(d.states.particles[:, :, :, ip]),
                  d.stations.ist,
                  d.stations.jst,
                  d.model_params)
-        add_noise!(@view(d.observations.model[:,ip]), d.rng[1], d.model_params)
     end
     return d.observations.model
 end
@@ -484,15 +487,15 @@ function write_params(output_filename, params)
 
     file = h5open(output_filename, "cw")
 
-    if !exists(file, params.title_params)
+    if !haskey(file, params.title_params)
 
-        group = g_create(file, params.title_params)
+        group = create_group(file, params.title_params)
 
         fields = fieldnames(typeof(params));
 
         for field in fields
 
-            attrs(group)[string(field)] = getfield(params, field)
+            attributes(group)[string(field)] = getfield(params, field)
 
         end
 
@@ -510,18 +513,18 @@ function write_grid(output_filename, params)
 
     h5open(output_filename, "cw") do file
 
-        if !exists(file, params.title_grid)
+        if !haskey(file, params.title_grid)
 
             # Write grid axes
-            group = g_create(file, params.title_grid)
+            group = create_group(file, params.title_grid)
             x,y = get_axes(params)
-            #TODO: use d_write instead of d_create when they fix it in the HDF5 package
-            ds_x,dtype_x = d_create(group, "x", collect(x))
-            ds_y,dtype_x = d_create(group, "y", collect(x))
+            #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
+            ds_x,dtype_x = create_dataset(group, "x", collect(x))
+            ds_y,dtype_x = create_dataset(group, "y", collect(x))
             ds_x[1:params.nx] = collect(x)
             ds_y[1:params.ny] = collect(y)
-            attrs(ds_x)["Unit"] = "m"
-            attrs(ds_y)["Unit"] = "m"
+            attributes(ds_x)["Unit"] = "m"
+            attributes(ds_y)["Unit"] = "m"
 
         else
 
@@ -537,14 +540,14 @@ function write_stations(output_filename, ist::AbstractVector, jst::AbstractVecto
 
     h5open(output_filename, "cw") do file
 
-        if !exists(file, params.title_stations)
-            group = g_create(file, params.title_stations)
+        if !haskey(file, params.title_stations)
+            group = create_group(file, params.title_stations)
 
             for (dataset_name, index, d) in zip(("x", "y"), (ist, jst), (params.dx, params.dy))
-                ds, dtype = d_create(group, dataset_name, index)
+                ds, dtype = create_dataset(group, dataset_name, index)
                 ds[:] = index .* d
-                attrs(ds)["Description"] = "Station coordinates"
-                attrs(ds)["Unit"] = "m"
+                attributes(ds)["Description"] = "Station coordinates"
+                attributes(ds)["Unit"] = "m"
             end
         else
             @warn "Write failed, group " * params.title_stations * " already exists in " * file.filename * "!"
@@ -552,21 +555,21 @@ function write_stations(output_filename, ist::AbstractVector, jst::AbstractVecto
     end
 end
 
-function write_weights(file::HDF5File, weights::AbstractVector, unit::String, it::Int, params::ModelParameters)
+function write_weights(file::HDF5.File, weights::AbstractVector, unit::String, it::Int, params::ModelParameters)
 
     group_name = "weights"
     dataset_name = "t" * string(it)
 
     group, subgroup = ParticleDA.create_or_open_group(file, group_name)
 
-    if !exists(group, dataset_name)
-        #TODO: use d_write instead of d_create when they fix it in the HDF5 package
-        ds,dtype = d_create(group, dataset_name, weights)
+    if !haskey(group, dataset_name)
+        #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
+        ds,dtype = create_dataset(group, dataset_name, weights)
         ds[:] = weights
-        attrs(ds)["Description"] = "Particle Weights"
-        attrs(ds)["Unit"] = unit
-        attrs(ds)["Time_step"] = it
-        attrs(ds)["Time (s)"] = it * params.time_step
+        attributes(ds)["Description"] = "Particle Weights"
+        attributes(ds)["Unit"] = unit
+        attributes(ds)["Time_step"] = it
+        attributes(ds)["Time (s)"] = it * params.time_step
     else
         @warn "Write failed, dataset " * group_name * "/" * dataset_name *  " already exists in " * file.filename * "!"
     end
@@ -627,7 +630,7 @@ function ParticleDA.write_snapshot(output_filename::AbstractString,
     return ParticleDA.write_snapshot(output_filename, d.states.truth, avg, var, weights, it, d.model_params)
 end
 
-function write_field(file::HDF5File,
+function write_field(file::HDF5.File,
                      field::AbstractMatrix{T},
                      it::Int,
                      unit::String,
@@ -642,14 +645,14 @@ function write_field(file::HDF5File,
 
     group, subgroup = ParticleDA.create_or_open_group(file, group_name, subgroup_name)
 
-    if !exists(subgroup, dataset_name)
-        #TODO: use d_write instead of d_create when they fix it in the HDF5 package
-        ds,dtype = d_create(subgroup, dataset_name, field)
+    if !haskey(subgroup, dataset_name)
+        #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
+        ds,dtype = create_dataset(subgroup, dataset_name, field)
         ds[:,:] = field
-        attrs(ds)["Description"] = description
-        attrs(ds)["Unit"] = unit
-        attrs(ds)["Time_step"] = it
-        attrs(ds)["Time (s)"] = it * params.time_step
+        attributes(ds)["Description"] = description
+        attributes(ds)["Unit"] = unit
+        attributes(ds)["Time_step"] = it
+        attributes(ds)["Time (s)"] = it * params.time_step
     else
         @warn "Write failed, dataset " * group_name * "/" * subgroup_name * "/" * dataset_name *  " already exists in " * file.filename * "!"
     end

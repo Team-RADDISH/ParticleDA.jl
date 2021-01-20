@@ -32,7 +32,7 @@ alternatively, the backspace key when there is no input in the prompt.
 
 ## Documentation
 
-<!-- TODO: put the link to the documentation here -->
+[Documentation Website](https://team-raddish.github.io/ParticleDA.jl/dev/)
 
 ## License
 
