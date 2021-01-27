@@ -79,7 +79,7 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     station_boundary_y::T = 150.0e3
 
     source_size::T = 3.0e4
-    bathymetry_setup::T = 3.0e4
+    bathymetry_setup::T = 3.0e3
     peak_height = 1.0
     peak_position = [floor(Int, nx / 4) * dx, floor(Int, ny / 4) * dy]
 
