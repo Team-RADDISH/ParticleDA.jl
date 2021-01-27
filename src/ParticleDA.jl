@@ -38,12 +38,15 @@ above signature, specifying the type of `model_data`.
 function update_truth! end
 
 """
+<<<<<<< HEAD
     ParticleDA.update_particle_dynamics!(model_data, nprt_per_rank::Int) -> particles_observations
+=======
+    ParticleDA.update_particles!(model_data, nprt_per_rank::Int)
+>>>>>>> mg/split-update
 
-Update the particles using the dynamic of the model and return the vector of the
-particles.  `nprt_per_rank` is the number of particles per each MPI rank.  This
-method is intended to be extended by the user with the above signature,
-specifying the type of `model_data`.
+Update the particles using the dynamic of the model.  `nprt_per_rank` is the
+number of particles per each MPI rank.  This method is intended to be extended
+by the user with the above signature, specifying the type of `model_data`.
 """
 function update_particle_dynamics! end
 
@@ -56,6 +59,15 @@ method is intended to be extended by the user with the above signature,
 specifying the type of `model_data`.
 """
 function update_particle_noise! end
+
+"""
+    ParticleDA.get_observations!(model_data, nprt_per_rank::Int) -> particles_observations
+
+Return the vector of the particles observations.  `nprt_per_rank` is the number
+of particles per each MPI rank.  This method is intended to be extended by the
+user with the above signature, specifying the type of `model_data`.
+"""
+function get_observations! end
 
 """
     ParticleDA.write_snapshot(output_filename, model_data, avg_arr, var_arr, weights, it)
@@ -269,9 +281,22 @@ struct FilterData{T, S, U, V, X}
 
 end
 
-struct BootstrapFilter end
+"""
+    ParticleFilter
 
-function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict, ::Type{BootstrapFilter})
+Abstract type for the particle filter to use.  Currently used subtypes are:
+* [`BootstrapFilter`](@ref)
+"""
+abstract type ParticleFilter end
+"""
+    BootstrapFilter()
+
+Instantiate the singleton type `BootstrapFilter`.  This can be used as argument
+of [`run_particle_filter`](@ref) to select the bootstrap filter.
+"""
+struct BootstrapFilter <: ParticleFilter end
+
+function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict, ::BootstrapFilter)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -323,7 +348,8 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
         # Parallelised with threads.
 
         @timeit_debug timer "Particle Dynamics" update_particle_dynamics!(model_data, nprt_per_rank);
-        @timeit_debug timer "Particle Noise" model_observations = update_particle_noise!(model_data, nprt_per_rank)
+        @timeit_debug timer "Particle Noise" update_particle_noise!(model_data, nprt_per_rank)
+        @timeit_debug timer "Particle Observations" model_observations = get_particle_observations!(model_data, nprt_per_rank)
 
         @timeit_debug timer "Particle Weights" get_log_weights!(@view(filter_data.weights[1:nprt_per_rank]),
                                                        truth_observations,
@@ -435,12 +461,14 @@ function read_input_file(path_to_input_file::String)
 end
 
 """
-    run_particle_filter(init, path_to_input_file::String)
+    run_particle_filter(init, path_to_input_file::String, filter_type::ParticleFilter)
 
 Run the particle filter.  `init` is the function which initialise the model,
 `path_to_input_file` is the path to the YAML file with the input parameters.
+`filter_type` is the particle filter to use.  See [`ParticleFilter`](@ref) for
+the possible values.
 """
-function run_particle_filter(init, path_to_input_file::String, filter_type)
+function run_particle_filter(init, path_to_input_file::String, filter_type::ParticleFilter)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -464,12 +492,14 @@ function run_particle_filter(init, path_to_input_file::String, filter_type)
 end
 
 """
-    run_particle_filter(init, user_input_dict::Dict)
+    run_particle_filter(init, user_input_dict::Dict, filter_type::ParticleFilter)
 
 Run the particle filter.  `init` is the function which initialise the model,
-`user_input_dict` is the list of input parameters, as a `Dict`.
+`user_input_dict` is the list of input parameters, as a `Dict`.  `filter_type`
+is the particle filter to use.  See [`ParticleFilter`](@ref) for the possible
+values.
 """
-function run_particle_filter(init, user_input_dict::Dict, filter_type)
+function run_particle_filter(init, user_input_dict::Dict, filter_type::ParticleFilter)
 
     filter_params = get_params(FilterParameters, get(user_input_dict, "filter", Dict()))
     model_params_dict = get(user_input_dict, "model", Dict())

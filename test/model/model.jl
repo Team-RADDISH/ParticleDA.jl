@@ -461,17 +461,6 @@ function ParticleDA.update_particle_dynamics!(d::ModelData, nprt_per_rank)
         tsunami_update!(@view(d.field_buffer[:, :, 1, threadid()]), @view(d.field_buffer[:, :, 2, threadid()]),
                         @view(d.states.particles[:, :, :, ip]), d.model_matrices, d.model_params)
     end
-
-    # Get observations
-    for ip in 1:nprt_per_rank
-        get_obs!(@view(d.observations.model[:,ip]),
-                 @view(d.states.particles[:, :, :, ip]),
-                 d.stations.ist,
-                 d.stations.jst,
-                 d.model_params)
-    end
-    return d.observations.model
-
 end
 
 function ParticleDA.update_particle_noise!(d::ModelData, nprt_per_rank)
@@ -482,7 +471,9 @@ function ParticleDA.update_particle_noise!(d::ModelData, nprt_per_rank)
                       d.rng,
                       d.model_params.n_state_var,
                       nprt_per_rank)
+end
 
+function ParticleDA.get_particle_observations!(d::ModelData, nprt_per_rank)
     # get observations
     for ip in 1:nprt_per_rank
         get_obs!(@view(d.observations.model[:,ip]),
