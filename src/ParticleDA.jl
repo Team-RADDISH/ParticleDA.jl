@@ -38,11 +38,7 @@ above signature, specifying the type of `model_data`.
 function update_truth! end
 
 """
-<<<<<<< HEAD
-    ParticleDA.update_particle_dynamics!(model_data, nprt_per_rank::Int) -> particles_observations
-=======
-    ParticleDA.update_particles!(model_data, nprt_per_rank::Int)
->>>>>>> mg/split-update
+    ParticleDA.update_particle_dynamics!(model_data, nprt_per_rank::Int)
 
 Update the particles using the dynamic of the model.  `nprt_per_rank` is the
 number of particles per each MPI rank.  This method is intended to be extended
@@ -51,7 +47,7 @@ by the user with the above signature, specifying the type of `model_data`.
 function update_particle_dynamics! end
 
 """
-    ParticleDA.update_particle_noise!(model_data, nprt_per_rank::Int) -> particles_observations
+    ParticleDA.update_particle_noise!(model_data, nprt_per_rank::Int)
 
 Update the particles using the noise of the model and return the vector of the
 particles.  `nprt_per_rank` is the number of particles per each MPI rank.  This
@@ -61,13 +57,13 @@ specifying the type of `model_data`.
 function update_particle_noise! end
 
 """
-    ParticleDA.get_observations!(model_data, nprt_per_rank::Int) -> particles_observations
+    ParticleDA.get_particle_observations!(model_data, nprt_per_rank::Int) -> particles_observations
 
 Return the vector of the particles observations.  `nprt_per_rank` is the number
 of particles per each MPI rank.  This method is intended to be extended by the
 user with the above signature, specifying the type of `model_data`.
 """
-function get_observations! end
+function get_particle_observations! end
 
 """
     ParticleDA.write_snapshot(output_filename, model_data, avg_arr, var_arr, weights, it)
