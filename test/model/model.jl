@@ -79,7 +79,7 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     station_boundary_y::T = 150.0e3
 
     source_size::T = 3.0e4
-    bathymetry_setup::T = 3.0e4
+    bathymetry_setup::T = 3.0e3
     peak_height = 1.0
     peak_position = [floor(Int, nx / 4) * dx, floor(Int, ny / 4) * dy]
 
@@ -455,12 +455,15 @@ function ParticleDA.update_truth!(d::ModelData, _)
     return d.observations.truth
 end
 
-function ParticleDA.update_particles!(d::ModelData, nprt_per_rank)
+function ParticleDA.update_particle_dynamics!(d::ModelData, nprt_per_rank)
+    # Update dynamics
     Threads.@threads for ip in 1:nprt_per_rank
         tsunami_update!(@view(d.field_buffer[:, :, 1, threadid()]), @view(d.field_buffer[:, :, 2, threadid()]),
                         @view(d.states.particles[:, :, :, ip]), d.model_matrices, d.model_params)
-
     end
+end
+
+function ParticleDA.update_particle_noise!(d::ModelData, nprt_per_rank)
     # Add process noise
     add_random_field!(d.states.particles,
                       d.field_buffer,
@@ -468,7 +471,9 @@ function ParticleDA.update_particles!(d::ModelData, nprt_per_rank)
                       d.rng,
                       d.model_params.n_state_var,
                       nprt_per_rank)
+end
 
+function ParticleDA.get_particle_observations!(d::ModelData, nprt_per_rank)
     # get observations
     for ip in 1:nprt_per_rank
         get_obs!(@view(d.observations.model[:,ip]),

@@ -38,14 +38,32 @@ above signature, specifying the type of `model_data`.
 function update_truth! end
 
 """
-    ParticleDA.update_particles!(model_data, nprt_per_rank::Int) -> particles_observations
+    ParticleDA.update_particle_dynamics!(model_data, nprt_per_rank::Int)
 
-Update the particles using the dynamic of the model and return the vector of the
+Update the particles using the dynamic of the model.  `nprt_per_rank` is the
+number of particles per each MPI rank.  This method is intended to be extended
+by the user with the above signature, specifying the type of `model_data`.
+"""
+function update_particle_dynamics! end
+
+"""
+    ParticleDA.update_particle_noise!(model_data, nprt_per_rank::Int)
+
+Update the particles using the noise of the model and return the vector of the
 particles.  `nprt_per_rank` is the number of particles per each MPI rank.  This
 method is intended to be extended by the user with the above signature,
 specifying the type of `model_data`.
 """
-function update_particles! end
+function update_particle_noise! end
+
+"""
+    ParticleDA.get_particle_observations!(model_data, nprt_per_rank::Int) -> particles_observations
+
+Return the vector of the particles observations.  `nprt_per_rank` is the number
+of particles per each MPI rank.  This method is intended to be extended by the
+user with the above signature, specifying the type of `model_data`.
+"""
+function get_particle_observations! end
 
 """
     ParticleDA.write_snapshot(output_filename, model_data, avg_arr, var_arr, weights, it)
@@ -325,9 +343,11 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads.
 
-        @timeit_debug timer "Particle State Update and Process Noise" model_observations = update_particles!(model_data, nprt_per_rank)
+        @timeit_debug timer "Particle Dynamics" update_particle_dynamics!(model_data, nprt_per_rank);
+        @timeit_debug timer "Particle Noise" update_particle_noise!(model_data, nprt_per_rank)
+        @timeit_debug timer "Particle Observations" model_observations = get_particle_observations!(model_data, nprt_per_rank)
 
-        @timeit_debug timer "Weights" get_log_weights!(@view(filter_data.weights[1:nprt_per_rank]),
+        @timeit_debug timer "Particle Weights" get_log_weights!(@view(filter_data.weights[1:nprt_per_rank]),
                                                        truth_observations,
                                                        model_observations,
                                                        filter_params.weight_std)
