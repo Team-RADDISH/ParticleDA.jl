@@ -121,7 +121,7 @@ include(module_src)
 using .Model
 
 # Run the particle filter using the `init` file defined in the `Model` module
-run_particle_filter(Model.init, input_file)
+run_particle_filter(Model.init, input_file, BootstrapFilter())
 ```
 
 ### Observation Station Coordinates
