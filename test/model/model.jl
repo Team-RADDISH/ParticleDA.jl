@@ -413,6 +413,13 @@ ParticleDA.get_particles(d::ModelData) = d.states.particles
 # TODO: we should probably get rid of `get_truth`: it is only used as return
 # value of `particle_filter`, we may just return the whole `model_data`.
 ParticleDA.get_truth(d::ModelData) = d.states.truth
+ParticleDA.get_stations(d::ModelData) = [d.stations.ist d.stations.jst]
+
+function ParticleDA.set_particles!(d::ModelData, particles::AbstractArray{T}) where T
+
+    d.states.particles = particles
+    
+end
 
 function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, _rng::Union{Random.AbstractRNG,Nothing}=nothing)
 

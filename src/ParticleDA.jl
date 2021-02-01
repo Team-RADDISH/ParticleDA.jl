@@ -20,12 +20,29 @@ user with the above signature, specifying the type of `model_data`.
 function get_particles end
 
 """
+   ParticleDA.set_particles!(model_data, particles)
+
+Overwrite particle state in model_data with the vector particles. This method is intended to be extended by the
+user with the above signature, specifying the type of `model_data`.
+"""
+function set_particles! end
+
+"""
     ParticleDA.get_truth(model_data) -> truth_observations
 
 Return the vector of true observations.  This method is intended to be extended
 by the user with the above signature, specifying the type of `model_data`.
 """
 function get_truth end
+
+"""
+    ParticleDA.get_stations(model_data) -> station_coordinates
+
+Return an array of coordinates of the points of observation. This method is intended 
+to be extended by the user with the above signature, specifying the type of `model_data`.
+Required for optimal filter only.
+"""
+function get_stations end
 
 """
     ParticleDA.update_truth!(model_data, nprt_per_rank::Int) -> truth_observations
