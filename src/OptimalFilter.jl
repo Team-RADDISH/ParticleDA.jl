@@ -50,13 +50,16 @@ struct OfflineMatrices{T<:AbstractArray, S<:AbstractArray, U<:AbstractArray}
 end
 
 
-struct OnlineMatrices{T<:AbstractVector, S<:AbstractArray}
+struct OnlineMatrices{T<:AbstractVector, S<:AbstractArray, U<:AbstractArray}
 
     z1_bar::T
     z2::T
 
     Z1::S
     Z2::S
+
+    samples::U
+    mean::U
 
 end
 
@@ -226,7 +229,7 @@ function get_values_at_stations(field::AbstractMatrix{T}, stations::StationVecto
 end
 
 # Allocate and compute matrices that do not depend on time-dependent variables (height and observations).
-function init_offline_matrices(params::TestParameters, stations::StationVectors)
+function init_offline_matrices(params, stations::StationVectors)
 
     n1 = (params.nx + 1) * (params.ny + 1) # number of elements in original grid
     n1_bar = 4 * params.nx * params.ny     # number of elements in extended grid
@@ -279,17 +282,20 @@ function init_offline_matrices(params::TestParameters, stations::StationVectors)
 end
 
 # Allocate memory for matrices that will be updated during the time stepping loop.
-function init_online_matrices(params::TestParameters)
+function init_online_matrices(params, nprt)
 
     n1 = (params.nx + 1) * (params.ny + 1) # number of elements in original grid
     n1_bar = 4 * params.nx * params.ny # number of elements in extended grid
 
     C = ComplexF64
+    F = Float64
 
     matrices = OnlineMatrices(Vector{C}(undef, n1_bar),
                               Vector{C}(undef, params.nobs),
                               Matrix{C}(undef, params.nx+1, params.ny+1),
-                              Matrix{C}(undef, params.nx+1, params.ny+1)
+                              Matrix{C}(undef, params.nx+1, params.ny+1),
+                              Array{F}(undef, params.nx+1, params.ny+1, nprt),
+                              Array{F}(undef, params.nx+1, params.ny+1, nprt)
                               )
 
     return matrices
@@ -326,7 +332,7 @@ function calculate_mean_height!(mean::AbstractArray{T,3}, height::AbstractArray{
     # Loop over particles
     for iprt = 1:params.nprt
 
-        mul!(mu10, offline_matrices.R22_inv, get_values_at_stations(@view(height[iprt,:,:]), stations))
+        mul!(mu10, offline_matrices.R22_inv, get_values_at_stations(@view(height[:,:,iprt]), stations))
         mu10_sparse = sparse(stations.ist, stations.jst, mu10, params.nx+1, params.ny+1)
 
         # Compute decomposition of height values at stations times the inverse covariance matrix
@@ -335,20 +341,20 @@ function calculate_mean_height!(mean::AbstractArray{T,3}, height::AbstractArray{
 
         # Compute the mean for the ith particle using mu2 and mu11
         # Skip storing the temporary mu1 in Alex's code
-        mean[iprt,:,:] .= @view(height[iprt,:,:]) .- offline_matrices.buf1 .+ offline_matrices.buf2
+        mean[:,:,iprt] .= @view(height[:,:,iprt]) .- offline_matrices.buf1 .+ offline_matrices.buf2
 
     end
 
 end
 
-function sample_height_proposal!(samples::AbstractArray{T,3}, height::AbstractArray{T,3}, mean::AbstractArray{T,3},
+function sample_height_proposal!(height::AbstractArray{T,3},
                                  offline_matrices::OfflineMatrices, online_matrices::OnlineMatrices,
-                                 observations::AbstractVector{T}, stations::StationVectors, params::TestParameters,
+                                 observations::AbstractVector{T}, stations::StationVectors, params,
                                  rng::Random.AbstractRNG) where {T,S}
 
     @assert params.nprt % 2 == 0 "Number of particles must be even"
 
-    calculate_mean_height!(mean, height, offline_matrices, observations, stations, params)
+    calculate_mean_height!(online_matrices.mean, height, offline_matrices, observations, stations, params)
 
     #TODO: Can you create a Normal(0,1) distribution of complex type?
     nd = Normal(0,1)
@@ -373,8 +379,8 @@ function sample_height_proposal!(samples::AbstractArray{T,3}, height::AbstractAr
         # Multiply z2 with R12*R22^-1 and reshape the result into an array
         online_matrices.Z2 .= (offline_matrices.R12_invR22 * online_matrices.z2)[i_n1]
 
-        samples[iprt,    :,:] .= @view(mean[iprt,    :,:]) .+ real.(online_matrices.Z1 .- online_matrices.Z2)
-        samples[iprt + 1,:,:] .= @view(mean[iprt + 1,:,:]) .+ imag.(online_matrices.Z1 .- online_matrices.Z2)
+        online_matrices.samples[:,:,iprt    ] .= @view(online_matrices.mean[:,:,iprt    ]) .+ real.(online_matrices.Z1 .- online_matrices.Z2)
+        online_matrices.samples[:,:,iprt + 1] .= @view(online_matrices.mean[:,:,iprt + 1]) .+ imag.(online_matrices.Z1 .- online_matrices.Z2)
 
     end
 
@@ -393,60 +399,11 @@ function get_log_weights!(log_weights::AbstractVector{T},
 
     for iprt in 1:nprt
 
-        log_weights[iprt] = -0.5 * (obs - obs_model[iprt,:])' * matrices.R22_inv * (obs - obs_model[iprt,:])
+        log_weights[iprt] = -0.5 * (obs - obs_model[:,iprt])' * matrices.R22_inv * (obs - obs_model[:,iprt])
 
     end
 
     #Normalization is done in a separate function due to parallelism optimisation
-
-end
-
-@testset "Optimal Filter unit tests" begin
-
-    seed = 123
-    Random.seed!(seed)
-
-    # Use default parameters
-    params = TestParameters()
-    # Set station coordinates
-    ist = rand(1:params.nx, 3)
-    jst = rand(1:params.ny, 3)
-    stations = StationVectors(ist, jst)
-    cov_ext = extended_covariance(0.0, 0.5 * params.y_length, params)
-    @test cov_ext ≈ exp(-0.5 * params.y_length / (2 * params.lambda_cov))
-    @test cov_ext ≈ extended_covariance(2.0 * params.x_length, 0.5 * params.y_length, params)
-    @test cov_ext ≈ extended_covariance(0.0, 1.5 * params.y_length, params)
-    arr = rand(ComplexF64,10,10)
-    arr2 = zeros(ComplexF64,10,10)
-    arr3 = zeros(ComplexF64,10,10)
-    normalized_2d_fft!(arr2,arr,params)
-    normalized_inverse_2d_fft!(arr3,arr2,params)
-    @test arr ≈ arr3
-
-    cov_1 = zeros(params.nobs,4*params.nx*params.ny)
-    cov_2 = zeros((1+params.nx)*(1+params.ny), params.nobs)
-    cov_3 = zeros(params.nobs,params.nobs)
-    covariance_stations_extended_grid!(cov_1,params,stations)
-    covariance_stations_grid!(cov_2,params,stations)
-    covariance_stations!(cov_3,params,stations)
-    @test all(isfinite.(cov_1))
-    @test all(isfinite.(cov_2))
-    @test all(isfinite.(cov_3))
-    @test cov_3 == Symmetric(cov_3)
-
-    mean = Array{Float64}(undef, params.nprt, params.nx+1, params.ny+1)
-    height = rand(params.nprt, params.nx+1, params.ny+1)
-    obs = randn(params.nobs)
-    mat_off = init_offline_matrices(params, stations)
-    @test minimum(mat_off.Lambda) > 0.0
-    calculate_mean_height!(mean, height, mat_off, obs, stations, params)
-    @test all(isfinite.(mean))
-
-    rng = Random.MersenneTwister(seed)
-    mat_on = init_online_matrices(params)
-    samples = Array{Float64}(undef, params.nprt, params.nx+1, params.ny+1)
-    sample_height_proposal!(samples, height, mean, mat_off, mat_on, obs, stations, params, rng)
-    @test all(isfinite.(samples))
 
 end
 
@@ -464,42 +421,39 @@ using BenchmarkTools
     stations = StationVectors(st.st_ij[:,1].+1, st.st_ij[:,2].+1)
 
     h(x,y) = 1 - (x-params.nx-1)^2 - (y-params.ny-1)^2 + randn()
-    height = zeros(params.nprt, params.nx+1, params.ny+1)
+    height = zeros(params.nx+1, params.ny+1, params.nprt)
     x = (1:params.nx+1) .* params.dx
     y = (1:params.ny+1) .* params.dy
     for i = 1:params.nprt
-        height[i,:,:] = h.(x',y)
+        height[:,:,i] = h.(x',y)
     end
 
     obs = zeros(params.nobs)
     for i = 1:params.nobs
-        obs[i] = height[1,stations.ist[i], stations.jst[i]] + rand()
+        obs[i] = height[stations.ist[i], stations.jst[i],1] + rand()
     end
 
-    mean_height = Array{Float64}(undef, params.nprt, params.nx+1, params.ny+1)
-    samples = Array{Float64}(undef, params.nprt, params.nx+1, params.ny+1)
-
     mat_off = init_offline_matrices(params, stations)
-    mat_on = init_online_matrices(params)
+    mat_on = init_online_matrices(params, params.nprt)
 
-    sample_height_proposal!(samples, height, mean_height, mat_off, mat_on, obs, stations, params, rng)
+    sample_height_proposal!(height, mat_off, mat_on, obs, stations, params, rng)
 
     Yobs_t = copy(obs)
-    FH_t = copy(reshape(height, params.nprt, (params.nx+1)*(params.ny+1)))
+    FH_t = copy(reshape(permutedims(height, [3 1 2]), params.nprt, (params.nx+1)*(params.ny+1)))
 
     Mean_height = Calculate_Mean(FH_t, th, st, Yobs_t, Sobs, gr)
     Samples = Sample_Height_Proposal(FH_t, th, st, Yobs_t, Sobs, gr)
 
-    @test mean_height ≈ reshape(Mean_height, params.nprt, params.nx+1, params.ny+1)
-    @test samples ≈ reshape(Samples, params.nprt, params.nx+1, params.ny+1)
+    @test mat_on.mean ≈ permutedims(reshape(Mean_height, params.nprt, params.nx+1, params.ny+1), [2 3 1])
+    @test mat_on.samples ≈ permutedims(reshape(Samples, params.nprt, params.nx+1, params.ny+1), [2 3 1])
 
     print("old mean height: ")
     @btime Mean_height = Calculate_Mean($FH_t, $th, $st, $Yobs_t, $Sobs, $gr)
     print("new mean height: ")
-    @btime calculate_mean_height!($mean_height, $height, $mat_off, $obs, $stations, $params)
+    @btime calculate_mean_height!($mat_on.mean, $height, $mat_off, $obs, $stations, $params)
     print("old sampling: ")
     @btime Samples = Sample_Height_Proposal($FH_t, $th, $st, $Yobs_t, $Sobs, $gr)
     print("new sampling: ")
-    @btime sample_height_proposal!($samples, $height, $mean_height, $mat_off, $mat_on, $obs, $stations, $params, $rng)
+    @btime sample_height_proposal!($height, $mat_off, $mat_on, $obs, $stations, $params, $rng)
 
 end
