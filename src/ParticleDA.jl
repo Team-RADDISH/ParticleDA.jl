@@ -7,6 +7,7 @@ export run_particle_filter, BootstrapFilter
 
 include("params.jl")
 include("io.jl")
+include("OptimalFilter.jl")
 
 using .Default_params
 
@@ -38,11 +39,12 @@ function get_truth end
 """
     ParticleDA.get_stations(model_data) -> station_coordinates
 
-Return an array of coordinates of the points of observation. This method is intended 
+Return an array of coordinates of the points of observation. This method is intended
 to be extended by the user with the above signature, specifying the type of `model_data`.
 Required for optimal filter only.
 """
 function get_stations end
+function get_rng end
 
 """
     ParticleDA.update_truth!(model_data, nprt_per_rank::Int) -> truth_observations
@@ -94,6 +96,23 @@ time).  This method is intended to be extended by the user with the above
 signature, specifying the type of `model_data`.
 """
 function write_snapshot end
+
+"""
+    ParticleFilter
+
+Abstract type for the particle filter to use.  Currently used subtypes are:
+* [`BootstrapFilter`](@ref)
+* [`OptimalFilter`](@ref)
+"""
+abstract type ParticleFilter end
+"""
+    BootstrapFilter()
+
+Instantiate the singleton type `BootstrapFilter`.  This can be used as argument
+of [`run_particle_filter`](@ref) to select the bootstrap filter.
+"""
+struct BootstrapFilter <: ParticleFilter end
+struct OptimalFilter <: ParticleFilter end
 
 # Get weights for particles by evaluating the probability of the observations predicted by the model
 # from independent normal pdfs for each observation.
@@ -293,21 +312,6 @@ struct FilterData{T, S, U, V, X}
     copy_buffer::X
 
 end
-
-"""
-    ParticleFilter
-
-Abstract type for the particle filter to use.  Currently used subtypes are:
-* [`BootstrapFilter`](@ref)
-"""
-abstract type ParticleFilter end
-"""
-    BootstrapFilter()
-
-Instantiate the singleton type `BootstrapFilter`.  This can be used as argument
-of [`run_particle_filter`](@ref) to select the bootstrap filter.
-"""
-struct BootstrapFilter <: ParticleFilter end
 
 function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict, ::BootstrapFilter)
 

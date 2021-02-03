@@ -1,0 +1,13 @@
+filter:
+  nprt: 2
+  sigma_cov: 1.0
+  lambda_cov: 1.0
+
+model:
+  llw2d:
+    nobs: 3
+    nx: 20
+    ny: 20
+    x_length: 40.0
+    y_length: 40.0
+    obs_noise_std: 0.01

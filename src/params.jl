@@ -14,6 +14,8 @@ Parameters for ParticleDA run. Keyword arguments:
 * `nprt::Int` : Number of particles for particle filter
 * `weight_std`: Standard deviation of the distribution of the weights
 * `enable_timers::Bool` : Flag to control run time measurements
+* `lambda_cov`: Denominator of the exponent term in covariance functionused by Optimal Filter
+* `sigma_cov`: Multiplier of the exponential in covariance function used by Optimal Filter
 """
 Base.@kwdef struct FilterParameters{T<:AbstractFloat}
 
@@ -29,6 +31,9 @@ Base.@kwdef struct FilterParameters{T<:AbstractFloat}
     weight_std::T = 1.0
 
     enable_timers::Bool = false
+
+    lambda_cov::T = 1.0
+    sigma_cov::T = 1.0
 
 end
 

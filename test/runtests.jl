@@ -256,3 +256,103 @@ end
         end
     end
 end
+
+@testset "Optimal Filter unit tests" begin
+
+    seed = 123
+    Random.seed!(seed)
+
+    # Use default parameters
+    model_params = ModelParameters()
+    filter_params = FilterParameters()
+    # Set station coordinates
+    ist = rand(1:model_params.nx, model_params.nobs)
+    jst = rand(1:model_params.ny, model_params.nobs)
+    stations = Model.StationVectors(ist, jst)
+    cov_ext = ParticleDA.extended_covariance(0.0, 0.5 * model_params.y_length, model_params, filter_params)
+    @test cov_ext ≈ exp(-0.5 * model_params.y_length / (2 * filter_params.lambda_cov))
+    @test cov_ext ≈ ParticleDA.extended_covariance(2.0 * model_params.x_length, 0.5 * model_params.y_length, model_params, filter_params)
+    @test cov_ext ≈ ParticleDA.extended_covariance(0.0, 1.5 * model_params.y_length, model_params, filter_params)
+    arr = rand(ComplexF64,10,10)
+    arr2 = zeros(ComplexF64,10,10)
+    arr3 = zeros(ComplexF64,10,10)
+    ParticleDA.normalized_2d_fft!(arr2,arr,model_params)
+    ParticleDA.normalized_inverse_2d_fft!(arr3,arr2,model_params)
+    @test arr ≈ arr3
+
+    cov_1 = zeros(model_params.nobs,4*model_params.nx*model_params.ny)
+    cov_2 = zeros((1+model_params.nx)*(1+model_params.ny), model_params.nobs)
+    cov_3 = zeros(model_params.nobs,model_params.nobs)
+    ParticleDA.covariance_stations_extended_grid!(cov_1,model_params,filter_params,stations)
+    ParticleDA.covariance_stations_grid!(cov_2,model_params,filter_params,stations)
+    ParticleDA.covariance_stations!(cov_3,model_params,filter_params,stations)
+    @test all(isfinite.(cov_1))
+    @test all(isfinite.(cov_2))
+    @test all(isfinite.(cov_3))
+    @test cov_3 == Symmetric(cov_3)
+
+    height = rand(model_params.nx+1, model_params.ny+1, filter_params.nprt)
+    obs = randn(model_params.nobs)
+    mat_off = ParticleDA.init_offline_matrices(model_params, filter_params, stations)
+    mat_on = ParticleDA.init_online_matrices(model_params, filter_params)
+    @test minimum(mat_off.Lambda) > 0.0
+    ParticleDA.calculate_mean_height!(mat_on.mean, height, mat_off, obs, stations, model_params, filter_params)
+    @test all(isfinite.(mat_on.mean))
+
+    rng = Random.MersenneTwister(seed)
+    ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, model_params, filter_params, rng)
+    @test all(isfinite.(mat_on.samples))
+
+end
+
+@testset "Optimal Filter validation" begin
+
+    seed = 123
+    Random.seed!(seed)
+    rng = Random.MersenneTwister(seed)
+
+    include(joinpath(@__DIR__,"optimal_filter_validation.jl"));
+
+    params_dict = YAML.load_file(joinpath(@__DIR__, "optimal_filter_validation.yaml"))
+    filter_params = ParticleDA.get_params(FilterParameters, params_dict["filter"])
+    model_params = ParticleDA.get_params(ModelParameters, params_dict["model"]["llw2d"])
+
+    stations = Model.StationVectors(st.st_ij[:,1].+1, st.st_ij[:,2].+1)
+
+    h(x,y) = 1 - (x-model_params.nx-1)^2 - (y-model_params.ny-1)^2 + randn()
+    height = zeros(model_params.nx+1, model_params.ny+1, filter_params.nprt)
+    x = (1:model_params.nx+1) .* model_params.dx
+    y = (1:model_params.ny+1) .* model_params.dy
+    for i = 1:filter_params.nprt
+        height[:,:,i] = h.(x',y)
+    end
+
+    obs = zeros(model_params.nobs)
+    for i = 1:model_params.nobs
+        obs[i] = height[stations.ist[i], stations.jst[i],1] + rand()
+    end
+
+    mat_off = ParticleDA.init_offline_matrices(model_params, filter_params, stations)
+    mat_on = ParticleDA.init_online_matrices(model_params, filter_params)
+
+    ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, model_params, filter_params, rng)
+
+    Yobs_t = copy(obs)
+    FH_t = copy(reshape(permutedims(height, [3 1 2]), filter_params.nprt, (model_params.nx+1)*(model_params.ny+1)))
+
+    Mean_height = Calculate_Mean(FH_t, th, st, Yobs_t, Sobs, gr)
+    Samples = Sample_Height_Proposal(FH_t, th, st, Yobs_t, Sobs, gr)
+
+    @test mat_on.mean ≈ permutedims(reshape(Mean_height, filter_params.nprt, model_params.nx+1, model_params.ny+1), [2 3 1])
+    @test mat_on.samples ≈ permutedims(reshape(Samples, filter_params.nprt, model_params.nx+1, model_params.ny+1), [2 3 1])
+
+    # print("old mean height: ")
+    # @btime Mean_height = Calculate_Mean($FH_t, $th, $st, $Yobs_t, $Sobs, $gr)
+    # print("new mean height: ")
+    # @btime calculate_mean_height!($mat_on.mean, $height, $mat_off, $obs, $stations, $params)
+    # print("old sampling: ")
+    # @btime Samples = Sample_Height_Proposal($FH_t, $th, $st, $Yobs_t, $Sobs, $gr)
+    # print("new sampling: ")
+    # @btime sample_height_proposal!($height, $mat_off, $mat_on, $obs, $stations, $params, $rng)
+
+end
