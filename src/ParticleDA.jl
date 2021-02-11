@@ -11,6 +11,21 @@ include("io.jl")
 using .Default_params
 
 # Functions to extend in the model
+
+"""
+    ParticleDA.get_grid_size(model_data) -> NTuple{N, Int} where N
+
+Return a tuple with the size of the data.
+"""
+function get_grid_size end
+
+"""
+    ParticleDA.get_n_state_var(model_data) -> Int
+
+Return the number of state variables.
+"""
+function get_n_state_var end
+
 """
     ParticleDA.get_particle(model_data) -> particles
 
@@ -253,15 +268,15 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
 
     resampling_indices = Vector{Int}(undef, filter_params.nprt)
 
-    # TODO: these variables should be set in a better way
-    nx, ny, n_state_var = model_data.model_params.nx, model_data.model_params.ny, model_data.model_params.n_state_var
+    size = get_grid_size(model_data)
+    n_state_var = get_n_state_var(model_data)
 
-    statistics = Array{SummaryStat{T}, 3}(undef, nx, ny, n_state_var)
-    avg_arr = Array{T,3}(undef, nx, ny, n_state_var)
-    var_arr = Array{T,3}(undef, nx, ny, n_state_var)
+    statistics = Array{SummaryStat{T}, 3}(undef, size..., n_state_var)
+    avg_arr = Array{T,3}(undef, size..., n_state_var)
+    var_arr = Array{T,3}(undef, size..., n_state_var)
 
     # Memory buffer used during copy of the states
-    copy_buffer = Array{T,4}(undef, nx, ny, n_state_var, nprt_per_rank)
+    copy_buffer = Array{T,4}(undef, size..., n_state_var, nprt_per_rank)
 
     return FilterData(weights, resampling_indices, statistics, avg_arr, var_arr, copy_buffer)
 end
