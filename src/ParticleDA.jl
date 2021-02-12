@@ -279,7 +279,7 @@ function copy_states!(particles::AbstractArray{T,4},
 end
 
 # Initialize arrays used by the filter
-function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank::Int, T::Type)
+function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank::Int, T::Type, ::BootstrapFilter)
 
     if MPI.Comm_rank(MPI.COMM_WORLD) == filter_params.master_rank
         weights = Vector{T}(undef, filter_params.nprt)
@@ -300,6 +300,19 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
     copy_buffer = Array{T,4}(undef, nx, ny, n_state_var, nprt_per_rank)
 
     return FilterData(weights, resampling_indices, statistics, avg_arr, var_arr, copy_buffer)
+end
+
+# Initialize arrays used by the filter
+function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank::Int, T::Type, ::OptimalFilter)
+
+    filter_data = init_filter(filter_params, model_data, nprt_per_rank, T, BootstrapFilter())
+
+    stations = StationVectors(get_stations(model_data)[:,1], get_stations(model_data)[:,2])
+    offline_matrices = init_offline_matrices(model_data.model_params, stations)
+    online_matrices = init_online_matrice(model_data.model_params)
+    rng = get_rng(model_data)
+
+    return filter_data, offline_matrices, online_matrices, stations, rng
 end
 
 struct FilterData{T, S, U, V, X}
@@ -338,7 +351,7 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
     @timeit_debug timer "Model initialization" model_data = init(model_params_dict, nprt_per_rank, my_rank)
 
     # TODO: put the body of this block in a function
-    @timeit_debug timer "Filter initialization" filter_data = init_filter(filter_params, model_data, nprt_per_rank, Float64)
+    @timeit_debug timer "Filter initialization" filter_data = init_filter(filter_params, model_data, nprt_per_rank, Float64, BootstrapFilter())
 
     @timeit_debug timer "get_particles" particles = get_particles(model_data)
     @timeit_debug timer "Mean and Var" get_mean_and_var!(filter_data.statistics, particles, filter_params.master_rank)
@@ -450,6 +463,151 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
 
     return get_truth(model_data), filter_data.avg_arr, filter_data.var_arr
 end
+
+function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict, ::OptimalFilter)
+
+    if !MPI.Initialized()
+        MPI.Init()
+    end
+
+    my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
+    my_size = MPI.Comm_size(MPI.COMM_WORLD)
+
+    # For now, assume that the particles can be evenly divided between ranks
+    @assert mod(filter_params.nprt, my_size) == 0
+
+    nprt_per_rank = Int(filter_params.nprt / my_size)
+
+    if filter_params.enable_timers
+        TimerOutputs.enable_debug_timings(ParticleDA)
+    end
+    timer = TimerOutput()
+
+    nprt_per_rank = Int(filter_params.nprt / MPI.Comm_size(MPI.COMM_WORLD))
+
+    # Do memory allocations
+    @timeit_debug timer "Model initialization" model_data = init(model_params_dict, nprt_per_rank, my_rank)
+
+    # TODO: put the body of this block in a function
+    @timeit_debug timer "Filter initialization" filter_data, offline_matrices, online_matrices, stations, rng = init_filter(filter_params, model_data, nprt_per_rank, Float64, OptimalFilter())
+
+    @timeit_debug timer "get_particles" particles = get_particles(model_data)
+    @timeit_debug timer "Mean and Var" get_mean_and_var!(filter_data.statistics, particles, filter_params.master_rank)
+
+    # Write initial state (time = 0) + metadata
+    if(filter_params.verbose && my_rank == filter_params.master_rank)
+        @timeit_debug timer "IO" begin
+            unpack_statistics!(filter_data.avg_arr, filter_data.var_arr, filter_data.statistics)
+            write_snapshot(filter_params.output_filename,
+                           model_data,
+                           filter_data.avg_arr,
+                           filter_data.var_arr,
+                           filter_data.weights,
+                           0)
+        end
+    end
+
+    for it in 1:filter_params.n_time_step
+
+        # integrate true synthetic wavefield
+        @timeit_debug timer "True State Update and Process Noise" truth_observations = update_truth!(model_data, nprt_per_rank)
+
+        # Forecast: Update tsunami forecast and get observations from it
+        # Parallelised with threads.
+
+        @timeit_debug timer "Particle Dynamics" update_particle_dynamics!(model_data, nprt_per_rank);
+        @timeit_debug timer "Particle Observations" model_observations = get_particle_observations!(model_data, nprt_per_rank)
+
+        @timeit_debug timer "get_particles" particles = get_particles(model_data)
+        @timeit_debug timer "Optimal Sampling" begin
+            sample_height_proposal!(@view(particles[:,:,1,:]),offline_matrices,online_matrices,
+                model_observations,stations,model_data.model_params,rng)
+            particles[:,:,1,:] .= offline_matrices.samples
+        end
+        @timeit_debug timer "set_particles" set_particles(model_data, particles)
+        @timeit_debug timer "Particle Weights" get_log_weights!(@view(filter_data.weights[1:nprt_per_rank]),
+                                                       truth_observations,
+                                                       model_observations,
+                                                       offline_matrices)
+
+        # Gather weights to master rank and resample particles.
+        # Doing MPI collectives in place to save memory allocations.
+        # This style with if statmeents is recommended instead of MPI.Gather_in_place! which is a bit strange.
+        # Note that only master_rank allocates memory for all particles. Other ranks only allocate
+        # for their chunk of state.
+        if my_rank == filter_params.master_rank
+            @timeit_debug timer "MPI Gather" MPI.Gather!(MPI.IN_PLACE,
+                                                         UBuffer(filter_data.weights, nprt_per_rank),
+                                                         filter_params.master_rank,
+                                                         MPI.COMM_WORLD)
+            @timeit_debug timer "Weights" normalized_exp!(filter_data.weights)
+            @timeit_debug timer "Resample" resample!(filter_data.resampling_indices, filter_data.weights)
+
+        else
+            @timeit_debug timer "MPI Gather" MPI.Gather!(filter_data.weights,
+                                                         nothing,
+                                                         filter_params.master_rank,
+                                                         MPI.COMM_WORLD)
+        end
+
+        # Broadcast resampled particle indices to all ranks
+        MPI.Bcast!(filter_data.resampling_indices, filter_params.master_rank, MPI.COMM_WORLD)
+
+        @timeit_debug timer "get_particles" particles = get_particles(model_data)
+        @timeit_debug timer "State Copy" copy_states!(particles,
+                                                      filter_data.copy_buffer,
+                                                      filter_data.resampling_indices,
+                                                      my_rank,
+                                                      nprt_per_rank)
+
+        @timeit_debug timer "get_particles" particles = get_particles(model_data)
+        @timeit_debug timer "Mean and Var" get_mean_and_var!(filter_data.statistics, particles, filter_params.master_rank)
+
+        if my_rank == filter_params.master_rank && filter_params.verbose
+
+            @timeit_debug timer "IO" begin
+                unpack_statistics!(filter_data.avg_arr, filter_data.var_arr, filter_data.statistics)
+                write_snapshot(filter_params.output_filename, model_data, filter_data.avg_arr, filter_data.var_arr, filter_data.weights, it)
+            end
+
+        end
+
+    end
+
+    if filter_params.enable_timers
+
+        if my_rank == filter_params.master_rank
+            print_timer(timer)
+        end
+
+        if filter_params.verbose
+            # Gather string representations of timers from all ranks and write them on master
+            str_timer = string(timer)
+
+            # Assume the length of the timer string on master is the longest (because master does more stuff)
+            if my_rank == filter_params.master_rank
+                length_timer = length(string(timer))
+            else
+                length_timer = nothing
+            end
+
+            length_timer = MPI.bcast(length_timer, filter_params.master_rank, MPI.COMM_WORLD)
+
+            chr_timer = Vector{Char}(rpad(str_timer,length_timer))
+
+            timer_chars = MPI.Gather(chr_timer, filter_params.master_rank, MPI.COMM_WORLD)
+
+            if my_rank == filter_params.master_rank
+                @timeit_debug timer "IO" write_timers(length_timer, my_size, timer_chars, filter_params)
+            end
+        end
+    end
+
+    unpack_statistics!(filter_data.avg_arr, filter_data.var_arr, filter_data.statistics)
+
+    return get_truth(model_data), filter_data.avg_arr, filter_data.var_arr
+end
+
 
 # Initialise params struct with user-defined dict of values.
 function get_params(T, user_input_dict::Dict)
