@@ -814,9 +814,9 @@ function Sample_Height_Proposal(FH_t, th, st, Yobs_t, Sobs, gr)
   rng = Random.MersenneTwister(123)
   for i in 0:(N0-1)
 
-    e1 = rand(rng, Normal(0,1),bar_n1) + rand(rng, Normal(0,1),bar_n1)im
+    e1 = randn(rng, bar_n1) + randn(rng, bar_n1)im
 
-    e2 = rand(rng, Normal(0,1),n2) + rand(rng, Normal(0,1),n2)im
+    e2 = randn(rng, n2) + randn(rng, n2)im
 
     bar_z1 = f_W(Lambda^(1/2)*e1, gr)
     z2 = (K*e1) + (L*e2)
