@@ -44,6 +44,13 @@ to be extended by the user with the above signature, specifying the type of `mod
 Required for optimal filter only.
 """
 function get_stations end
+"""
+    ParticleDA.get_rng(model_data) -> rng
+
+Return the random number generator used by the model. This method is intended
+to be extended by the user with the above signature, specifying the type of `model_data`.
+Required for optimal filter only.
+"""
 function get_rng end
 
 """

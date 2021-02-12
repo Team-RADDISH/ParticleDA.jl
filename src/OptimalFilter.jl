@@ -330,17 +330,13 @@ function sample_height_proposal!(height::AbstractArray{T,3},
 
     calculate_mean_height!(online_matrices.mean, height, offline_matrices, observations, stations, model_params, filter_params)
 
-    #TODO: Can you create a Normal(0,1) distribution of complex type?
-    nd = Normal(0,1)
-
     i_n1 = LinearIndices((model_params.nx+1, model_params.ny+1))
     i_n1_bar = LinearIndices((2*model_params.nx, 2*model_params.ny))
 
     for iprt in 1:2:filter_params.nprt
-        # TODO randn(ComplexF64) seems to set variance = 1/2. Could not find how to change that.
         # TODO we could pre-create all our random numbers in one go before the loop, would that be faster?
-        e1 = rand(rng, nd, 4*model_params.nx*model_params.ny) .+ rand(rng, nd, 4*model_params.nx*model_params.ny)im
-        e2 = rand(rng, nd, model_params.nobs) .+ rand(rng, nd, model_params.nobs)im
+        e1 = complex.(randn(rng, 4*model_params.nx*model_params.ny), randn(rng, 4*model_params.nx*model_params.ny))
+        e2 = complex.(randn(rng, model_params.nobs), randn(rng, model_params.nobs))
 
         # This gives the vector z1_bar
         normalized_inverse_2d_fft!(online_matrices.z1_bar, Diagonal(offline_matrices.Lambda)^(1/2) * e1, model_params)
