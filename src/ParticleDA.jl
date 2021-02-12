@@ -516,7 +516,7 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
 
     for it in 1:filter_params.n_time_step
 
-        # integrate true synthetic wavefield
+        # Integrate true synthetic wavefield
         @timeit_debug timer "True State Update and Process Noise" truth_observations = update_truth!(model_data, nprt_per_rank)
 
         # Forecast: Update tsunami forecast and get observations from it
@@ -525,13 +525,31 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
         @timeit_debug timer "Particle Dynamics" update_particle_dynamics!(model_data, nprt_per_rank);
         @timeit_debug timer "Particle Observations" model_observations = get_particle_observations!(model_data, nprt_per_rank)
 
+        # Optimal Filter: After updating the particle dynamics, we apply the "optimal proposal" in
+        #                 sample_height_proposal!() to the first state variable (height). We apply
+        #                 a sample from the gaussian random field in update_particle_noise!() to the other
+        #                 state variables (velocity).
+
         @timeit_debug timer "get_particles" particles = get_particles(model_data)
-        @timeit_debug timer "Optimal Sampling" begin
-            sample_height_proposal!(@view(particles[:,:,1,:]),offline_matrices,online_matrices,
-                model_observations,stations,model_data.model_params,rng)
-            particles[:,:,1,:] .= offline_matrices.samples
-        end
+
+        # Apply optimal proposal, the result will be in offline_matrices.samples
+        @timeit_debug timer "Optimal Sampling" sample_height_proposal!(@view(particles[:,:,1,:]),
+                                                                       offline_matrices,
+                                                                       online_matrices,
+                                                                       model_observations,
+                                                                       stations,
+                                                                       model_data.model_params,
+                                                                       rng)
+
+        # Add noise from the standard gaussian random field to all state variables in model_data
+        @timeit_debug timer "Particle Noise" update_particle_noise!(model_data, nprt_per_rank)
+
+        # Overwrite the height state variable with the samples of the optimal proposal
+        @timeit_debug timer "Copy Height Samples" particles[:,:,1,:] .= offline_matrices.samples
         @timeit_debug timer "set_particles" set_particles(model_data, particles)
+
+        # Optimal Filter ends.
+
         @timeit_debug timer "Particle Weights" get_log_weights!(@view(filter_data.weights[1:nprt_per_rank]),
                                                        truth_observations,
                                                        model_observations,
