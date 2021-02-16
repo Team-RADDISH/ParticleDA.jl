@@ -319,10 +319,10 @@ end
 
     stations = Model.StationVectors(st.st_ij[:,1].+1, st.st_ij[:,2].+1)
 
-    h(x,y) = 1 - (x-model_params.nx-1)^2 - (y-model_params.ny-1)^2 + randn()
+    h(x,y) = sin(x)^2 + cos(y)^2
     height = zeros(model_params.nx+1, model_params.ny+1, filter_params.nprt)
-    x = (1:model_params.nx+1) .* model_params.dx
-    y = (1:model_params.ny+1) .* model_params.dy
+    x = (1:model_params.nx+1) .* 2 .* pi / model_params.dx
+    y = (1:model_params.ny+1) .* 4 .* pi / model_params.dy
     for i = 1:filter_params.nprt
         height[:,:,i] = h.(x',y)
     end
