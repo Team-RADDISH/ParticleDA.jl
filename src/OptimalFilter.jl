@@ -67,19 +67,30 @@ function extended_covariance(x::T, y::T, model_params, filter_params) where T
 
 end
 
+function get_modified_dxdy(model_params)
+
+    dx = model_params.x_length/(model_params.nx-1)
+    dy = model_params.y_length/(model_params.ny-1)
+
+    return dx,dy
+
+end
+
 # Covariance between observations and the extended grid /bar R_21, from equation 11 in Dietrich & Newsam 96
 function covariance_stations_extended_grid!(cov::AbstractMatrix{T}, model_params, filter_params, stations) where T
 
     xid = 1:model_params.nx_ext
     yid = 1:model_params.ny_ext
 
+    dx,dy = get_modified_dxdy(model_params)
+
     c = CartesianIndices((xid, yid))[:]
 
     @assert size(cov) == (model_params.nobs, length(c))
 
     for (i,ist,jst) in zip(1:model_params.nobs, stations.ist, stations.jst)
-        cov[i,:] .= extended_covariance.(abs.(getindex.(c, 1) .- ist) .* model_params.dx,
-                                         abs.(getindex.(c, 2) .- jst) .* model_params.dy,
+        cov[i,:] .= extended_covariance.(abs.(getindex.(c, 1) .- ist) .* dx,
+                                         abs.(getindex.(c, 2) .- jst) .* dy,
                                          (model_params,), (filter_params,))
     end
 
@@ -91,13 +102,15 @@ function covariance_stations_grid!(cov::AbstractMatrix{T}, model_params, filter_
     xid = 1:model_params.nx
     yid = 1:model_params.ny
 
+    dx,dy = get_modified_dxdy(model_params)
+
     c = CartesianIndices((xid, yid))[:]
 
     @assert size(cov) == (length(c), model_params.nobs)
 
     for (i,ist,jst) in zip(1:model_params.nobs, stations.ist, stations.jst)
-        cov[:,i] .= extended_covariance.(abs.(getindex.(c, 1) .- ist) .* model_params.dx,
-                                         abs.(getindex.(c, 2) .- jst) .* model_params.dy,
+        cov[:,i] .= extended_covariance.(abs.(getindex.(c, 1) .- ist) .* dx,
+                                         abs.(getindex.(c, 2) .- jst) .* dy,
                                          (model_params,), (filter_params,))
     end
 
@@ -107,8 +120,10 @@ end
 # TODO: Ask Alex why we add sigma^2 on the diagonal
 function covariance_stations!(cov::AbstractMatrix{T}, model_params, filter_params, stations) where T
 
-    cov .= covariance.(abs.(stations.ist .- stations.ist') .* model_params.dx,
-                       abs.(stations.jst' .- stations.jst) .* model_params.dy,
+    dx,dy = get_modified_dxdy(model_params)
+
+    cov .= covariance.(abs.(stations.ist .- stations.ist') .* dx,
+                       abs.(stations.jst' .- stations.jst) .* dy,
                        (filter_params,)) .+ I(model_params.nobs) .* model_params.obs_noise_std.^2
 
 end
@@ -120,10 +135,12 @@ function first_column_covariance_extended_grid!(rho::AbstractVector{T}, model_pa
     xid = 1:model_params.nx_ext
     yid = 1:model_params.ny_ext
 
+    dx,dy = get_modified_dxdy(model_params)
+
     c = CartesianIndices((xid, yid))[:]
 
-    rho .= extended_covariance.((getindex.(c, 1) .- 1) .* model_params.dx,
-                                (getindex.(c, 2) .- 1) .* model_params.dy,
+    rho .= extended_covariance.((getindex.(c, 1) .- 1) .* dx,
+                                (getindex.(c, 2) .- 1) .* dy,
                                 (model_params,), (filter_params,))
 
 
@@ -246,8 +263,6 @@ function init_offline_matrices(model_params, filter_params, stations)
 
     A = real.(matrices.R22 .- matrices.K*KH)
 
-    @show(A)
-    
     if ishermitian(A)
         matrices.L .= cholesky(A).L
     end
