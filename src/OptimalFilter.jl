@@ -70,8 +70,8 @@ end
 # Covariance between observations and the extended grid /bar R_21, from equation 11 in Dietrich & Newsam 96
 function covariance_stations_extended_grid!(cov::AbstractMatrix{T}, model_params, filter_params, stations) where T
 
-    xid = 1:2*model_params.nx
-    yid = 1:2*model_params.ny
+    xid = 1:model_params.nx_ext
+    yid = 1:model_params.ny_ext
 
     c = CartesianIndices((xid, yid))[:]
 
@@ -88,8 +88,8 @@ end
 # Covariance between stations and the original grid R_21, from equations 3-4 in Dietrich & Newsam 96
 function covariance_stations_grid!(cov::AbstractMatrix{T}, model_params, filter_params, stations) where T
 
-    xid = 1:model_params.nx+1
-    yid = 1:model_params.ny+1
+    xid = 1:model_params.nx
+    yid = 1:model_params.ny
 
     c = CartesianIndices((xid, yid))[:]
 
@@ -117,8 +117,8 @@ end
 # from Dietrich & Newsam 96 described in text between equations 11 and 12
 function first_column_covariance_extended_grid!(rho::AbstractVector{T}, model_params, filter_params) where T
 
-    xid = 1:2*model_params.nx
-    yid = 1:2*model_params.ny
+    xid = 1:model_params.nx_ext
+    yid = 1:model_params.ny_ext
 
     c = CartesianIndices((xid, yid))[:]
 
@@ -134,7 +134,7 @@ end
 # From Dietrich & Newsam 96 in text following equation 12
 function normalized_2d_fft!(transformed_array::AbstractMatrix{T}, array::AbstractMatrix{S}, model_params) where {T,S}
 
-    normalization_factor = 1.0 / sqrt(4 * model_params.nx * model_params.ny)
+    normalization_factor = 1.0 / sqrt(model_params.nx_ext * model_params.ny_ext)
     transformed_array .= fft(array) .* normalization_factor
 
 end
@@ -144,8 +144,8 @@ end
 # From Dietrich & Newsam 96 in text following equation 12
 function normalized_2d_fft!(transformed_vector::AbstractVector{T}, vector::AbstractVector{S}, model_params) where {T,S}
 
-    normalization_factor = 1.0 / sqrt(4 * model_params.nx * model_params.ny)
-    transformed_vector .= fft(reshape(vector, 2*model_params.nx, 2*model_params.ny))[:] .* normalization_factor
+    normalization_factor = 1.0 / sqrt(model_params.nx_ext * model_params.ny_ext)
+    transformed_vector .= fft(reshape(vector, model_params.nx_ext, model_params.ny_ext))[:] .* normalization_factor
 
 end
 
@@ -154,7 +154,7 @@ end
 # From Dietrich & Newsam 96 in text following equation 12
 function normalized_inverse_2d_fft!(transformed_array::AbstractMatrix{T}, array::AbstractMatrix{S}, model_params) where {T,S}
 
-    normalization_factor = sqrt(4 * model_params.nx * model_params.ny)
+    normalization_factor = sqrt(model_params.nx_ext * model_params.ny_ext)
     transformed_array .= ifft(array) .* normalization_factor
 
 end
@@ -164,8 +164,8 @@ end
 # From Dietrich & Newsam 96 in text following equation 12
 function normalized_inverse_2d_fft!(transformed_vector::AbstractVector{T}, vector::AbstractVector{S}, model_params) where {T,S}
 
-    normalization_factor = sqrt(4 * model_params.nx * model_params.ny)
-    transformed_vector .= ifft(reshape(vector, 2 * model_params.nx, 2 * model_params.ny))[:] .* normalization_factor
+    normalization_factor = sqrt(model_params.nx_ext * model_params.ny_ext)
+    transformed_vector .= ifft(reshape(vector, model_params.nx_ext, model_params.ny_ext))[:] .* normalization_factor
 
 end
 
@@ -173,19 +173,19 @@ end
 function WΛWH_decomposition!(transformed_array::AbstractMatrix{T}, array::AbstractMatrix{T},
                              offline_matrices::OfflineMatrices, params) where T
 
-    @assert size(array) == (params.nx + 1, params.ny + 1)
+    @assert size(array) == (params.nx, params.ny)
 
-    extended_array = zeros(ComplexF64, 2*params.nx, 2*params.ny)
+    extended_array = zeros(ComplexF64, params.nx_ext, params.ny_ext)
 
-    extended_array[1:params.nx+1, 1:params.ny+1] .= array
+    extended_array[1:params.nx, 1:params.ny] .= array
 
     normalized_2d_fft!(extended_array, extended_array, params)
 
     # Here we do an element-wise multiplication of the extended_array with the vector Lambda. This is identical to
     # Diagonal(Lambda) * extended_array[:], but avoids flattening and reshaping extended_array.
-    normalized_inverse_2d_fft!(extended_array, reshape(offline_matrices.Lambda, 2*params.nx, 2*params.ny).*extended_array, params)
+    normalized_inverse_2d_fft!(extended_array, reshape(offline_matrices.Lambda, params.nx_ext, params.ny_ext).*extended_array, params)
 
-    transformed_array .= real.(@view(extended_array[1:params.nx+1, 1:params.ny+1]))
+    transformed_array .= real.(@view(extended_array[1:params.nx, 1:params.ny]))
 
 end
 
@@ -205,8 +205,8 @@ end
 # Allocate and compute matrices that do not depend on time-dependent variables (height and observations).
 function init_offline_matrices(model_params, filter_params, stations)
 
-    n1 = (model_params.nx + 1) * (model_params.ny + 1) # number of elements in original grid
-    n1_bar = 4 * model_params.nx * model_params.ny     # number of elements in extended grid
+    n1 = model_params.nx * model_params.ny # number of elements in original grid
+    n1_bar = model_params.nx_ext * model_params.ny_ext     # number of elements in extended grid
 
     F = Float64
     C = ComplexF64
@@ -222,8 +222,8 @@ function init_offline_matrices(model_params, filter_params, stations)
                                Matrix{F}(undef, model_params.nobs, model_params.nobs), #L
                                Matrix{F}(undef, model_params.nobs, model_params.nobs), #mu20
 
-                               Matrix{F}(undef, model_params.nx+1, model_params.ny+1), #buf1
-                               Matrix{F}(undef, model_params.nx+1, model_params.ny+1)  #buf2
+                               Matrix{F}(undef, model_params.nx, model_params.ny), #buf1
+                               Matrix{F}(undef, model_params.nx, model_params.ny)  #buf2
                                )
 
     first_column_covariance_extended_grid!(matrices.rho_bar, model_params, filter_params)
@@ -235,7 +235,7 @@ function init_offline_matrices(model_params, filter_params, stations)
 
     fourier_coeffs = Vector{ComplexF64}(undef, n1_bar)
     normalized_inverse_2d_fft!(fourier_coeffs, matrices.rho_bar, model_params)
-    matrices.Lambda .= sqrt(4 * model_params.nx * model_params.ny) .* real.(fourier_coeffs)
+    matrices.Lambda .= sqrt(n1_bar) .* real.(fourier_coeffs)
 
     WHbar_R12 = Matrix{C}(undef, n1_bar, model_params.nobs)
     for i in 1:model_params.nobs
@@ -245,6 +245,9 @@ function init_offline_matrices(model_params, filter_params, stations)
     matrices.K .= KH'
 
     A = real.(matrices.R22 .- matrices.K*KH)
+
+    @show(A)
+    
     if ishermitian(A)
         matrices.L .= cholesky(A).L
     end
@@ -258,18 +261,18 @@ end
 # Allocate memory for matrices that will be updated during the time stepping loop.
 function init_online_matrices(model_params, filter_params)
 
-    n1 = (model_params.nx + 1) * (model_params.ny + 1) # number of elements in original grid
-    n1_bar = 4 * model_params.nx * model_params.ny # number of elements in extended grid
+    n1 = model_params.nx * model_params.ny # number of elements in original grid
+    n1_bar = model_params.nx_ext * model_params.ny_ext # number of elements in extended grid
 
     C = ComplexF64
     F = Float64
 
     matrices = OnlineMatrices(Vector{C}(undef, n1_bar),
                               Vector{C}(undef, model_params.nobs),
-                              Matrix{C}(undef, model_params.nx+1, model_params.ny+1),
-                              Matrix{C}(undef, model_params.nx+1, model_params.ny+1),
-                              Array{F}(undef, model_params.nx+1, model_params.ny+1, filter_params.nprt),
-                              Array{F}(undef, model_params.nx+1, model_params.ny+1, filter_params.nprt)
+                              Matrix{C}(undef, model_params.nx, model_params.ny),
+                              Matrix{C}(undef, model_params.nx, model_params.ny),
+                              Array{F}(undef, model_params.nx, model_params.ny, filter_params.nprt),
+                              Array{F}(undef, model_params.nx, model_params.ny, filter_params.nprt)
                               )
 
     return matrices
@@ -286,10 +289,10 @@ function calculate_mean_height!(mean::AbstractArray{T,3}, height::AbstractArray{
     # at the indices of the stations. Store them as sparse arrays to save space.
     mu21 = sparse(stations.ist, stations.jst,
                   offline_matrices.R22_inv * (offline_matrices.mu20 * observations),
-                  model_params.nx+1, model_params.ny+1)
+                  model_params.nx, model_params.ny)
     mu22 = model_params.obs_noise_std^(-2) * sparse(stations.ist, stations.jst,
-                                          observations,
-                                          model_params.nx+1, model_params.ny+1)
+                                                    observations,
+                                                    model_params.nx, model_params.ny)
 
     # Compute WΛWH decompositions, results are dense matrices, store them in buffers
     # These correspond to mu21 and mu22 in Alex's code
@@ -307,7 +310,7 @@ function calculate_mean_height!(mean::AbstractArray{T,3}, height::AbstractArray{
     for iprt = 1:filter_params.nprt
 
         mul!(mu10, offline_matrices.R22_inv, get_values_at_stations(@view(height[:,:,iprt]), stations))
-        mu10_sparse = sparse(stations.ist, stations.jst, mu10, model_params.nx+1, model_params.ny+1)
+        mu10_sparse = sparse(stations.ist, stations.jst, mu10, model_params.nx, model_params.ny)
 
         # Compute decomposition of height values at stations times the inverse covariance matrix
         # The argument corresponds to mu10 and the outcome to mu11 in Alex's code
@@ -323,19 +326,19 @@ end
 
 function sample_height_proposal!(height::AbstractArray{T,3},
                                  offline_matrices::OfflineMatrices, online_matrices::OnlineMatrices,
-                                 observations::AbstractVector{T}, stations, model_params, filter_params,
+                                 observations::AbstractVector{T}, stations::NamedTuple, model_params, filter_params,
                                  rng::Random.AbstractRNG) where T
 
     @assert filter_params.nprt % 2 == 0 "Number of particles must be even"
 
     calculate_mean_height!(online_matrices.mean, height, offline_matrices, observations, stations, model_params, filter_params)
 
-    i_n1 = LinearIndices((model_params.nx+1, model_params.ny+1))
-    i_n1_bar = LinearIndices((2*model_params.nx, 2*model_params.ny))
+    i_n1 = LinearIndices((model_params.nx, model_params.ny))
+    i_n1_bar = LinearIndices((model_params.nx_ext, model_params.ny_ext))
 
     for iprt in 1:2:filter_params.nprt
         # TODO we could pre-create all our random numbers in one go before the loop, would that be faster?
-        e1 = complex.(randn(rng, 4*model_params.nx*model_params.ny), randn(rng, 4*model_params.nx*model_params.ny))
+        e1 = complex.(randn(rng, model_params.nx_ext*model_params.ny_ext), randn(rng, model_params.nx_ext*model_params.ny_ext))
         e2 = complex.(randn(rng, model_params.nobs), randn(rng, model_params.nobs))
 
         # This gives the vector z1_bar
@@ -345,7 +348,7 @@ function sample_height_proposal!(height::AbstractArray{T,3},
         online_matrices.z2 .= offline_matrices.K * e1 .+ offline_matrices.L * e2
 
         # Restrict z1_bar to Omega1 and reshape into an array
-        online_matrices.Z1 .= online_matrices.z1_bar[i_n1_bar[1:model_params.nx+1,1:model_params.nx+1]]
+        online_matrices.Z1 .= online_matrices.z1_bar[i_n1_bar[1:model_params.nx,1:model_params.nx]]
         # Multiply z2 with R12*R22^-1 and reshape the result into an array
         online_matrices.Z2 .= (offline_matrices.R12_invR22 * online_matrices.z2)[i_n1]
 

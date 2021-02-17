@@ -3,7 +3,7 @@ module ParticleDA
 using Distributions, Statistics, MPI, Base.Threads, YAML, HDF5
 using TimerOutputs
 
-export run_particle_filter, BootstrapFilter
+export run_particle_filter, BootstrapFilter, OptimalFilter
 
 include("params.jl")
 include("io.jl")
@@ -314,9 +314,9 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
 
     filter_data = init_filter(filter_params, model_data, nprt_per_rank, T, BootstrapFilter())
 
-    stations = StationVectors(get_stations(model_data)[:,1], get_stations(model_data)[:,2])
-    offline_matrices = init_offline_matrices(model_data.model_params, stations)
-    online_matrices = init_online_matrice(model_data.model_params)
+    stations = (ist = get_stations(model_data)[:,1], jst = get_stations(model_data)[:,2])
+    offline_matrices = init_offline_matrices(model_data.model_params, filter_params, stations)
+    online_matrices = init_online_matrices(model_data.model_params, filter_params)
     rng = get_rng(model_data)
 
     return filter_data, offline_matrices, online_matrices, stations, rng
@@ -536,10 +536,11 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
         @timeit_debug timer "Optimal Sampling" sample_height_proposal!(@view(particles[:,:,1,:]),
                                                                        offline_matrices,
                                                                        online_matrices,
-                                                                       model_observations,
+                                                                       truth_observations,
                                                                        stations,
                                                                        model_data.model_params,
-                                                                       rng)
+                                                                       filter_params,
+                                                                       rng[threadid()])
 
         # Add noise from the standard gaussian random field to all state variables in model_data
         @timeit_debug timer "Particle Noise" update_particle_noise!(model_data, nprt_per_rank)
