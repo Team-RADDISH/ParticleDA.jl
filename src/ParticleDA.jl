@@ -546,15 +546,15 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
         @timeit_debug timer "Particle Noise" update_particle_noise!(model_data, nprt_per_rank)
 
         # Overwrite the height state variable with the samples of the optimal proposal
-        @timeit_debug timer "Copy Height Samples" particles[:,:,1,:] .= offline_matrices.samples
-        @timeit_debug timer "set_particles" set_particles(model_data, particles)
+        @timeit_debug timer "Copy Height Samples" particles[:,:,1,:] .= online_matrices.samples
+        @timeit_debug timer "set_particles" set_particles!(model_data, particles)
 
         # Optimal Filter ends.
 
         @timeit_debug timer "Particle Weights" get_log_weights!(@view(filter_data.weights[1:nprt_per_rank]),
-                                                       truth_observations,
-                                                       model_observations,
-                                                       offline_matrices)
+                                                                truth_observations,
+                                                                model_observations,
+                                                                offline_matrices)
 
         # Gather weights to master rank and resample particles.
         # Doing MPI collectives in place to save memory allocations.

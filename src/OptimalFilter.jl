@@ -375,15 +375,15 @@ function sample_height_proposal!(height::AbstractArray{T,3},
 end
 
 function get_log_weights!(log_weights::AbstractVector{T},
-                          obs_model::AbstractMatrix{T},
                           obs::AbstractVector{T},
+                          obs_model::AbstractMatrix{T},
                           matrices::OfflineMatrices) where T
 
     #TODO: Is this just the same as get_log_weights! in ParticleDA with R22_inv as cov_obs?
     # DONE: No, ParticleDA.get_log_weights! fails with
     # ERROR: PosDefException: matrix is not Hermitian; Cholesky factorization failed.
 
-    nprt = size(obs_model,1)
+    nprt = size(obs_model,2)
 
     for iprt in 1:nprt
 
