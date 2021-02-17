@@ -110,6 +110,8 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
 
     obs_noise_std::T = 1.0
 
+    nx_ext = 2 * (nx - 1)
+    ny_ext = 2 * (ny - 1)
 end
 
 

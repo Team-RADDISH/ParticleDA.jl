@@ -268,7 +268,7 @@ end
     # Set station coordinates
     ist = rand(1:model_params.nx, model_params.nobs)
     jst = rand(1:model_params.ny, model_params.nobs)
-    stations = Model.StationVectors(ist, jst)
+    stations = (ist = ist, jst = jst)
     cov_ext = ParticleDA.extended_covariance(0.0, 0.5 * model_params.y_length, model_params, filter_params)
     @test cov_ext ≈ exp(-0.5 * model_params.y_length / (2 * filter_params.lambda_cov))
     @test cov_ext ≈ ParticleDA.extended_covariance(2.0 * model_params.x_length, 0.5 * model_params.y_length, model_params, filter_params)
@@ -280,8 +280,8 @@ end
     ParticleDA.normalized_inverse_2d_fft!(arr3,arr2,model_params)
     @test arr ≈ arr3
 
-    cov_1 = zeros(model_params.nobs,4*model_params.nx*model_params.ny)
-    cov_2 = zeros((1+model_params.nx)*(1+model_params.ny), model_params.nobs)
+    cov_1 = zeros(model_params.nobs,model_params.nx_ext * model_params.ny_ext)
+    cov_2 = zeros(model_params.nx * model_params.ny, model_params.nobs)
     cov_3 = zeros(model_params.nobs,model_params.nobs)
     ParticleDA.covariance_stations_extended_grid!(cov_1,model_params,filter_params,stations)
     ParticleDA.covariance_stations_grid!(cov_2,model_params,filter_params,stations)
@@ -291,7 +291,7 @@ end
     @test all(isfinite.(cov_3))
     @test cov_3 == Symmetric(cov_3)
 
-    height = rand(model_params.nx+1, model_params.ny+1, filter_params.nprt)
+    height = rand(model_params.nx, model_params.ny, filter_params.nprt)
     obs = randn(model_params.nobs)
     mat_off = ParticleDA.init_offline_matrices(model_params, filter_params, stations)
     mat_on = ParticleDA.init_online_matrices(model_params, filter_params)
@@ -317,12 +317,12 @@ end
     filter_params = ParticleDA.get_params(FilterParameters, params_dict["filter"])
     model_params = ParticleDA.get_params(ModelParameters, params_dict["model"]["llw2d"])
 
-    stations = Model.StationVectors(st.st_ij[:,1].+1, st.st_ij[:,2].+1)
+    stations = (ist = st.st_ij[:,1].+1, jst = st.st_ij[:,2].+1)
 
-    h(x,y) = 1 - (x-model_params.nx-1)^2 - (y-model_params.ny-1)^2 + randn()
-    height = zeros(model_params.nx+1, model_params.ny+1, filter_params.nprt)
-    x = (1:model_params.nx+1) .* model_params.dx
-    y = (1:model_params.ny+1) .* model_params.dy
+    h(x,y) = sin(x)^2 + cos(y)^2
+    height = zeros(model_params.nx, model_params.ny, filter_params.nprt)
+    x = (1:model_params.nx) .* 2 * pi / model_params.nx
+    y = (1:model_params.ny) .* 4 * pi / model_params.ny
     for i = 1:filter_params.nprt
         height[:,:,i] = h.(x',y)
     end
@@ -338,13 +338,13 @@ end
     ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, model_params, filter_params, rng)
 
     Yobs_t = copy(obs)
-    FH_t = copy(reshape(permutedims(height, [3 1 2]), filter_params.nprt, (model_params.nx+1)*(model_params.ny+1)))
+    FH_t = copy(reshape(permutedims(height, [3 1 2]), filter_params.nprt, (model_params.nx)*(model_params.ny)))
 
     Mean_height = Calculate_Mean(FH_t, th, st, Yobs_t, Sobs, gr)
     Samples = Sample_Height_Proposal(FH_t, th, st, Yobs_t, Sobs, gr)
 
-    @test mat_on.mean ≈ permutedims(reshape(Mean_height, filter_params.nprt, model_params.nx+1, model_params.ny+1), [2 3 1])
-    @test mat_on.samples ≈ permutedims(reshape(Samples, filter_params.nprt, model_params.nx+1, model_params.ny+1), [2 3 1])
+    @test mat_on.mean ≈ permutedims(reshape(Mean_height, filter_params.nprt, model_params.nx, model_params.ny), [2 3 1])
+    @test mat_on.samples ≈ permutedims(reshape(Samples, filter_params.nprt, model_params.nx, model_params.ny), [2 3 1])
 
     # print("old mean height: ")
     # @btime Mean_height = Calculate_Mean($FH_t, $th, $st, $Yobs_t, $Sobs, $gr)

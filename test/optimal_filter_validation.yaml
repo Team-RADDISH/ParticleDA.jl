@@ -6,8 +6,8 @@ filter:
 model:
   llw2d:
     nobs: 3
-    nx: 20
-    ny: 20
+    nx: 21
+    ny: 21
     x_length: 40.0
     y_length: 40.0
     obs_noise_std: 0.01
