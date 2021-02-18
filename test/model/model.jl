@@ -413,6 +413,8 @@ ParticleDA.get_particles(d::ModelData) = d.states.particles
 # TODO: we should probably get rid of `get_truth`: it is only used as return
 # value of `particle_filter`, we may just return the whole `model_data`.
 ParticleDA.get_truth(d::ModelData) = d.states.truth
+ParticleDA.get_grid_size(d::ModelData) = d.model_params.nx, d.model_params.ny
+ParticleDA.get_n_state_var(d::ModelData) = d.model_params.n_state_var
 
 function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, _rng::Union{Random.AbstractRNG,Nothing}=nothing)
 
