@@ -65,6 +65,8 @@ be used by [`run_particle_filter`](@ref):
 * the model needs to extend the following methods, using the custom model data
   structure for dispatch:
 ```@docs
+ParticleDA.get_grid_size
+ParticleDA.get_n_state_var
 ParticleDA.get_particles
 ParticleDA.get_truth
 ParticleDA.update_truth!
