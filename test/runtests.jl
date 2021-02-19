@@ -286,9 +286,9 @@ end
     ParticleDA.covariance_stations_extended_grid!(cov_1,model_params,filter_params,stations)
     ParticleDA.covariance_stations_grid!(cov_2,model_params,filter_params,stations)
     ParticleDA.covariance_stations!(cov_3,model_params,filter_params,stations)
-    @test all(isfinite.(cov_1))
-    @test all(isfinite.(cov_2))
-    @test all(isfinite.(cov_3))
+    @test all(isfinite, cov_1)
+    @test all(isfinite, cov_2)
+    @test all(isfinite, cov_3)
     @test cov_3 == Symmetric(cov_3)
 
     height = rand(model_params.nx, model_params.ny, filter_params.nprt)
@@ -297,11 +297,11 @@ end
     mat_on = ParticleDA.init_online_matrices(model_params, filter_params)
     @test minimum(mat_off.Lambda) > 0.0
     ParticleDA.calculate_mean_height!(mat_on.mean, height, mat_off, obs, stations, model_params, filter_params)
-    @test all(isfinite.(mat_on.mean))
+    @test all(isfinite, mat_on.mean)
 
     rng = Random.MersenneTwister(seed)
     ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, model_params, filter_params, rng)
-    @test all(isfinite.(mat_on.samples))
+    @test all(isfinite, mat_on.samples)
 
 end
 
@@ -324,7 +324,7 @@ end
     x = (1:model_params.nx) .* 2 * pi / model_params.nx
     y = (1:model_params.ny) .* 4 * pi / model_params.ny
     for i = 1:filter_params.nprt
-        height[:,:,i] = h.(x',y)
+        height[:,:,i] .= h.(x',y)
     end
 
     obs = zeros(model_params.nobs)

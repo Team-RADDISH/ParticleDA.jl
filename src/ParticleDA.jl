@@ -314,7 +314,7 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
 
     filter_data = init_filter(filter_params, model_data, nprt_per_rank, T, BootstrapFilter())
 
-    stations = (ist = get_stations(model_data)[:,1], jst = get_stations(model_data)[:,2])
+    stations = (ist = @view(get_stations(model_data)[:,1]), jst = @view(get_stations(model_data)[:,2]))
     offline_matrices = init_offline_matrices(model_data.model_params, filter_params, stations)
     online_matrices = init_online_matrices(model_data.model_params, filter_params)
     rng = get_rng(model_data)
