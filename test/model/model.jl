@@ -109,9 +109,6 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     title_params::String = "params"
 
     obs_noise_std::T = 1.0
-
-    nx_ext = 2 * (nx - 1)
-    ny_ext = 2 * (ny - 1)
 end
 
 
@@ -415,15 +412,21 @@ ParticleDA.get_particles(d::ModelData) = d.states.particles
 # TODO: we should probably get rid of `get_truth`: it is only used as return
 # value of `particle_filter`, we may just return the whole `model_data`.
 ParticleDA.get_truth(d::ModelData) = d.states.truth
-ParticleDA.get_stations(d::ModelData) = (ist = d.stations.ist, jst = d.stations.jst)
+ParticleDA.get_stations(d::ModelData) = (nst = d.model_params.nobs, ist = d.stations.ist, jst = d.stations.jst)
 ParticleDA.get_rng(d::ModelData) = d.rng
+ParticleDA.get_obs_noise_std(d::ModelData) = d.model_params.obs_noise_std
 
 function ParticleDA.set_particles!(d::ModelData, particles::AbstractArray{T}) where T
 
     d.states.particles .= particles
 
 end
-ParticleDA.get_grid_size(d::ModelData) = d.model_params.nx, d.model_params.ny
+ParticleDA.get_grid_size(d::ModelData) = (nx = d.model_params.nx,
+                                            ny = d.model_params.ny,
+                                            dx = d.model_params.dx,
+                                            dy = d.model_params.dy,
+                                            x_length = d.model_params.x_length,
+                                            y_length = d.model_params.y_length)                                            
 ParticleDA.get_n_state_var(d::ModelData) = d.model_params.n_state_var
 
 function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, _rng::Union{Random.AbstractRNG,Nothing}=nothing)

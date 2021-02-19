@@ -14,9 +14,10 @@ using .Default_params
 # Functions to extend in the model
 
 """
-    ParticleDA.get_grid_size(model_data) -> NTuple{N, Int} where N
+    ParticleDA.get_grid_size(model_data) ->
+        NamedTuple({:nx, :ny, :dx, :dy, :x_length, :y_length},Tuple{Int, Int, Float, Float, Float, Float})
 
-Return a tuple with the size of the data.
+Return a tuple with the size of the grid.
 """
 function get_grid_size end
 
@@ -26,6 +27,13 @@ function get_grid_size end
 Return the number of state variables.
 """
 function get_n_state_var end
+
+"""
+    ParticleDa.get_obs_noise_std(model_data) -> Float
+
+Return standard deviation of observation noise. Required for optimal filter only.
+"""
+function get_obs_noise_std end
 
 """
     ParticleDA.get_particle(model_data) -> particles
@@ -52,10 +60,11 @@ by the user with the above signature, specifying the type of `model_data`.
 function get_truth end
 
 """
-    ParticleDA.get_stations(model_data) -> station_coordinates
+    ParticleDA.get_stations(model_data) -> NamedTuple({:nst,:ist,:jst},Tuple{Int, Array{Float,1}, Array{Float,1}})
 
-Return a named tuple of coordinates (ist,jst) of the points of observation. This method is intended
-to be extended by the user with the above signature, specifying the type of `model_data`.
+Return a named tuple with number of stations and their coordinates (nst,ist,jst) of the
+points of observation. This method is intended to be extended by the user with the above signature,
+specifying the type of `model_data`.
 Required for optimal filter only.
 """
 function get_stations end
@@ -311,15 +320,15 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
 
     resampling_indices = Vector{Int}(undef, filter_params.nprt)
 
-    size = get_grid_size(model_data)
+    grid = get_grid_size(model_data)
     n_state_var = get_n_state_var(model_data)
 
-    statistics = Array{SummaryStat{T}, 3}(undef, size..., n_state_var)
-    avg_arr = Array{T,3}(undef, size..., n_state_var)
-    var_arr = Array{T,3}(undef, size..., n_state_var)
+    statistics = Array{SummaryStat{T}, 3}(undef, grid.nx, grid.ny, n_state_var)
+    avg_arr = Array{T,3}(undef, grid.nx, grid.ny, n_state_var)
+    var_arr = Array{T,3}(undef, grid.nx, grid.ny, n_state_var)
 
     # Memory buffer used during copy of the states
-    copy_buffer = Array{T,4}(undef, size..., n_state_var, nprt_per_rank)
+    copy_buffer = Array{T,4}(undef, grid.nx, grid.ny, n_state_var, nprt_per_rank)
 
     return FilterData(weights, resampling_indices, statistics, avg_arr, var_arr, copy_buffer)
 end
@@ -330,11 +339,20 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
     filter_data = init_filter(filter_params, model_data, nprt_per_rank, T, BootstrapFilter())
 
     stations = get_stations(model_data)
-    offline_matrices = init_offline_matrices(model_data.model_params, filter_params, stations)
-    online_matrices = init_online_matrices(model_data.model_params, filter_params)
+    grid = get_grid(model_data)
+    grid_ext = NamedTuple{keys(grid)}(((grid.nx-1)*2,
+                                       (grid.ny-1)*2,
+                                       grid.dx,
+                                       grid.dy,
+                                       (grid.x_length-grid.dx)*2,
+                                       (grid.y_length-grid.dy)*2))
+
+    obs_noise_std = get_obs_noise_std(model_data)
+    offline_matrices = init_offline_matrices(grid, grid_ext, filter_params, stations, obs_noise_std)
+    online_matrices = init_online_matrices(grid, grid_ext, filter_params)
     rng = get_rng(model_data)
 
-    return filter_data, offline_matrices, online_matrices, stations, rng
+    return (;filter_data, offline_matrices, online_matrices, stations, grid, grid_ext, rng, obs_noise_std)
 end
 
 struct FilterData{T, S, U, V, X}
@@ -511,7 +529,8 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
     @timeit_debug timer "Model initialization" model_data = init(model_params_dict, nprt_per_rank, my_rank)
 
     # TODO: put the body of this block in a function
-    @timeit_debug timer "Filter initialization" filter_data, offline_matrices, online_matrices, stations, rng = init_filter(filter_params, model_data, nprt_per_rank, Float64, OptimalFilter())
+    @timeit_debug timer "Filter initialization" d = init_filter(filter_params, model_data, nprt_per_rank, Float64, OptimalFilter())
+    filter_data = d.filter_data
 
     @timeit_debug timer "get_particles" particles = get_particles(model_data)
     @timeit_debug timer "Mean and Var" get_mean_and_var!(filter_data.statistics, particles, filter_params.master_rank)
@@ -549,13 +568,15 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
 
         # Apply optimal proposal, the result will be in offline_matrices.samples
         @timeit_debug timer "Optimal Sampling" sample_height_proposal!(@view(particles[:,:,1,:]),
-                                                                       offline_matrices,
-                                                                       online_matrices,
+                                                                       d.offline_matrices,
+                                                                       d.online_matrices,
                                                                        truth_observations,
-                                                                       stations,
-                                                                       model_data.model_params,
+                                                                       d.stations,
+                                                                       d.grid,
+                                                                       d.grid_ext,
                                                                        filter_params,
-                                                                       rng[threadid()])
+                                                                       d.rng[threadid()],
+                                                                       d.obs_noise_std)
 
         # Add noise from the standard gaussian random field to all state variables in model_data
         @timeit_debug timer "Particle Noise" update_particle_noise!(model_data, nprt_per_rank)

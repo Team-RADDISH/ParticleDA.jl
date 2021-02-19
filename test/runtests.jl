@@ -265,42 +265,55 @@ end
     # Use default parameters
     model_params = ModelParameters()
     filter_params = FilterParameters()
+    grid = (nx = model_params.nx,
+            ny = model_params.ny,
+            dx = model_params.dx,
+            dy = model_params.dy,
+            x_length = model_params.x_length,
+            y_length = model_params.y_length)
+    grid_ext = NamedTuple{keys(grid)}(((grid.nx-1)*2,
+                                       (grid.ny-1)*2,
+                                       grid.dx,
+                                       grid.dy,
+                                       (grid.x_length-grid.dx)*2,
+                                       (grid.y_length-grid.dy)*2))
+
     # Set station coordinates
     ist = rand(1:model_params.nx, model_params.nobs)
     jst = rand(1:model_params.ny, model_params.nobs)
-    stations = (ist = ist, jst = jst)
-    cov_ext = ParticleDA.extended_covariance(0.0, 0.5 * model_params.y_length, model_params, filter_params)
+    stations = (nst = model_params.nobs, ist = ist, jst = jst)
+    cov_ext = ParticleDA.extended_covariance(0.0, 0.5 * grid.y_length, grid, filter_params)
     @test cov_ext ≈ exp(-0.5 * model_params.y_length / (2 * filter_params.lambda_cov))
-    @test cov_ext ≈ ParticleDA.extended_covariance(2.0 * model_params.x_length, 0.5 * model_params.y_length, model_params, filter_params)
-    @test cov_ext ≈ ParticleDA.extended_covariance(0.0, 1.5 * model_params.y_length, model_params, filter_params)
+    @test cov_ext ≈ ParticleDA.extended_covariance(2.0 * grid.x_length, 0.5 * grid.y_length, grid, filter_params)
+    @test cov_ext ≈ ParticleDA.extended_covariance(0.0, 1.5 * grid.y_length, grid, filter_params)
     arr = rand(ComplexF64,10,10)
     arr2 = zeros(ComplexF64,10,10)
     arr3 = zeros(ComplexF64,10,10)
-    ParticleDA.normalized_2d_fft!(arr2,arr,model_params)
-    ParticleDA.normalized_inverse_2d_fft!(arr3,arr2,model_params)
+    ParticleDA.normalized_2d_fft!(arr2,arr,grid_ext)
+    ParticleDA.normalized_inverse_2d_fft!(arr3,arr2,grid_ext)
     @test arr ≈ arr3
 
-    cov_1 = zeros(model_params.nobs,model_params.nx_ext * model_params.ny_ext)
-    cov_2 = zeros(model_params.nx * model_params.ny, model_params.nobs)
-    cov_3 = zeros(model_params.nobs,model_params.nobs)
-    ParticleDA.covariance_stations_extended_grid!(cov_1,model_params,filter_params,stations)
-    ParticleDA.covariance_stations_grid!(cov_2,model_params,filter_params,stations)
-    ParticleDA.covariance_stations!(cov_3,model_params,filter_params,stations)
+    cov_1 = zeros(stations.nst, grid_ext.nx * grid_ext.ny)
+    cov_2 = zeros(grid.nx * grid.ny, stations.nst)
+    cov_3 = zeros(stations.nst,stations.nst)
+    ParticleDA.covariance_stations_extended_grid!(cov_1,grid,grid_ext,stations,filter_params)
+    ParticleDA.covariance_grid_stations!(cov_2,grid,    stations,filter_params)
+    ParticleDA.covariance_stations!(cov_3,grid,stations,filter_params,model_params.obs_noise_std)
     @test all(isfinite, cov_1)
     @test all(isfinite, cov_2)
     @test all(isfinite, cov_3)
     @test cov_3 == Symmetric(cov_3)
 
-    height = rand(model_params.nx, model_params.ny, filter_params.nprt)
-    obs = randn(model_params.nobs)
-    mat_off = ParticleDA.init_offline_matrices(model_params, filter_params, stations)
-    mat_on = ParticleDA.init_online_matrices(model_params, filter_params)
+    height = rand(grid.nx, grid.ny, filter_params.nprt)
+    obs = randn(stations.nst)
+    mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, filter_params, model_params.obs_noise_std)
+    mat_on = ParticleDA.init_online_matrices(grid, grid_ext, stations, filter_params)
     @test minimum(mat_off.Lambda) > 0.0
-    ParticleDA.calculate_mean_height!(mat_on.mean, height, mat_off, obs, stations, model_params, filter_params)
+    ParticleDA.calculate_mean_height!(mat_on.mean, height, mat_off, obs, stations, grid, grid_ext, filter_params, model_params.obs_noise_std)
     @test all(isfinite, mat_on.mean)
 
     rng = Random.MersenneTwister(seed)
-    ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, model_params, filter_params, rng)
+    ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, filter_params, rng, model_params.obs_noise_std)
     @test all(isfinite, mat_on.samples)
 
 end
@@ -317,7 +330,20 @@ end
     filter_params = ParticleDA.get_params(FilterParameters, params_dict["filter"])
     model_params = ParticleDA.get_params(ModelParameters, params_dict["model"]["llw2d"])
 
-    stations = (ist = st.st_ij[:,1].+1, jst = st.st_ij[:,2].+1)
+    grid = (nx = model_params.nx,
+            ny = model_params.ny,
+            dx = model_params.dx,
+            dy = model_params.dy,
+            x_length = model_params.x_length,
+            y_length = model_params.y_length)
+    grid_ext = NamedTuple{keys(grid)}(((grid.nx-1)*2,
+                                       (grid.ny-1)*2,
+                                       grid.dx,
+                                       grid.dy,
+                                       (grid.x_length-grid.dx)*2,
+                                       (grid.y_length-grid.dy)*2))
+
+    stations = (nst = model_params.nobs, ist = st.st_ij[:,1].+1, jst = st.st_ij[:,2].+1)
 
     h(x,y) = sin(x)^2 + cos(y)^2
     height = zeros(model_params.nx, model_params.ny, filter_params.nprt)
@@ -332,10 +358,10 @@ end
         obs[i] = height[stations.ist[i], stations.jst[i],1] + rand()
     end
 
-    mat_off = ParticleDA.init_offline_matrices(model_params, filter_params, stations)
-    mat_on = ParticleDA.init_online_matrices(model_params, filter_params)
+    mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, filter_params, model_params.obs_noise_std)
+    mat_on = ParticleDA.init_online_matrices(grid, grid_ext, stations, filter_params)
 
-    ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, model_params, filter_params, rng)
+    ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, filter_params, rng, model_params.obs_noise_std)
 
     Yobs_t = copy(obs)
     FH_t = copy(reshape(permutedims(height, [3 1 2]), filter_params.nprt, (model_params.nx)*(model_params.ny)))
