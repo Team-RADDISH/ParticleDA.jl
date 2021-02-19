@@ -195,8 +195,8 @@ end
 
     stations = Model.StationVectors(zeros(Int,4), zeros(Int,4))
     Model.set_stations!(stations, model_params)
-    @test stations.ist == [5, 5, 10, 10]
-    @test stations.jst == [5, 10, 5, 10]
+    @test stations.ist == [4, 4, 9, 9]
+    @test stations.jst == [4, 9, 4, 9]
     Model.write_stations(filter_params.output_filename, stations.ist, stations.jst, model_params)
     @test h5read(filter_params.output_filename, model_params.title_stations * "/x") ≈ stations.ist .* model_params.dx
     @test h5read(filter_params.output_filename, model_params.title_stations * "/y") ≈ stations.jst .* model_params.dy

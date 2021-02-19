@@ -61,8 +61,8 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     ny::Int = 200
     x_length::T = 400.0e3
     y_length::T = 400.0e3
-    dx::T = x_length / nx
-    dy::T = y_length / ny
+    dx::T = x_length / (nx - 1)
+    dy::T = y_length / (ny - 1)
 
     n_state_var::Int = 3
 
@@ -558,9 +558,9 @@ function write_stations(output_filename, ist::AbstractVector, jst::AbstractVecto
         if !haskey(file, params.title_stations)
             group = create_group(file, params.title_stations)
 
-            for (dataset_name, index, d) in zip(("x", "y"), (ist, jst), (params.dx, params.dy))
-                ds, dtype = create_dataset(group, dataset_name, index)
-                ds[:] = index .* d
+            for (dataset_name, val) in zip(("x", "y"), (ist .* params.dx, jst .* params.dy))
+                ds, dtype = create_dataset(group, dataset_name, val)
+                ds[:] = val
                 attributes(ds)["Description"] = "Station coordinates"
                 attributes(ds)["Unit"] = "m"
             end
