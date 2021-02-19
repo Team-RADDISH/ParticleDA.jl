@@ -1,6 +1,5 @@
 using FFTW
 using LinearAlgebra
-using Test
 using SparseArrays
 using Random
 using Distributions
@@ -226,7 +225,7 @@ function init_offline_matrices(model_params, filter_params, stations)
     n1_bar = model_params.nx_ext * model_params.ny_ext     # number of elements in extended grid
 
     F = Float64
-    C = ComplexF64
+    C = complex(F)
 
     matrices = OfflineMatrices(Vector{F}(undef, n1_bar),                   #rho_bar
                                Matrix{F}(undef, n1, model_params.nobs),          #R12
@@ -250,7 +249,7 @@ function init_offline_matrices(model_params, filter_params, stations)
     matrices.R22_inv .= inv(matrices.R22)
     matrices.R12_invR22 .= matrices.R12 * matrices.R22_inv
 
-    fourier_coeffs = Vector{ComplexF64}(undef, n1_bar)
+    fourier_coeffs = Vector{C}(undef, n1_bar)
     normalized_inverse_2d_fft!(fourier_coeffs, matrices.rho_bar, model_params)
     matrices.Lambda .= sqrt(n1_bar) .* real.(fourier_coeffs)
 
@@ -279,8 +278,8 @@ function init_online_matrices(model_params, filter_params)
     n1 = model_params.nx * model_params.ny # number of elements in original grid
     n1_bar = model_params.nx_ext * model_params.ny_ext # number of elements in extended grid
 
-    C = ComplexF64
     F = Float64
+    C = complex(F)
 
     matrices = OnlineMatrices(Vector{C}(undef, n1_bar),
                               Vector{C}(undef, model_params.nobs),
@@ -344,7 +343,7 @@ function sample_height_proposal!(height::AbstractArray{T,3},
                                  observations::AbstractVector{T}, stations::NamedTuple, model_params, filter_params,
                                  rng::Random.AbstractRNG) where T
 
-    @assert filter_params.nprt % 2 == 0 "Number of particles must be even"
+    @assert iseven(filter_params.nprt) "Number of particles must be even"
 
     calculate_mean_height!(online_matrices.mean, height, offline_matrices, observations, stations, model_params, filter_params)
 
