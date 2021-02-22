@@ -1,0 +1,49 @@
+name: Run benchmarks
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: julia-actions/setup-julia@v1
+        with:
+          version: '^1.6.0-0'
+      - name: Install dependencies
+        shell: julia --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.instantiate()
+          pkg"add PkgBenchmark BenchmarkCI@0.1"
+      - name: Run benchmarks
+        shell: julia --color=yes {0}
+        run: |
+          using PkgBenchmark, BenchmarkCI
+
+          BenchmarkCI.judge(
+              PkgBenchmark.BenchmarkConfig(
+                  env = Dict(
+                      "JULIA_NUM_THREADS" => "2",
+                  ),
+              )
+          )
+      - name: Print judgement
+        shell: julia --color=yes {0}
+        run: |
+          using BenchmarkCI
+
+          BenchmarkCI.displayjudgement()
+      - name: Push results
+        shell: julia --color=yes {0}
+        run: |
+          using BenchmarkCI
+
+          BenchmarkCI.pushresult(;
+              url = "git@github.com:Team-RADDISH/ParticleDA.jl.git",
+          )
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SSH_KEY: ${{ secrets.DOCUMENTER_KEY }}
