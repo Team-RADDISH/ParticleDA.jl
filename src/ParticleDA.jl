@@ -339,7 +339,7 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
     filter_data = init_filter(filter_params, model_data, nprt_per_rank, T, BootstrapFilter())
 
     stations = get_stations(model_data)
-    grid = get_grid(model_data)
+    grid = get_grid_size(model_data)
     grid_ext = NamedTuple{keys(grid)}(((grid.nx-1)*2,
                                        (grid.ny-1)*2,
                                        grid.dx,
@@ -348,8 +348,8 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
                                        (grid.y_length-grid.dy)*2))
 
     obs_noise_std = get_obs_noise_std(model_data)
-    offline_matrices = init_offline_matrices(grid, grid_ext, filter_params, stations, obs_noise_std)
-    online_matrices = init_online_matrices(grid, grid_ext, filter_params)
+    offline_matrices = init_offline_matrices(grid, grid_ext, stations, filter_params, obs_noise_std)
+    online_matrices = init_online_matrices(grid, grid_ext, stations, filter_params)
     rng = get_rng(model_data)
 
     return (;filter_data, offline_matrices, online_matrices, stations, grid, grid_ext, rng, obs_noise_std)
@@ -582,7 +582,7 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
         @timeit_debug timer "Particle Noise" update_particle_noise!(model_data, nprt_per_rank)
 
         # Overwrite the height state variable with the samples of the optimal proposal
-        @timeit_debug timer "Copy Height Samples" particles[:,:,1,:] .= online_matrices.samples
+        @timeit_debug timer "Copy Height Samples" particles[:,:,1,:] .= d.online_matrices.samples
         @timeit_debug timer "set_particles" set_particles!(model_data, particles)
 
         # Optimal Filter ends.
@@ -590,7 +590,7 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
         @timeit_debug timer "Particle Weights" get_log_weights!(@view(filter_data.weights[1:nprt_per_rank]),
                                                                 truth_observations,
                                                                 model_observations,
-                                                                offline_matrices)
+                                                                d.offline_matrices)
 
         # Gather weights to master rank and resample particles.
         # Doing MPI collectives in place to save memory allocations.
