@@ -202,12 +202,11 @@ function get_values_at_stations(field::AbstractMatrix{T}, stations) where T
 end
 
 # Allocate and compute matrices that do not depend on time-dependent variables (height and observations).
-function init_offline_matrices(grid::NamedTuple, grid_ext::NamedTuple, stations::NamedTuple, filter_params, obs_noise_std::T) where T
+function init_offline_matrices(grid::NamedTuple, grid_ext::NamedTuple, stations::NamedTuple, filter_params, obs_noise_std::T, F::Type) where T
 
     n1 = grid.nx * grid.ny # number of elements in original grid
     n1_bar = grid_ext.nx * grid_ext.ny # number of elements in extended grid
 
-    F = Float64
     C = complex(F)
 
     matrices = OfflineMatrices(Vector{F}(undef, n1_bar),                   #rho_bar
@@ -256,20 +255,19 @@ function init_offline_matrices(grid::NamedTuple, grid_ext::NamedTuple, stations:
 end
 
 # Allocate memory for matrices that will be updated during the time stepping loop.
-function init_online_matrices(grid::NamedTuple, grid_ext::NamedTuple, stations::NamedTuple, filter_params)
+function init_online_matrices(grid::NamedTuple, grid_ext::NamedTuple, stations::NamedTuple, filter_params, T::Type)
 
     n1 = grid.nx * grid.ny # number of elements in original grid
     n1_bar = grid_ext.nx * grid_ext.ny # number of elements in extended grid
 
-    F = Float64
-    C = complex(F)
+    C = complex(T)
 
     matrices = OnlineMatrices(Vector{C}(undef, n1_bar),
                               Vector{C}(undef, stations.nst),
                               Matrix{C}(undef, grid.nx, grid.ny),
                               Matrix{C}(undef, grid.nx, grid.ny),
-                              Array{F}(undef, grid.nx, grid.ny, filter_params.nprt),
-                              Array{F}(undef, grid.nx, grid.ny, filter_params.nprt)
+                              Array{T}(undef, grid.nx, grid.ny, filter_params.nprt),
+                              Array{T}(undef, grid.nx, grid.ny, filter_params.nprt)
                               )
 
     return matrices

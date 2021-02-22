@@ -17,7 +17,8 @@ using .Default_params
     ParticleDA.get_grid_size(model_data) ->
         NamedTuple({:nx, :ny, :dx, :dy, :x_length, :y_length},Tuple{Int, Int, Float, Float, Float, Float})
 
-Return a tuple with the size of the grid.
+Return a NamedTuple with the parameters that define the size of the grid.
+TODO: It could be better to define a struct for these
 """
 function get_grid_size end
 
@@ -348,11 +349,19 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
                                        (grid.y_length-grid.dy)*2))
 
     obs_noise_std = get_obs_noise_std(model_data)
-    offline_matrices = init_offline_matrices(grid, grid_ext, stations, filter_params, obs_noise_std)
-    online_matrices = init_online_matrices(grid, grid_ext, stations, filter_params)
+    offline_matrices = init_offline_matrices(grid, grid_ext, stations, filter_params, obs_noise_std, T)
+    online_matrices = init_online_matrices(grid, grid_ext, stations, filter_params, T)
     rng = get_rng(model_data)
 
-    return (;filter_data, offline_matrices, online_matrices, stations, grid, grid_ext, rng, obs_noise_std)
+    # Returning data as a named tuple to simplify the calling code. The Julia 1.5 syntax would be nice here.
+    return (filter_data = filter_data,
+            offline_matrices = offline_matrices,
+            online_matrices = online_matrices,
+            stations = stations,
+            grid = grid,
+            grid_ext = grid_ext,
+            rng = rng,
+            obs_noise_std = obs_noise_std)
 end
 
 struct FilterData{T, S, U, V, X}
@@ -530,20 +539,19 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
 
     # TODO: put the body of this block in a function
     @timeit_debug timer "Filter initialization" d = init_filter(filter_params, model_data, nprt_per_rank, Float64, OptimalFilter())
-    filter_data = d.filter_data
 
     @timeit_debug timer "get_particles" particles = get_particles(model_data)
-    @timeit_debug timer "Mean and Var" get_mean_and_var!(filter_data.statistics, particles, filter_params.master_rank)
+    @timeit_debug timer "Mean and Var" get_mean_and_var!(d.filter_data.statistics, particles, filter_params.master_rank)
 
     # Write initial state (time = 0) + metadata
     if(filter_params.verbose && my_rank == filter_params.master_rank)
         @timeit_debug timer "IO" begin
-            unpack_statistics!(filter_data.avg_arr, filter_data.var_arr, filter_data.statistics)
+            unpack_statistics!(d.filter_data.avg_arr, d.filter_data.var_arr, d.filter_data.statistics)
             write_snapshot(filter_params.output_filename,
                            model_data,
-                           filter_data.avg_arr,
-                           filter_data.var_arr,
-                           filter_data.weights,
+                           d.filter_data.avg_arr,
+                           d.filter_data.var_arr,
+                           d.filter_data.weights,
                            0)
         end
     end
@@ -587,7 +595,7 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
 
         # Optimal Filter ends.
 
-        @timeit_debug timer "Particle Weights" get_log_weights!(@view(filter_data.weights[1:nprt_per_rank]),
+        @timeit_debug timer "Particle Weights" get_log_weights!(@view(d.filter_data.weights[1:nprt_per_rank]),
                                                                 truth_observations,
                                                                 model_observations,
                                                                 d.offline_matrices)
@@ -599,37 +607,37 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
         # for their chunk of state.
         if my_rank == filter_params.master_rank
             @timeit_debug timer "MPI Gather" MPI.Gather!(MPI.IN_PLACE,
-                                                         UBuffer(filter_data.weights, nprt_per_rank),
+                                                         UBuffer(d.filter_data.weights, nprt_per_rank),
                                                          filter_params.master_rank,
                                                          MPI.COMM_WORLD)
-            @timeit_debug timer "Weights" normalized_exp!(filter_data.weights)
-            @timeit_debug timer "Resample" resample!(filter_data.resampling_indices, filter_data.weights)
+            @timeit_debug timer "Weights" normalized_exp!(d.filter_data.weights)
+            @timeit_debug timer "Resample" resample!(d.filter_data.resampling_indices, d.filter_data.weights)
 
         else
-            @timeit_debug timer "MPI Gather" MPI.Gather!(filter_data.weights,
+            @timeit_debug timer "MPI Gather" MPI.Gather!(d.filter_data.weights,
                                                          nothing,
                                                          filter_params.master_rank,
                                                          MPI.COMM_WORLD)
         end
 
         # Broadcast resampled particle indices to all ranks
-        MPI.Bcast!(filter_data.resampling_indices, filter_params.master_rank, MPI.COMM_WORLD)
+        MPI.Bcast!(d.filter_data.resampling_indices, filter_params.master_rank, MPI.COMM_WORLD)
 
         @timeit_debug timer "get_particles" particles = get_particles(model_data)
         @timeit_debug timer "State Copy" copy_states!(particles,
-                                                      filter_data.copy_buffer,
-                                                      filter_data.resampling_indices,
+                                                      d.filter_data.copy_buffer,
+                                                      d.filter_data.resampling_indices,
                                                       my_rank,
                                                       nprt_per_rank)
 
         @timeit_debug timer "get_particles" particles = get_particles(model_data)
-        @timeit_debug timer "Mean and Var" get_mean_and_var!(filter_data.statistics, particles, filter_params.master_rank)
+        @timeit_debug timer "Mean and Var" get_mean_and_var!(d.filter_data.statistics, particles, filter_params.master_rank)
 
         if my_rank == filter_params.master_rank && filter_params.verbose
 
             @timeit_debug timer "IO" begin
-                unpack_statistics!(filter_data.avg_arr, filter_data.var_arr, filter_data.statistics)
-                write_snapshot(filter_params.output_filename, model_data, filter_data.avg_arr, filter_data.var_arr, filter_data.weights, it)
+                unpack_statistics!(d.filter_data.avg_arr, d.filter_data.var_arr, d.filter_data.statistics)
+                write_snapshot(filter_params.output_filename, model_data, d.filter_data.avg_arr, d.filter_data.var_arr, d.filter_data.weights, it)
             end
 
         end
@@ -665,9 +673,9 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
         end
     end
 
-    unpack_statistics!(filter_data.avg_arr, filter_data.var_arr, filter_data.statistics)
+    unpack_statistics!(d.filter_data.avg_arr, d.filter_data.var_arr, d.filter_data.statistics)
 
-    return get_truth(model_data), filter_data.avg_arr, filter_data.var_arr
+    return get_truth(model_data), d.filter_data.avg_arr, d.filter_data.var_arr
 end
 
 
