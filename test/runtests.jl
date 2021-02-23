@@ -306,8 +306,8 @@ end
 
     height = rand(grid.nx, grid.ny, filter_params.nprt)
     obs = randn(stations.nst)
-    mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, filter_params, model_params.obs_noise_std)
-    mat_on = ParticleDA.init_online_matrices(grid, grid_ext, stations, filter_params)
+    mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, filter_params, model_params.obs_noise_std, Float64)
+    mat_on = ParticleDA.init_online_matrices(grid, grid_ext, stations, filter_params, Float64)
     @test minimum(mat_off.Lambda) > 0.0
     ParticleDA.calculate_mean_height!(mat_on.mean, height, mat_off, obs, stations, grid, grid_ext, filter_params, model_params.obs_noise_std)
     @test all(isfinite, mat_on.mean)
@@ -358,8 +358,8 @@ end
         obs[i] = height[stations.ist[i], stations.jst[i],1] + rand()
     end
 
-    mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, filter_params, model_params.obs_noise_std)
-    mat_on = ParticleDA.init_online_matrices(grid, grid_ext, stations, filter_params)
+    mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, filter_params, model_params.obs_noise_std, Float64)
+    mat_on = ParticleDA.init_online_matrices(grid, grid_ext, stations, filter_params, Float64)
 
     ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, filter_params, rng, model_params.obs_noise_std)
 
