@@ -412,9 +412,14 @@ ParticleDA.get_particles(d::ModelData) = d.states.particles
 # TODO: we should probably get rid of `get_truth`: it is only used as return
 # value of `particle_filter`, we may just return the whole `model_data`.
 ParticleDA.get_truth(d::ModelData) = d.states.truth
-ParticleDA.get_stations(d::ModelData) = (nst = d.model_params.nobs, ist = d.stations.ist, jst = d.stations.jst)
+ParticleDA.get_stations(d::ModelData) = (nst = d.model_params.nobs,
+                                         ist = d.stations.ist,
+                                         jst = d.stations.jst)
 ParticleDA.get_rng(d::ModelData) = d.rng
 ParticleDA.get_obs_noise_std(d::ModelData) = d.model_params.obs_noise_std
+ParticleDA.get_model_noise_params(d::ModelData) = (sigma = d.model_params.sigma,
+                                                   lambda = d.model_params.lambda,
+                                                   nu = d.model_params.nu)
 
 function ParticleDA.set_particles!(d::ModelData, particles::AbstractArray{T}) where T
 

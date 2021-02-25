@@ -37,14 +37,14 @@ struct OnlineMatrices{T<:AbstractVector, S<:AbstractArray, U<:AbstractArray}
 end
 
 # Covariance function r(x,y), equation 1 in Dietrich and Newsam 96
-function covariance(x::T, y::T, filter_params) where T
+function covariance(x::T, y::T, noise_params::NamedTuple) where T
 
-    return filter_params.sigma_cov^2 * exp(-(abs(x) + abs(y))/(2 * filter_params.lambda_cov))
+    return noise_params.sigma^2 * exp(-(abs(x) + abs(y))/(2 * noise_params.lambda))
 
 end
 
 # Extended covariance function /bar r(x,y), equation 8 of Dietrich and Newsam 96
-function extended_covariance(x::T, y::T, grid::NamedTuple, filter_params) where T
+function extended_covariance(x::T, y::T, grid::NamedTuple, noise_params::NamedTuple) where T
 
     if 0 <= x <= grid.x_length
         x_ext = x
@@ -62,12 +62,12 @@ function extended_covariance(x::T, y::T, grid::NamedTuple, filter_params) where 
         @error "value of y is out of bounds"
     end
 
-    return covariance(x_ext, y_ext, filter_params)
+    return covariance(x_ext, y_ext, noise_params)
 
 end
 
 # Covariance between observations and the extended grid /bar R_21, from equation 11 in Dietrich & Newsam 96
-function covariance_stations_extended_grid!(cov::AbstractMatrix{T}, grid::NamedTuple, grid_ext::NamedTuple, stations::NamedTuple, filter_params) where T
+function covariance_stations_extended_grid!(cov::AbstractMatrix{T}, grid::NamedTuple, grid_ext::NamedTuple, stations::NamedTuple, noise_params::NamedTuple) where T
 
     xid = 1:grid_ext.nx
     yid = 1:grid_ext.ny
@@ -79,13 +79,13 @@ function covariance_stations_extended_grid!(cov::AbstractMatrix{T}, grid::NamedT
     for (i,ist,jst) in zip(1:stations.nst, stations.ist, stations.jst)
         cov[i,:] .= extended_covariance.(abs.(getindex.(c, 1) .- ist) .* grid_ext.dx,
                                          abs.(getindex.(c, 2) .- jst) .* grid_ext.dy,
-                                         (grid,), (filter_params,))
+                                         (grid,), (noise_params,))
     end
 
 end
 
 # Covariance between stations and the original grid R_21, from equations 3-4 in Dietrich & Newsam 96
-function covariance_grid_stations!(cov::AbstractMatrix{T}, grid::NamedTuple, stations::NamedTuple, filter_params) where T
+function covariance_grid_stations!(cov::AbstractMatrix{T}, grid::NamedTuple, stations::NamedTuple, noise_params::NamedTuple) where T
 
     xid = 1:grid.nx
     yid = 1:grid.ny
@@ -97,24 +97,24 @@ function covariance_grid_stations!(cov::AbstractMatrix{T}, grid::NamedTuple, sta
     for (i,ist,jst) in zip(1:stations.nst, stations.ist, stations.jst)
         cov[:,i] .= extended_covariance.(abs.(getindex.(c, 1) .- ist) .* grid.dx,
                                          abs.(getindex.(c, 2) .- jst) .* grid.dy,
-                                         (grid,), (filter_params,))
+                                         (grid,), (noise_params,))
     end
 
 end
 
 # Covariance between observations R_22, from equationd 3-4 in in Dietrich & Newsam 96
 # TODO: Ask Alex why we add sigma^2 on the diagonal
-function covariance_stations!(cov::AbstractMatrix{T}, grid::NamedTuple, stations::NamedTuple, filter_params, std::T) where T
+function covariance_stations!(cov::AbstractMatrix{T}, grid::NamedTuple, stations::NamedTuple, noise_params::NamedTuple, std::T) where T
 
     cov .= covariance.(abs.(stations.ist .- stations.ist') .* grid.dx,
                        abs.(stations.jst' .- stations.jst) .* grid.dy,
-                       (filter_params,)) .+ I(stations.nst) .* std.^2
+                       (noise_params,)) .+ I(stations.nst) .* std.^2
 
 end
 
 # First column vector rho_bar of covariance matrix among pairs of points of the extended grid R11_bar,
 # from Dietrich & Newsam 96 described in text between equations 11 and 12
-function first_column_covariance_grid!(rho::AbstractVector{T}, grid::NamedTuple, grid_ext::NamedTuple, filter_params) where T
+function first_column_covariance_grid!(rho::AbstractVector{T}, grid::NamedTuple, grid_ext::NamedTuple, noise_params::NamedTuple) where T
 
     xid = 1:grid_ext.nx
     yid = 1:grid_ext.ny
@@ -123,7 +123,7 @@ function first_column_covariance_grid!(rho::AbstractVector{T}, grid::NamedTuple,
 
     rho .= extended_covariance.((getindex.(c, 1) .- 1) .* grid_ext.dx,
                                 (getindex.(c, 2) .- 1) .* grid_ext.dy,
-                                (grid,), (filter_params,))
+                                (grid,), (noise_params,))
 
 
 end
@@ -202,7 +202,7 @@ function get_values_at_stations(field::AbstractMatrix{T}, stations) where T
 end
 
 # Allocate and compute matrices that do not depend on time-dependent variables (height and observations).
-function init_offline_matrices(grid::NamedTuple, grid_ext::NamedTuple, stations::NamedTuple, filter_params, obs_noise_std::T, F::Type) where T
+function init_offline_matrices(grid::NamedTuple, grid_ext::NamedTuple, stations::NamedTuple, noise_params::NamedTuple, obs_noise_std::T, F::Type) where T
 
     n1 = grid.nx * grid.ny # number of elements in original grid
     n1_bar = grid_ext.nx * grid_ext.ny # number of elements in extended grid
@@ -224,10 +224,10 @@ function init_offline_matrices(grid::NamedTuple, grid_ext::NamedTuple, stations:
                                Matrix{F}(undef, grid.nx, grid.ny)  #buf2
                                )
 
-    first_column_covariance_grid!(matrices.rho_bar, grid, grid_ext, filter_params)
-    covariance_grid_stations!(matrices.R12, grid, stations, filter_params)
-    covariance_stations_extended_grid!(matrices.R21_bar, grid, grid_ext, stations, filter_params)
-    covariance_stations!(matrices.R22, grid, stations, filter_params, obs_noise_std)
+    first_column_covariance_grid!(matrices.rho_bar, grid, grid_ext, noise_params)
+    covariance_grid_stations!(matrices.R12, grid, stations, noise_params)
+    covariance_stations_extended_grid!(matrices.R21_bar, grid, grid_ext, stations, noise_params)
+    covariance_stations!(matrices.R22, grid, stations, noise_params, obs_noise_std)
     matrices.R22_inv .= inv(matrices.R22)
     matrices.R12_invR22 .= matrices.R12 * matrices.R22_inv
 

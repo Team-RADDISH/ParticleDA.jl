@@ -37,6 +37,13 @@ Return standard deviation of observation noise. Required for optimal filter only
 function get_obs_noise_std end
 
 """
+    ParticleDa.get_model_noise(model_data) -> NamedTuple({:sigma, :lambda, :nu},Tuple{Float, Float, Float})
+
+Return standard deviation of observation noise. Required for optimal filter only.
+"""
+function get_model_noise_params end
+
+"""
     ParticleDA.get_particle(model_data) -> particles
 
 Return the vector of particles.  This method is intended to be extended by the
@@ -348,8 +355,10 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
                                        (grid.x_length-grid.dx)*2,
                                        (grid.y_length-grid.dy)*2))
 
+    model_noise_params = get_model_noise_params(model_data)
     obs_noise_std = get_obs_noise_std(model_data)
-    offline_matrices = init_offline_matrices(grid, grid_ext, stations, filter_params, obs_noise_std, T)
+
+    offline_matrices = init_offline_matrices(grid, grid_ext, stations, model_noise_params, obs_noise_std, T)
     online_matrices = init_online_matrices(grid, grid_ext, stations, filter_params, T)
     rng = get_rng(model_data)
 
