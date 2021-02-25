@@ -277,15 +277,16 @@ end
                                        grid.dy,
                                        (grid.x_length-grid.dx)*2,
                                        (grid.y_length-grid.dy)*2))
-
+    noise_params = (sigma = model_params.sigma, lambda = model_params.lambda, nu = model_params.nu)
+    
     # Set station coordinates
     ist = rand(1:model_params.nx, model_params.nobs)
     jst = rand(1:model_params.ny, model_params.nobs)
     stations = (nst = model_params.nobs, ist = ist, jst = jst)
-    cov_ext = ParticleDA.extended_covariance(0.0, 0.5 * grid.y_length, grid, filter_params)
-    @test cov_ext ≈ exp(-0.5 * model_params.y_length / (2 * filter_params.lambda_cov))
-    @test cov_ext ≈ ParticleDA.extended_covariance(2.0 * grid.x_length, 0.5 * grid.y_length, grid, filter_params)
-    @test cov_ext ≈ ParticleDA.extended_covariance(0.0, 1.5 * grid.y_length, grid, filter_params)
+    cov_ext = ParticleDA.extended_covariance(0.0, 0.5 * grid.y_length, grid, noise_params)
+    @test cov_ext ≈ exp(-0.5 * model_params.y_length / (2 * noise_params.lambda))
+    @test cov_ext ≈ ParticleDA.extended_covariance(2.0 * grid.x_length, 0.5 * grid.y_length, grid, noise_params)
+    @test cov_ext ≈ ParticleDA.extended_covariance(0.0, 1.5 * grid.y_length, grid, noise_params)
     arr = rand(ComplexF64,10,10)
     arr2 = zeros(ComplexF64,10,10)
     arr3 = zeros(ComplexF64,10,10)
@@ -296,9 +297,9 @@ end
     cov_1 = zeros(stations.nst, grid_ext.nx * grid_ext.ny)
     cov_2 = zeros(grid.nx * grid.ny, stations.nst)
     cov_3 = zeros(stations.nst,stations.nst)
-    ParticleDA.covariance_stations_extended_grid!(cov_1,grid,grid_ext,stations,filter_params)
-    ParticleDA.covariance_grid_stations!(cov_2,grid,    stations,filter_params)
-    ParticleDA.covariance_stations!(cov_3,grid,stations,filter_params,model_params.obs_noise_std)
+    ParticleDA.covariance_stations_extended_grid!(cov_1,grid,grid_ext,stations,noise_params)
+    ParticleDA.covariance_grid_stations!(cov_2,grid,stations,noise_params)
+    ParticleDA.covariance_stations!(cov_3,grid,stations,noise_params,model_params.obs_noise_std)
     @test all(isfinite, cov_1)
     @test all(isfinite, cov_2)
     @test all(isfinite, cov_3)
@@ -306,7 +307,7 @@ end
 
     height = rand(grid.nx, grid.ny, filter_params.nprt)
     obs = randn(stations.nst)
-    mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, filter_params, model_params.obs_noise_std, Float64)
+    mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, noise_params, model_params.obs_noise_std, Float64)
     mat_on = ParticleDA.init_online_matrices(grid, grid_ext, stations, filter_params, Float64)
     @test minimum(mat_off.Lambda) > 0.0
     ParticleDA.calculate_mean_height!(mat_on.mean, height, mat_off, obs, stations, grid, grid_ext, filter_params, model_params.obs_noise_std)
@@ -342,6 +343,7 @@ end
                                        grid.dy,
                                        (grid.x_length-grid.dx)*2,
                                        (grid.y_length-grid.dy)*2))
+    noise_params = (sigma = model_params.sigma, lambda = model_params.lambda, nu = model_params.nu)
 
     stations = (nst = model_params.nobs, ist = st.st_ij[:,1].+1, jst = st.st_ij[:,2].+1)
 
@@ -358,7 +360,7 @@ end
         obs[i] = height[stations.ist[i], stations.jst[i],1] + rand()
     end
 
-    mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, filter_params, model_params.obs_noise_std, Float64)
+    mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, noise_params, model_params.obs_noise_std, Float64)
     mat_on = ParticleDA.init_online_matrices(grid, grid_ext, stations, filter_params, Float64)
 
     ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, filter_params, rng, model_params.obs_noise_std)

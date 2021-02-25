@@ -99,7 +99,7 @@ The particle filter parameters are saved in the following data structure:
 ParticleDA.FilterParameters
 ```
 
-## Example: tsunami modelling
+## Example: tsunami modelling with the bootstrap filter
 
 A full example of a model interfacing `ParticleDA` is available in
 `test/model/model.jl`.  This model represents a tsunami and is partly based on
@@ -124,7 +124,7 @@ Pkg.instantiate()
 include(module_src)
 using .Model
 
-# Run the particle filter using the `init` file defined in the `Model` module
+# Run the particle filter using the `init` file defined in the `Model` module.
 run_particle_filter(Model.init, input_file, BootstrapFilter())
 ```
 

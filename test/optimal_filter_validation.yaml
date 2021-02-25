@@ -1,7 +1,5 @@
 filter:
   nprt: 2
-  sigma_cov: 1.0
-  lambda_cov: 1.0
 
 model:
   llw2d:
@@ -11,3 +9,6 @@ model:
     x_length: 40.0
     y_length: 40.0
     obs_noise_std: 0.01
+    sigma: 1.0
+    lambda: 1.0
+    nu: 2.5
