@@ -50,13 +50,3 @@ SUITE["base"]["resample!"] = @benchmarkable ParticleDA.resample!(resampling_indi
 
 SUITE["BootstrapFilter"]["init_filter"] = @benchmarkable ParticleDA.init_filter($(filter_params), $(model_data), $(nprt_per_rank), Float64)
 SUITE["BootstrapFilter"]["run_particle_filter"] = @benchmarkable ParticleDA.run_particle_filter($(Model.init), $(params), $(BootstrapFilter())) seconds=30 setup=(cd(mktempdir()))
-
-#=
-
-# Example of use:
-
-using PkgBenchmark, ParticleDA
-
-benchmarkpkg(ParticleDA, BenchmarkConfig(; env = Dict("JULIA_NUM_THREADS" => 2)))
-
-=#
