@@ -350,7 +350,7 @@ uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
 version = "1.0.15"
 
 [[ParticleDA]]
-deps = ["Distributions", "HDF5", "LinearAlgebra", "MPI", "Statistics", "TimerOutputs", "YAML"]
+deps = ["Distributions", "FFTW", "HDF5", "LinearAlgebra", "MPI", "Random", "SparseArrays", "Statistics", "TimerOutputs", "YAML"]
 path = ".."
 uuid = "61cd1fb4-f4c4-4bc8-80c6-ea5639a6ca2e"
 version = "0.1.0"
