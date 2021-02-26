@@ -362,14 +362,7 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
     online_matrices = init_online_matrices(grid, grid_ext, stations, filter_params, T)
     rng = get_rng(model_data)
 
-    return (; filter_data...,
-            offline_matrices = offline_matrices,
-            online_matrices = online_matrices,
-            stations = stations,
-            grid = grid,
-            grid_ext = grid_ext,
-            rng = rng,
-            obs_noise_std = obs_noise_std)
+    return (; filter_data..., offline_matrices, online_matrices, stations, grid, grid_ext, rng, obs_noise_std)
 end
 
 function update_particle_proposal!(model_data, filter_data, filter_params, truth_observations, nprt_per_rank, filter_type::BootstrapFilter)
