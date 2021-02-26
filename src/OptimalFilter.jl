@@ -19,7 +19,7 @@ struct OfflineMatrices{T<:AbstractArray, S<:AbstractArray, U<:AbstractArray}
 
     buf1::T
     buf2::T
-
+    buf3::U
 end
 
 
@@ -131,40 +131,44 @@ end
 # Normalized two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
 # Operates on the 2d data stored as a matrix.
 # From Dietrich & Newsam 96 in text following equation 12
-function normalized_2d_fft!(transformed_array::AbstractMatrix{T}, array::AbstractMatrix{S}, grid_ext) where {T,S}
+function normalized_2d_fft!(array::AbstractMatrix{T}, grid_ext::NamedTuple) where T
 
     normalization_factor = 1.0 / sqrt(grid_ext.nx * grid_ext.ny)
-    transformed_array .= fft(array) .* normalization_factor
+    fft!(array)
+    array .*= normalization_factor
 
 end
 
 # Normalized two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
 # Operates on the 2d data stored as a vector.
 # From Dietrich & Newsam 96 in text following equation 12
-function normalized_2d_fft!(transformed_vector::AbstractVector{T}, vector::AbstractVector{S}, grid_ext) where {T,S}
+function normalized_2d_fft!(vector::AbstractVector{T}, grid_ext::NamedTuple) where T
 
-    normalization_factor = 1.0 / sqrt(grid_ext.nx * grid_ext.ny)
-    transformed_vector .= fft(reshape(vector, grid_ext.nx, grid_ext.ny))[:] .* normalization_factor
+    array = reshape(vector, grid_ext.nx, grid_ext.ny)
+    normalized_2d_fft!(array, grid_ext)
+    vector .= array[:]
 
 end
 
-# Normalized inverse two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
+# Normalized two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
 # Operates on the 2d data stored as a matrix.
 # From Dietrich & Newsam 96 in text following equation 12
-function normalized_inverse_2d_fft!(transformed_array::AbstractMatrix{T}, array::AbstractMatrix{S}, grid_ext) where {T,S}
+function normalized_inverse_2d_fft!(array::AbstractMatrix{T}, grid_ext::NamedTuple) where T
 
     normalization_factor = sqrt(grid_ext.nx * grid_ext.ny)
-    transformed_array .= ifft(array) .* normalization_factor
+    ifft!(array)
+    array .*= normalization_factor
 
 end
 
-# Normalized inverse two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
+# Normalized two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
 # Operates on the 2d data stored as a vector.
 # From Dietrich & Newsam 96 in text following equation 12
-function normalized_inverse_2d_fft!(transformed_vector::AbstractVector{T}, vector::AbstractVector{S}, grid_ext) where {T,S}
+function normalized_inverse_2d_fft!(vector::AbstractVector{T}, grid_ext::NamedTuple) where T
 
-    normalization_factor = sqrt(grid_ext.nx * grid_ext.ny)
-    transformed_vector .= ifft(reshape(vector, grid_ext.nx, grid_ext.ny))[:] .* normalization_factor
+    array = reshape(vector, grid_ext.nx, grid_ext.ny)
+    normalized_inverse_2d_fft!(array, grid_ext)
+    vector .= array[:]
 
 end
 
@@ -174,17 +178,19 @@ function WΛWH_decomposition!(transformed_array::AbstractMatrix{T}, array::Abstr
 
     @assert size(array) == (grid.nx, grid.ny)
 
-    extended_array = zeros(ComplexF64, grid_ext.nx, grid_ext.ny)
+    offline_matrices.buf3 .= 0.0
 
-    extended_array[1:grid.nx, 1:grid.ny] .= array
+    offline_matrices.buf3[1:grid.nx, 1:grid.ny] .= array
 
-    normalized_2d_fft!(extended_array, extended_array, grid_ext)
+    normalized_2d_fft!(offline_matrices.buf3, grid_ext)
 
+    offline_matrices.buf3 .*= reshape(offline_matrices.Lambda, grid_ext.nx, grid_ext.ny)
+    
     # Here we do an element-wise multiplication of the extended_array with the vector Lambda. This is identical to
     # Diagonal(Lambda) * extended_array[:], but avoids flattening and reshaping extended_array.
-    normalized_inverse_2d_fft!(extended_array, reshape(offline_matrices.Lambda, grid_ext.nx, grid_ext.ny).*extended_array, grid_ext)
+    normalized_inverse_2d_fft!(offline_matrices.buf3, grid_ext)
 
-    transformed_array .= real.(@view(extended_array[1:grid.nx, 1:grid.ny]))
+    transformed_array .= real.(@view(offline_matrices.buf3[1:grid.nx, 1:grid.ny]))
 
 end
 
@@ -221,7 +227,8 @@ function init_offline_matrices(grid::NamedTuple, grid_ext::NamedTuple, stations:
                                Matrix{F}(undef, stations.nst, stations.nst), #mu20
 
                                Matrix{F}(undef, grid.nx, grid.ny), #buf1
-                               Matrix{F}(undef, grid.nx, grid.ny)  #buf2
+                               Matrix{F}(undef, grid.nx, grid.ny), #buf2
+                               Matrix{C}(undef, grid_ext.nx, grid_ext.ny)
                                )
 
     first_column_covariance_grid!(matrices.rho_bar, grid, grid_ext, noise_params)
@@ -231,13 +238,13 @@ function init_offline_matrices(grid::NamedTuple, grid_ext::NamedTuple, stations:
     matrices.R22_inv .= inv(matrices.R22)
     matrices.R12_invR22 .= matrices.R12 * matrices.R22_inv
 
-    fourier_coeffs = Vector{C}(undef, n1_bar)
-    normalized_inverse_2d_fft!(fourier_coeffs, matrices.rho_bar, grid_ext)
+    fourier_coeffs = C.(matrices.rho_bar)
+    normalized_inverse_2d_fft!(fourier_coeffs, grid_ext)
     matrices.Lambda .= sqrt(n1_bar) .* real.(fourier_coeffs)
 
-    WHbar_R12 = Matrix{C}(undef, n1_bar, stations.nst)
+    WHbar_R12 = C.(@view(matrices.R21_bar[i,:]))
     for i in 1:stations.nst
-        normalized_2d_fft!(@view(WHbar_R12[:,i]), @view(matrices.R21_bar[i,:]), grid_ext)
+        normalized_2d_fft!(@view(WHbar_R12[:,i]), grid_ext)
     end
     KH = Diagonal(matrices.Lambda)^(-1/2)*WHbar_R12
     matrices.K .= KH'
@@ -336,7 +343,8 @@ function sample_height_proposal!(height::AbstractArray{T,3},
         e2 = complex.(randn(rng, stations.nst), randn(rng, stations.nst))
 
         # This gives the vector z1_bar
-        normalized_inverse_2d_fft!(online_matrices.z1_bar, Diagonal(offline_matrices.Lambda)^(1/2) * e1, grid_ext)
+        online_matrices.z1_bar .= Diagonal(offline_matrices.Lambda)^(1/2) * e1
+        normalized_inverse_2d_fft!(online_matrices.z1_bar, grid_ext)
 
         # This is the vector z2
         online_matrices.z2 .= offline_matrices.K * e1 .+ offline_matrices.L * e2

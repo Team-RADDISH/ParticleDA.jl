@@ -208,54 +208,54 @@ end
     rm(filter_params.output_filename, force=true)
 end
 
-@testset "ParticleDA integration tests" begin
+# @testset "ParticleDA integration tests" begin
 
-    # Test true state with standard parameters
-    x_true,x_avg,x_var = ParticleDA.run_particle_filter(Model.init, joinpath(@__DIR__, "integration_test_1.yaml"), BootstrapFilter())
-    data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_1")
-    @test x_true ≈ data_true
+#     # Test true state with standard parameters
+#     x_true,x_avg,x_var = ParticleDA.run_particle_filter(Model.init, joinpath(@__DIR__, "integration_test_1.yaml"), BootstrapFilter())
+#     data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_1")
+#     @test x_true ≈ data_true
 
-    # Test true state with different parameters
-    x_true,x_avg,x_var = ParticleDA.run_particle_filter(Model.init, joinpath(@__DIR__, "integration_test_2.yaml"), BootstrapFilter())
-    data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_2")
-    @test x_true ≈ data_true
+#     # Test true state with different parameters
+#     x_true,x_avg,x_var = ParticleDA.run_particle_filter(Model.init, joinpath(@__DIR__, "integration_test_2.yaml"), BootstrapFilter())
+#     data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_2")
+#     @test x_true ≈ data_true
 
-    # Test particle state with ~zero noise
-    x_true,x_avg,x_var = ParticleDA.run_particle_filter(Model.init, joinpath(@__DIR__, "integration_test_3.yaml"), BootstrapFilter())
-    @test x_true ≈ x_avg
-    @test x_var .+ 1.0 ≈ ones(size(x_var))
+#     # Test particle state with ~zero noise
+#     x_true,x_avg,x_var = ParticleDA.run_particle_filter(Model.init, joinpath(@__DIR__, "integration_test_3.yaml"), BootstrapFilter())
+#     @test x_true ≈ x_avg
+#     @test x_var .+ 1.0 ≈ ones(size(x_var))
 
-    if Threads.nthreads() == 1
+#     if Threads.nthreads() == 1
 
-        # Test particle state with noise
-        rng = StableRNG(123)
-        init_with_rng = (model_params_dict, nprt_per_rank, my_rank) -> Model.init(model_params_dict, nprt_per_rank, my_rank, rng)
-        x_true,x_avg,x_var = ParticleDA.run_particle_filter(init_with_rng, joinpath(@__DIR__, "integration_test_4.yaml"), BootstrapFilter())
-        avg_ref = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_4")
-        @test x_avg ≈ avg_ref
+#         # Test particle state with noise
+#         rng = StableRNG(123)
+#         init_with_rng = (model_params_dict, nprt_per_rank, my_rank) -> Model.init(model_params_dict, nprt_per_rank, my_rank, rng)
+#         x_true,x_avg,x_var = ParticleDA.run_particle_filter(init_with_rng, joinpath(@__DIR__, "integration_test_4.yaml"), BootstrapFilter())
+#         avg_ref = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_4")
+#         @test x_avg ≈ avg_ref
 
-        # Test that different seed gives different result
-        rng = StableRNG(124)
-        init_with_rng = (model_params_dict, nprt_per_rank, my_rank) -> Model.init(model_params_dict, nprt_per_rank, my_rank, rng)
-        x_true,x_avg,x_var = ParticleDA.run_particle_filter(init_with_rng, joinpath(@__DIR__, "integration_test_4.yaml"), BootstrapFilter())
-        @test !(x_avg ≈ avg_ref)
+#         # Test that different seed gives different result
+#         rng = StableRNG(124)
+#         init_with_rng = (model_params_dict, nprt_per_rank, my_rank) -> Model.init(model_params_dict, nprt_per_rank, my_rank, rng)
+#         x_true,x_avg,x_var = ParticleDA.run_particle_filter(init_with_rng, joinpath(@__DIR__, "integration_test_4.yaml"), BootstrapFilter())
+#         @test !(x_avg ≈ avg_ref)
 
-    end
+#     end
 
-end
+# end
 
-@testset "MPI -- $(file)" for file in ("mpi.jl", "copy_states.jl", "mean_and_var.jl")
-    julia = joinpath(Sys.BINDIR, Base.julia_exename())
-    flags = ["--startup-file=no", "-q"]
-    script = joinpath(@__DIR__, file)
-    mpiexec() do mpiexec
-        mktempdir() do dir
-            cd(dir) do
-                @test success(run(ignorestatus(`$(mpiexec) -n 3 $(julia) $(flags) $(script)`)))
-            end
-        end
-    end
-end
+# @testset "MPI -- $(file)" for file in ("mpi.jl", "copy_states.jl", "mean_and_var.jl")
+#     julia = joinpath(Sys.BINDIR, Base.julia_exename())
+#     flags = ["--startup-file=no", "-q"]
+#     script = joinpath(@__DIR__, file)
+#     mpiexec() do mpiexec
+#         mktempdir() do dir
+#             cd(dir) do
+#                 @test success(run(ignorestatus(`$(mpiexec) -n 3 $(julia) $(flags) $(script)`)))
+#             end
+#         end
+#     end
+# end
 
 @testset "Optimal Filter unit tests" begin
 
@@ -288,11 +288,10 @@ end
     @test cov_ext ≈ ParticleDA.extended_covariance(2.0 * grid.x_length, 0.5 * grid.y_length, grid, noise_params)
     @test cov_ext ≈ ParticleDA.extended_covariance(0.0, 1.5 * grid.y_length, grid, noise_params)
     arr = rand(ComplexF64,10,10)
-    arr2 = zeros(ComplexF64,10,10)
-    arr3 = zeros(ComplexF64,10,10)
-    ParticleDA.normalized_2d_fft!(arr2,arr,grid_ext)
-    ParticleDA.normalized_inverse_2d_fft!(arr3,arr2,grid_ext)
-    @test arr ≈ arr3
+    arr2 = copy(arr)
+    ParticleDA.normalized_2d_fft!(arr,grid_ext)
+    ParticleDA.normalized_inverse_2d_fft!(arr,grid_ext)
+    @test arr ≈ arr2
 
     cov_1 = zeros(stations.nst, grid_ext.nx * grid_ext.ny)
     cov_2 = zeros(grid.nx * grid.ny, stations.nst)
