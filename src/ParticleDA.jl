@@ -18,13 +18,13 @@ using .Default_params
 
 Return a tuple with the dimensions (number of nodes) of the grid.
 """
-function get_grid_dims end
+function get_grid_size end
 """
     ParticleDA.get_grid_size(model_data) -> NTuple{N, float} where N
 
-Return a tuple with the dimensions (metres) of the grid.
+Return a tuple with the dimensions (metres) of the grid domain.
 """
-function get_grid_size end
+function get_grid_domain_size end
 """
     ParticleDA.get_grid_cell_size(model_data) -> NTuple{N, float} where N
 
@@ -338,15 +338,15 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
 
     resampling_indices = Vector{Int}(undef, filter_params.nprt)
 
-    dims = get_grid_dims(model_data)
+    size = get_grid_size(model_data)
     n_state_var = get_n_state_var(model_data)
 
-    statistics = Array{SummaryStat{T}, 3}(undef, dims..., n_state_var)
-    avg_arr = Array{T,3}(undef, dims..., n_state_var)
-    var_arr = Array{T,3}(undef, dims..., n_state_var)
+    statistics = Array{SummaryStat{T}, 3}(undef, size..., n_state_var)
+    avg_arr = Array{T,3}(undef, size..., n_state_var)
+    var_arr = Array{T,3}(undef, size..., n_state_var)
 
     # Memory buffer used during copy of the states
-    copy_buffer = Array{T,4}(undef, dims..., n_state_var, nprt_per_rank)
+    copy_buffer = Array{T,4}(undef, size..., n_state_var, nprt_per_rank)
 
     return (;weights, resampling_indices, statistics, avg_arr, var_arr, copy_buffer)
 end
@@ -366,11 +366,11 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
     filter_data = init_filter(filter_params, model_data, nprt_per_rank, T, BootstrapFilter())
 
     stations = get_stations(model_data)
-    dims = get_grid_dims(model_data)
     size = get_grid_size(model_data)
-    csize = get_grid_cell_size(model_data)
+    domain_size = get_grid_domain_size(model_data)
+    cell_size = get_grid_cell_size(model_data)
 
-    grid = Grid(dims...,csize...,size...)
+    grid = Grid(size...,cell_size...,domain_size...)
     grid_ext = Grid((grid.nx-1)*2, (grid.ny-1)*2, grid.dx, grid.dy, (grid.x_length-grid.dx)*2, (grid.y_length-grid.dy)*2)
 
     model_noise_params = get_model_noise_params(model_data)

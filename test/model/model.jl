@@ -426,8 +426,8 @@ function ParticleDA.set_particles!(d::ModelData, particles::AbstractArray{T}) wh
     d.states.particles .= particles
 
 end
-ParticleDA.get_grid_dims(d::ModelData) = d.model_params.nx,d.model_params.ny
-ParticleDA.get_grid_size(d::ModelData) = d.model_params.x_length,d.model_params.y_length
+ParticleDA.get_grid_size(d::ModelData) = d.model_params.nx,d.model_params.ny
+ParticleDA.get_grid_domain_size(d::ModelData) = d.model_params.x_length,d.model_params.y_length
 ParticleDA.get_grid_cell_size(d::ModelData) = d.model_params.dx,d.model_params.dy
 ParticleDA.get_n_state_var(d::ModelData) = d.model_params.n_state_var
 
