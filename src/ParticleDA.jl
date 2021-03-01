@@ -371,7 +371,7 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
     csize = get_grid_cell_size(model_data)
 
     grid = Grid(dims...,csize...,size...)
-    grid_ext = Grid(((grid.nx-1)*2, (grid.ny-1)*2, grid.dx, grid.dy, (grid.x_length-grid.dx)*2, (grid.y_length-grid.dy)*2))
+    grid_ext = Grid((grid.nx-1)*2, (grid.ny-1)*2, grid.dx, grid.dy, (grid.x_length-grid.dx)*2, (grid.y_length-grid.dy)*2)
 
     model_noise_params = get_model_noise_params(model_data)
     obs_noise_std = get_obs_noise_std(model_data)
