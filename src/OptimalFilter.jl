@@ -44,7 +44,7 @@ function covariance(x::T, y::T, noise_params::NamedTuple) where T
 end
 
 # Extended covariance function /bar r(x,y), equation 8 of Dietrich and Newsam 96
-function extended_covariance(x::T, y::T, grid::NamedTuple, noise_params::NamedTuple) where T
+function extended_covariance(x::T, y::T, grid, noise_params::NamedTuple) where T
 
     if 0 <= x <= grid.x_length
         x_ext = x
@@ -67,7 +67,7 @@ function extended_covariance(x::T, y::T, grid::NamedTuple, noise_params::NamedTu
 end
 
 # Covariance between observations and the extended grid /bar R_21, from equation 11 in Dietrich & Newsam 96
-function covariance_stations_extended_grid!(cov::AbstractMatrix{T}, grid::NamedTuple, grid_ext::NamedTuple, stations::NamedTuple, noise_params::NamedTuple) where T
+function covariance_stations_extended_grid!(cov::AbstractMatrix{T}, grid, grid_ext, stations::NamedTuple, noise_params::NamedTuple) where T
 
     xid = 1:grid_ext.nx
     yid = 1:grid_ext.ny
@@ -85,7 +85,7 @@ function covariance_stations_extended_grid!(cov::AbstractMatrix{T}, grid::NamedT
 end
 
 # Covariance between stations and the original grid R_21, from equations 3-4 in Dietrich & Newsam 96
-function covariance_grid_stations!(cov::AbstractMatrix{T}, grid::NamedTuple, stations::NamedTuple, noise_params::NamedTuple) where T
+function covariance_grid_stations!(cov::AbstractMatrix{T}, grid, stations::NamedTuple, noise_params::NamedTuple) where T
 
     xid = 1:grid.nx
     yid = 1:grid.ny
@@ -104,7 +104,7 @@ end
 
 # Covariance between observations R_22, from equationd 3-4 in in Dietrich & Newsam 96
 # TODO: Ask Alex why we add sigma^2 on the diagonal
-function covariance_stations!(cov::AbstractMatrix{T}, grid::NamedTuple, stations::NamedTuple, noise_params::NamedTuple, std::T) where T
+function covariance_stations!(cov::AbstractMatrix{T}, grid, stations::NamedTuple, noise_params::NamedTuple, std::T) where T
 
     cov .= covariance.(abs.(stations.ist .- stations.ist') .* grid.dx,
                        abs.(stations.jst' .- stations.jst) .* grid.dy,
@@ -114,7 +114,7 @@ end
 
 # First column vector rho_bar of covariance matrix among pairs of points of the extended grid R11_bar,
 # from Dietrich & Newsam 96 described in text between equations 11 and 12
-function first_column_covariance_grid!(rho::AbstractVector{T}, grid::NamedTuple, grid_ext::NamedTuple, noise_params::NamedTuple) where T
+function first_column_covariance_grid!(rho::AbstractVector{T}, grid, grid_ext, noise_params::NamedTuple) where T
 
     xid = 1:grid_ext.nx
     yid = 1:grid_ext.ny
@@ -170,7 +170,7 @@ end
 
 # Decomposition of R11, equation 12 of Deitrich and Newsam
 function WΛWH_decomposition!(transformed_array::AbstractMatrix{T}, array::AbstractMatrix{T},
-                             offline_matrices::OfflineMatrices, grid::NamedTuple, grid_ext::NamedTuple) where T
+                             offline_matrices::OfflineMatrices, grid, grid_ext) where T
 
     @assert size(array) == (grid.nx, grid.ny)
 
@@ -202,7 +202,7 @@ function get_values_at_stations(field::AbstractMatrix{T}, stations) where T
 end
 
 # Allocate and compute matrices that do not depend on time-dependent variables (height and observations).
-function init_offline_matrices(grid::NamedTuple, grid_ext::NamedTuple, stations::NamedTuple, noise_params::NamedTuple, obs_noise_std::T, F::Type) where T
+function init_offline_matrices(grid, grid_ext, stations::NamedTuple, noise_params::NamedTuple, obs_noise_std::T, F::Type) where T
 
     n1 = grid.nx * grid.ny # number of elements in original grid
     n1_bar = grid_ext.nx * grid_ext.ny # number of elements in extended grid
@@ -255,7 +255,7 @@ function init_offline_matrices(grid::NamedTuple, grid_ext::NamedTuple, stations:
 end
 
 # Allocate memory for matrices that will be updated during the time stepping loop.
-function init_online_matrices(grid::NamedTuple, grid_ext::NamedTuple, stations::NamedTuple, filter_params, T::Type)
+function init_online_matrices(grid, grid_ext, stations::NamedTuple, filter_params, T::Type)
 
     n1 = grid.nx * grid.ny # number of elements in original grid
     n1_bar = grid_ext.nx * grid_ext.ny # number of elements in extended grid
@@ -278,7 +278,7 @@ end
 # Calculate the mean for the optimal proposal of the height
 function calculate_mean_height!(mean::AbstractArray{T,3}, height::AbstractArray{T,3},
                                 offline_matrices::OfflineMatrices, observations::AbstractVector{T},
-                                stations::NamedTuple, grid::NamedTuple, grid_ext::NamedTuple,
+                                stations::NamedTuple, grid, grid_ext,
                                 filter_params, obs_noise_std::T) where T
 
     # The arguments for the WΛWH decompositions are matrices that only have nonzero values
@@ -320,8 +320,8 @@ end
 
 function sample_height_proposal!(height::AbstractArray{T,3},
                                  offline_matrices::OfflineMatrices, online_matrices::OnlineMatrices,
-                                 observations::AbstractVector{T}, stations::NamedTuple, grid::NamedTuple,
-                                 grid_ext::NamedTuple, filter_params, rng::Random.AbstractRNG, obs_noise_std::T) where T
+                                 observations::AbstractVector{T}, stations::NamedTuple, grid,
+                                 grid_ext, filter_params, rng::Random.AbstractRNG, obs_noise_std::T) where T
 
     @assert iseven(filter_params.nprt) "Number of particles must be even"
 

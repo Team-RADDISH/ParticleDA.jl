@@ -14,13 +14,23 @@ using .Default_params
 # Functions to extend in the model
 
 """
-    ParticleDA.get_grid_size(model_data) ->
-        NamedTuple({:nx, :ny, :dx, :dy, :x_length, :y_length},Tuple{Int, Int, Float, Float, Float, Float})
+    ParticleDA.get_grid_dims(model_data) -> NTuple{N, Int} where N
 
-Return a NamedTuple with the parameters that define the size of the grid.
-TODO: It could be better to define a struct for these
+Return a tuple with the dimensions (number of nodes) of the grid.
+"""
+function get_grid_dims end
+"""
+    ParticleDA.get_grid_size(model_data) -> NTuple{N, float} where N
+
+Return a tuple with the dimensions (metres) of the grid.
 """
 function get_grid_size end
+"""
+    ParticleDA.get_grid_cell_size(model_data) -> NTuple{N, float} where N
+
+Return a tuple with the dimensions (metres) of a grid cell.
+"""
+function get_grid_cell_size end
 
 """
     ParticleDA.get_n_state_var(model_data) -> Int
@@ -328,17 +338,26 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
 
     resampling_indices = Vector{Int}(undef, filter_params.nprt)
 
-    grid = get_grid_size(model_data)
+    dims = get_grid_dims(model_data)
     n_state_var = get_n_state_var(model_data)
 
-    statistics = Array{SummaryStat{T}, 3}(undef, grid.nx, grid.ny, n_state_var)
-    avg_arr = Array{T,3}(undef, grid.nx, grid.ny, n_state_var)
-    var_arr = Array{T,3}(undef, grid.nx, grid.ny, n_state_var)
+    statistics = Array{SummaryStat{T}, 3}(undef, dims..., n_state_var)
+    avg_arr = Array{T,3}(undef, dims..., n_state_var)
+    var_arr = Array{T,3}(undef, dims..., n_state_var)
 
     # Memory buffer used during copy of the states
-    copy_buffer = Array{T,4}(undef, grid.nx, grid.ny, n_state_var, nprt_per_rank)
+    copy_buffer = Array{T,4}(undef, dims..., n_state_var, nprt_per_rank)
 
     return (;weights, resampling_indices, statistics, avg_arr, var_arr, copy_buffer)
+end
+
+struct Grid{T}
+    nx::Int
+    ny::Int
+    dx::T
+    dy::T
+    x_length::T
+    y_length::T
 end
 
 # Initialize arrays used by the filter
@@ -347,13 +366,12 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
     filter_data = init_filter(filter_params, model_data, nprt_per_rank, T, BootstrapFilter())
 
     stations = get_stations(model_data)
-    grid = get_grid_size(model_data)
-    grid_ext = NamedTuple{keys(grid)}(((grid.nx-1)*2,
-                                       (grid.ny-1)*2,
-                                       grid.dx,
-                                       grid.dy,
-                                       (grid.x_length-grid.dx)*2,
-                                       (grid.y_length-grid.dy)*2))
+    dims = get_grid_dims(model_data)
+    size = get_grid_size(model_data)
+    csize = get_grid_cell_size(model_data)
+
+    grid = Grid(dims...,csize...,size...)
+    grid_ext = Grid(((grid.nx-1)*2, (grid.ny-1)*2, grid.dx, grid.dy, (grid.x_length-grid.dx)*2, (grid.y_length-grid.dy)*2))
 
     model_noise_params = get_model_noise_params(model_data)
     obs_noise_std = get_obs_noise_std(model_data)
@@ -398,7 +416,7 @@ function update_particle_proposal!(model_data, filter_data, filter_params, truth
         # Overwrite the height state variable with the samples of the optimal proposal
         particles[:,:,1,:] .= filter_data.online_matrices.samples
         set_particles!(model_data, particles)
-    
+
 end
 
 function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict, filter_type)
