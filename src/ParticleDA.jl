@@ -14,13 +14,13 @@ using .Default_params
 # Functions to extend in the model
 
 """
-    ParticleDA.get_grid_dims(model_data) -> NTuple{N, Int} where N
+    ParticleDA.get_grid_size(model_data) -> NTuple{N, Int} where N
 
 Return a tuple with the dimensions (number of nodes) of the grid.
 """
 function get_grid_size end
 """
-    ParticleDA.get_grid_size(model_data) -> NTuple{N, float} where N
+    ParticleDA.get_grid_domain_size(model_data) -> NTuple{N, float} where N
 
 Return a tuple with the dimensions (metres) of the grid domain.
 """
@@ -349,15 +349,6 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
     copy_buffer = Array{T,4}(undef, size..., n_state_var, nprt_per_rank)
 
     return (;weights, resampling_indices, statistics, avg_arr, var_arr, copy_buffer)
-end
-
-struct Grid{T}
-    nx::Int
-    ny::Int
-    dx::T
-    dy::T
-    x_length::T
-    y_length::T
 end
 
 # Initialize arrays used by the filter

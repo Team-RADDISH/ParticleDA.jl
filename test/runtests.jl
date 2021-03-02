@@ -265,18 +265,18 @@ end
     # Use default parameters
     model_params = ModelParameters()
     filter_params = FilterParameters()
-    grid = (nx = model_params.nx,
-            ny = model_params.ny,
-            dx = model_params.dx,
-            dy = model_params.dy,
-            x_length = model_params.x_length,
-            y_length = model_params.y_length)
-    grid_ext = NamedTuple{keys(grid)}(((grid.nx-1)*2,
-                                       (grid.ny-1)*2,
-                                       grid.dx,
-                                       grid.dy,
-                                       (grid.x_length-grid.dx)*2,
-                                       (grid.y_length-grid.dy)*2))
+    grid = ParticleDA.Grid(model_params.nx,
+                           model_params.ny,
+                           model_params.dx,
+                           model_params.dy,
+                           model_params.x_length,
+                           model_params.y_length)
+    grid_ext = ParticleDA.Grid((grid.nx-1)*2,
+                               (grid.ny-1)*2,
+                               grid.dx,
+                               grid.dy,
+                               (grid.x_length-grid.dx)*2,
+                               (grid.y_length-grid.dy)*2)
     noise_params = (sigma = model_params.sigma, lambda = model_params.lambda, nu = model_params.nu)
     
     # Set station coordinates
@@ -331,18 +331,19 @@ end
     filter_params = ParticleDA.get_params(FilterParameters, params_dict["filter"])
     model_params = ParticleDA.get_params(ModelParameters, params_dict["model"]["llw2d"])
 
-    grid = (nx = model_params.nx,
-            ny = model_params.ny,
-            dx = model_params.dx,
-            dy = model_params.dy,
-            x_length = model_params.x_length,
-            y_length = model_params.y_length)
-    grid_ext = NamedTuple{keys(grid)}(((grid.nx-1)*2,
-                                       (grid.ny-1)*2,
-                                       grid.dx,
-                                       grid.dy,
-                                       (grid.x_length-grid.dx)*2,
-                                       (grid.y_length-grid.dy)*2))
+    grid = ParticleDA.Grid(model_params.nx,
+                           model_params.ny,
+                           model_params.dx,
+                           model_params.dy,
+                           model_params.x_length,
+                           model_params.y_length)
+    grid_ext = ParticleDA.Grid((grid.nx-1)*2,
+                               (grid.ny-1)*2,
+                               grid.dx,
+                               grid.dy,
+                               (grid.x_length-grid.dx)*2,
+                               (grid.y_length-grid.dy)*2)
+
     noise_params = (sigma = model_params.sigma, lambda = model_params.lambda, nu = model_params.nu)
 
     stations = (nst = model_params.nobs, ist = st.st_ij[:,1].+1, jst = st.st_ij[:,2].+1)
