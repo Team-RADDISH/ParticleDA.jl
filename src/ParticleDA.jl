@@ -366,13 +366,16 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
 
     model_noise_params = get_model_noise_params(model_data)
     obs_noise_std = get_obs_noise_std(model_data)
-    fft_plan = FFTW.plan_fft(Matrix{T}(undef, grid_ext.nx, grid_ext.ny))
+    # Precompute two FFT plans, one in-place and the other out-of-place
+    C = complex(T)
+    tmp_array = Matrix{C}(undef, grid_ext.nx, grid_ext.ny)
+    fft_plan, fft_plan! = FFTW.plan_fft(tmp_array), FFTW.plan_fft!(tmp_array)
 
-    offline_matrices = init_offline_matrices(grid, grid_ext, stations, model_noise_params, obs_noise_std, fft_plan, T)
+    offline_matrices = init_offline_matrices(grid, grid_ext, stations, model_noise_params, obs_noise_std, fft_plan, fft_plan!, T)
     online_matrices = init_online_matrices(grid, grid_ext, stations, filter_params, T)
     rng = get_rng(model_data)
 
-    return (; filter_data..., offline_matrices, online_matrices, stations, grid, grid_ext, rng, obs_noise_std, fft_plan)
+    return (; filter_data..., offline_matrices, online_matrices, stations, grid, grid_ext, rng, obs_noise_std, fft_plan, fft_plan!)
 end
 
 function update_particle_proposal!(model_data, filter_data, filter_params, truth_observations, nprt_per_rank, filter_type::BootstrapFilter)
@@ -399,6 +402,7 @@ function update_particle_proposal!(model_data, filter_data, filter_params, truth
                                 filter_data.grid,
                                 filter_data.grid_ext,
                                 filter_data.fft_plan,
+                                filter_data.fft_plan!,
                                 filter_params,
                                 filter_data.rng[threadid()],
                                 filter_data.obs_noise_std)

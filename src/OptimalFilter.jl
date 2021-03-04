@@ -140,40 +140,54 @@ end
 # Normalized two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
 # Operates on the 2d data stored as a matrix.
 # From Dietrich & Newsam 96 in text following equation 12
-function normalized_2d_fft!(transformed_array::AbstractMatrix{<:Complex}, array::AbstractMatrix{S}, fft_plan::FFTW.FFTWPlan, grid_ext) where {S}
+function normalized_2d_fft!(transformed_array::AbstractMatrix{<:Complex}, array::AbstractMatrix{S}, fft_plan::FFTW.FFTWPlan, fft_plan!::FFTW.FFTWPlan, grid_ext) where {S}
 
     normalization_factor = 1.0 / sqrt(grid_ext.nx * grid_ext.ny)
-    transformed_array .= (fft_plan * complex(array)) .* normalization_factor
+    if pointer(transformed_array) == pointer(array)
+        mul!(transformed_array, fft_plan!, array)
+    else
+        mul!(transformed_array, fft_plan, array)
+    end
+    transformed_array .*= normalization_factor
 
 end
 
 # Normalized two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
 # Operates on the 2d data stored as a vector.
 # From Dietrich & Newsam 96 in text following equation 12
-function normalized_2d_fft!(transformed_vector::AbstractVector{<:Complex}, vector::AbstractVector{S}, fft_plan::FFTW.FFTWPlan, grid_ext) where {S}
+function normalized_2d_fft!(transformed_vector::AbstractVector{<:Complex}, vector::AbstractVector{S}, fft_plan::FFTW.FFTWPlan, fft_plan!::FFTW.FFTWPlan, grid_ext) where {S}
 
     normalization_factor = 1.0 / sqrt(grid_ext.nx * grid_ext.ny)
-    transformed_vector .= (fft_plan * reshape(vector, grid_ext.nx, grid_ext.ny))[:] .* normalization_factor
+    tmp_array = complex(reshape(vector, grid_ext.nx, grid_ext.ny))
+    mul!(tmp_array, fft_plan!, tmp_array)
+    transformed_vector .= @view(tmp_array[:]) .* normalization_factor
 
 end
 
 # Normalized inverse two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
 # Operates on the 2d data stored as a matrix.
 # From Dietrich & Newsam 96 in text following equation 12
-function normalized_inverse_2d_fft!(transformed_array::AbstractMatrix{<:Complex}, array::AbstractMatrix{S}, fft_plan::FFTW.FFTWPlan, grid_ext) where {S}
+function normalized_inverse_2d_fft!(transformed_array::AbstractMatrix{<:Complex}, array::AbstractMatrix{S}, fft_plan::FFTW.FFTWPlan, fft_plan!::FFTW.FFTWPlan, grid_ext) where {S}
 
     normalization_factor = sqrt(grid_ext.nx * grid_ext.ny)
-    transformed_array .= (inv(fft_plan) * complex(array)) .* normalization_factor
+    if pointer(transformed_array) == pointer(array)
+        mul!(transformed_array, inv(fft_plan!), array)
+    else
+        mul!(transformed_array, inv(fft_plan), array)
+    end
+    transformed_array .*= normalization_factor
 
 end
 
 # Normalized inverse two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
 # Operates on the 2d data stored as a vector.
 # From Dietrich & Newsam 96 in text following equation 12
-function normalized_inverse_2d_fft!(transformed_vector::AbstractVector{<:Complex}, vector::AbstractVector{S}, fft_plan::FFTW.FFTWPlan, grid_ext) where {S}
+function normalized_inverse_2d_fft!(transformed_vector::AbstractVector{<:Complex}, vector::AbstractVector{S}, fft_plan::FFTW.FFTWPlan, fft_plan!::FFTW.FFTWPlan, grid_ext) where {S}
 
     normalization_factor = sqrt(grid_ext.nx * grid_ext.ny)
-    transformed_vector .= (inv(fft_plan) * reshape(vector, grid_ext.nx, grid_ext.ny))[:] .* normalization_factor
+    tmp_array = complex(reshape(vector, grid_ext.nx, grid_ext.ny))
+    mul!(tmp_array, inv(fft_plan!), tmp_array)
+    transformed_vector .= @view(tmp_array[:]) .* normalization_factor
 
 end
 
@@ -184,6 +198,7 @@ function WΛWH_decomposition!(transformed_array::AbstractMatrix{T},
                              grid::Grid,
                              grid_ext::Grid,
                              fft_plan::FFTW.FFTWPlan,
+                             fft_plan!::FFTW.FFTWPlan,
                              ) where T
 
     @assert size(array) == (grid.nx, grid.ny)
@@ -192,11 +207,11 @@ function WΛWH_decomposition!(transformed_array::AbstractMatrix{T},
 
     extended_array[1:grid.nx, 1:grid.ny] .= array
 
-    normalized_2d_fft!(extended_array, extended_array, fft_plan, grid_ext)
+    normalized_2d_fft!(extended_array, extended_array, fft_plan, fft_plan!, grid_ext)
 
     # Here we do an element-wise multiplication of the extended_array with the vector Lambda. This is identical to
     # Diagonal(Lambda) * extended_array[:], but avoids flattening and reshaping extended_array.
-    normalized_inverse_2d_fft!(extended_array, reshape(offline_matrices.Lambda, grid_ext.nx, grid_ext.ny).*extended_array, fft_plan, grid_ext)
+    normalized_inverse_2d_fft!(extended_array, reshape(offline_matrices.Lambda, grid_ext.nx, grid_ext.ny).*extended_array, fft_plan, fft_plan!, grid_ext)
 
     transformed_array .= real.(@view(extended_array[1:grid.nx, 1:grid.ny]))
 
@@ -222,6 +237,7 @@ function init_offline_matrices(grid::Grid,
                                noise_params::NamedTuple,
                                obs_noise_std::T,
                                fft_plan::FFTW.FFTWPlan,
+                               fft_plan!::FFTW.FFTWPlan,
                                F::Type,
                                ) where T
 
@@ -253,12 +269,12 @@ function init_offline_matrices(grid::Grid,
     matrices.R12_invR22 .= matrices.R12 * matrices.R22_inv
 
     fourier_coeffs = Vector{C}(undef, n1_bar)
-    normalized_inverse_2d_fft!(fourier_coeffs, matrices.rho_bar, fft_plan, grid_ext)
+    normalized_inverse_2d_fft!(fourier_coeffs, matrices.rho_bar, fft_plan, fft_plan!, grid_ext)
     matrices.Lambda .= sqrt(n1_bar) .* real.(fourier_coeffs)
 
     WHbar_R12 = Matrix{C}(undef, n1_bar, stations.nst)
     for i in 1:stations.nst
-        normalized_2d_fft!(@view(WHbar_R12[:,i]), @view(matrices.R21_bar[i,:]), fft_plan, grid_ext)
+        normalized_2d_fft!(@view(WHbar_R12[:,i]), @view(matrices.R21_bar[i,:]), fft_plan, fft_plan!, grid_ext)
     end
     KH = Diagonal(matrices.Lambda)^(-1/2)*WHbar_R12
     matrices.K .= KH'
@@ -305,6 +321,7 @@ function calculate_mean_height!(mean::AbstractArray{T,3},
                                 grid::Grid,
                                 grid_ext::Grid,
                                 fft_plan::FFTW.FFTWPlan,
+                                fft_plan!::FFTW.FFTWPlan,
                                 filter_params,
                                 obs_noise_std::T,
                                 ) where T
@@ -318,8 +335,8 @@ function calculate_mean_height!(mean::AbstractArray{T,3},
 
     # Compute WΛWH decompositions, results are dense matrices, store them in buffers
     # These correspond to mu21 and mu22 in Alex's code
-    WΛWH_decomposition!(offline_matrices.buf1, mu21, offline_matrices, grid, grid_ext, fft_plan)
-    WΛWH_decomposition!(offline_matrices.buf2, mu22, offline_matrices, grid, grid_ext, fft_plan)
+    WΛWH_decomposition!(offline_matrices.buf1, mu21, offline_matrices, grid, grid_ext, fft_plan, fft_plan!)
+    WΛWH_decomposition!(offline_matrices.buf2, mu22, offline_matrices, grid, grid_ext, fft_plan, fft_plan!)
 
     # Compute the difference of the decomposition results, store in offline_matrices.buf1
     # This corresponds to mu2 in Alex's code.
@@ -336,7 +353,7 @@ function calculate_mean_height!(mean::AbstractArray{T,3},
 
         # Compute decomposition of height values at stations times the inverse covariance matrix
         # The argument corresponds to mu10 and the outcome to mu11 in Alex's code
-        WΛWH_decomposition!(offline_matrices.buf1, mu10_sparse, offline_matrices, grid, grid_ext, fft_plan)
+        WΛWH_decomposition!(offline_matrices.buf1, mu10_sparse, offline_matrices, grid, grid_ext, fft_plan, fft_plan!)
 
         # Compute the mean for the ith particle using mu2 and mu11
         # Skip storing the temporary mu1 in Alex's code
@@ -354,6 +371,7 @@ function sample_height_proposal!(height::AbstractArray{T,3},
                                  grid::Grid,
                                  grid_ext::Grid,
                                  fft_plan::FFTW.FFTWPlan,
+                                 fft_plan!::FFTW.FFTWPlan,
                                  filter_params,
                                  rng::Random.AbstractRNG,
                                  obs_noise_std::T,
@@ -361,7 +379,7 @@ function sample_height_proposal!(height::AbstractArray{T,3},
 
     @assert iseven(filter_params.nprt) "Number of particles must be even"
 
-    calculate_mean_height!(online_matrices.mean, height, offline_matrices, observations, stations, grid, grid_ext, fft_plan, filter_params, obs_noise_std)
+    calculate_mean_height!(online_matrices.mean, height, offline_matrices, observations, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params, obs_noise_std)
 
     i_n1 = LinearIndices((grid.nx, grid.ny))
     i_n1_bar = LinearIndices((grid_ext.nx, grid_ext.ny))
@@ -372,7 +390,7 @@ function sample_height_proposal!(height::AbstractArray{T,3},
         e2 = complex.(randn(rng, stations.nst), randn(rng, stations.nst))
 
         # This gives the vector z1_bar
-        normalized_inverse_2d_fft!(online_matrices.z1_bar, Diagonal(offline_matrices.Lambda)^(1/2) * e1, fft_plan, grid_ext)
+        normalized_inverse_2d_fft!(online_matrices.z1_bar, Diagonal(offline_matrices.Lambda)^(1/2) * e1, fft_plan, fft_plan!, grid_ext)
 
         # This is the vector z2
         online_matrices.z2 .= offline_matrices.K * e1 .+ offline_matrices.L * e2
