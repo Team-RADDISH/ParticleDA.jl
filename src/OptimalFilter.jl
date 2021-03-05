@@ -139,55 +139,32 @@ end
 
 # Normalized two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
 # Operates on the 2d data stored as a matrix.
+# The argument `f` lets you switch between forward transform (`f=identity`) and
+# inverse transform (`f=inv`).
 # From Dietrich & Newsam 96 in text following equation 12
-function normalized_2d_fft!(transformed_array::AbstractMatrix{<:Complex}, array::AbstractMatrix{S}, fft_plan::FFTW.FFTWPlan, fft_plan!::FFTW.FFTWPlan, grid_ext) where {S}
+function normalized_2d_fft!(transformed_array::AbstractMatrix{<:Complex}, array::AbstractMatrix{S}, fft_plan::FFTW.FFTWPlan, fft_plan!::FFTW.FFTWPlan, grid_ext, f=identity) where {S}
 
-    normalization_factor = 1.0 / sqrt(grid_ext.nx * grid_ext.ny)
+    normalization_factor = f(sqrt(grid_ext.nx * grid_ext.ny))
     if pointer(transformed_array) == pointer(array)
-        mul!(transformed_array, fft_plan!, array)
+        mul!(transformed_array, f(fft_plan!), array)
     else
-        mul!(transformed_array, fft_plan, array)
+        mul!(transformed_array, f(fft_plan), array)
     end
-    transformed_array .*= normalization_factor
+    transformed_array ./= normalization_factor
 
 end
 
 # Normalized two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
 # Operates on the 2d data stored as a vector.
+# The argument `f` lets you switch between forward transform (`f=identity`) and
+# inverse transform (`f=inv`).
 # From Dietrich & Newsam 96 in text following equation 12
-function normalized_2d_fft!(transformed_vector::AbstractVector{<:Complex}, vector::AbstractVector{S}, fft_plan::FFTW.FFTWPlan, fft_plan!::FFTW.FFTWPlan, grid_ext) where {S}
+function normalized_2d_fft!(transformed_vector::AbstractVector{<:Complex}, vector::AbstractVector{S}, fft_plan::FFTW.FFTWPlan, fft_plan!::FFTW.FFTWPlan, grid_ext, f=identity) where {S}
 
-    normalization_factor = 1.0 / sqrt(grid_ext.nx * grid_ext.ny)
+    normalization_factor = f(sqrt(grid_ext.nx * grid_ext.ny))
     tmp_array = complex(reshape(vector, grid_ext.nx, grid_ext.ny))
-    mul!(tmp_array, fft_plan!, tmp_array)
-    transformed_vector .= @view(tmp_array[:]) .* normalization_factor
-
-end
-
-# Normalized inverse two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
-# Operates on the 2d data stored as a matrix.
-# From Dietrich & Newsam 96 in text following equation 12
-function normalized_inverse_2d_fft!(transformed_array::AbstractMatrix{<:Complex}, array::AbstractMatrix{S}, fft_plan::FFTW.FFTWPlan, fft_plan!::FFTW.FFTWPlan, grid_ext) where {S}
-
-    normalization_factor = sqrt(grid_ext.nx * grid_ext.ny)
-    if pointer(transformed_array) == pointer(array)
-        mul!(transformed_array, inv(fft_plan!), array)
-    else
-        mul!(transformed_array, inv(fft_plan), array)
-    end
-    transformed_array .*= normalization_factor
-
-end
-
-# Normalized inverse two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
-# Operates on the 2d data stored as a vector.
-# From Dietrich & Newsam 96 in text following equation 12
-function normalized_inverse_2d_fft!(transformed_vector::AbstractVector{<:Complex}, vector::AbstractVector{S}, fft_plan::FFTW.FFTWPlan, fft_plan!::FFTW.FFTWPlan, grid_ext) where {S}
-
-    normalization_factor = sqrt(grid_ext.nx * grid_ext.ny)
-    tmp_array = complex(reshape(vector, grid_ext.nx, grid_ext.ny))
-    mul!(tmp_array, inv(fft_plan!), tmp_array)
-    transformed_vector .= @view(tmp_array[:]) .* normalization_factor
+    mul!(tmp_array, f(fft_plan!), tmp_array)
+    transformed_vector .= @view(tmp_array[:]) ./ normalization_factor
 
 end
 
@@ -211,7 +188,7 @@ function WΛWH_decomposition!(transformed_array::AbstractMatrix{T},
 
     # Here we do an element-wise multiplication of the extended_array with the vector Lambda. This is identical to
     # Diagonal(Lambda) * extended_array[:], but avoids flattening and reshaping extended_array.
-    normalized_inverse_2d_fft!(extended_array, reshape(offline_matrices.Lambda, grid_ext.nx, grid_ext.ny).*extended_array, fft_plan, fft_plan!, grid_ext)
+    normalized_2d_fft!(extended_array, reshape(offline_matrices.Lambda, grid_ext.nx, grid_ext.ny).*extended_array, fft_plan, fft_plan!, grid_ext, inv)
 
     transformed_array .= real.(@view(extended_array[1:grid.nx, 1:grid.ny]))
 
@@ -269,7 +246,7 @@ function init_offline_matrices(grid::Grid,
     matrices.R12_invR22 .= matrices.R12 * matrices.R22_inv
 
     fourier_coeffs = Vector{C}(undef, n1_bar)
-    normalized_inverse_2d_fft!(fourier_coeffs, matrices.rho_bar, fft_plan, fft_plan!, grid_ext)
+    normalized_2d_fft!(fourier_coeffs, matrices.rho_bar, fft_plan, fft_plan!, grid_ext, inv)
     matrices.Lambda .= sqrt(n1_bar) .* real.(fourier_coeffs)
 
     WHbar_R12 = Matrix{C}(undef, n1_bar, stations.nst)
@@ -390,7 +367,7 @@ function sample_height_proposal!(height::AbstractArray{T,3},
         e2 = complex.(randn(rng, stations.nst), randn(rng, stations.nst))
 
         # This gives the vector z1_bar
-        normalized_inverse_2d_fft!(online_matrices.z1_bar, Diagonal(offline_matrices.Lambda)^(1/2) * e1, fft_plan, fft_plan!, grid_ext)
+        normalized_2d_fft!(online_matrices.z1_bar, Diagonal(offline_matrices.Lambda)^(1/2) * e1, fft_plan, fft_plan!, grid_ext, inv)
 
         # This is the vector z2
         online_matrices.z2 .= offline_matrices.K * e1 .+ offline_matrices.L * e2

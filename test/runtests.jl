@@ -293,7 +293,7 @@ end
     arr3 = zeros(ComplexF64,10,10)
     fft_plan, fft_plan! = FFTW.plan_fft(arr), FFTW.plan_fft!(arr)
     ParticleDA.normalized_2d_fft!(arr2, arr, fft_plan, fft_plan!, grid_ext)
-    ParticleDA.normalized_inverse_2d_fft!(arr3, arr2, fft_plan, fft_plan!, grid_ext)
+    ParticleDA.normalized_2d_fft!(arr3, arr2, fft_plan, fft_plan!, grid_ext, inv)
     @test arr ≈ arr3
 
     cov_1 = zeros(stations.nst, grid_ext.nx * grid_ext.ny)
