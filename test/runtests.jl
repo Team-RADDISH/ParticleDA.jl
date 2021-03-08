@@ -227,18 +227,25 @@ end
 
     if Threads.nthreads() == 1
 
+        init_with_rng = (model_params_dict, nprt_per_rank, my_rank) -> Model.init(model_params_dict, nprt_per_rank, my_rank, rng)
+        avg_ref = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_4")
+
         # Test particle state with noise
         rng = StableRNG(123)
-        init_with_rng = (model_params_dict, nprt_per_rank, my_rank) -> Model.init(model_params_dict, nprt_per_rank, my_rank, rng)
         x_true,x_avg,x_var = ParticleDA.run_particle_filter(init_with_rng, joinpath(@__DIR__, "integration_test_4.yaml"), BootstrapFilter())
-        avg_ref = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_4")
         @test x_avg ≈ avg_ref
 
         # Test that different seed gives different result
         rng = StableRNG(124)
-        init_with_rng = (model_params_dict, nprt_per_rank, my_rank) -> Model.init(model_params_dict, nprt_per_rank, my_rank, rng)
         x_true,x_avg,x_var = ParticleDA.run_particle_filter(init_with_rng, joinpath(@__DIR__, "integration_test_4.yaml"), BootstrapFilter())
         @test !(x_avg ≈ avg_ref)
+
+        avg_ref = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_6")
+        rng = StableRNG(123)
+        Random.seed!(rng, 123)
+        x_true,x_avg,x_var = ParticleDA.run_particle_filter(init_with_rng, joinpath(@__DIR__, "optimal_filter_test_1.yaml"), OptimalFilter())
+        @test x_avg ≈ avg_ref
+
 
     end
 
@@ -278,7 +285,7 @@ end
                                (grid.x_length-grid.dx)*2,
                                (grid.y_length-grid.dy)*2)
     noise_params = (sigma = model_params.sigma, lambda = model_params.lambda, nu = model_params.nu)
-    
+
     # Set station coordinates
     ist = rand(1:model_params.nx, model_params.nobs)
     jst = rand(1:model_params.ny, model_params.nobs)
