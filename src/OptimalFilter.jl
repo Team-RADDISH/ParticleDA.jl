@@ -258,9 +258,7 @@ function init_offline_matrices(grid::Grid,
 
     A = real.(matrices.R22 .- matrices.K*KH)
 
-    if ishermitian(A)
-        matrices.L .= cholesky(A).L
-    end
+    matrices.L .= cholesky(Hermitian(A)).L
 
     matrices.mu20 .= obs_noise_std^(-2) .* (matrices.R22 .- I(stations.nst) .* obs_noise_std^2)
 
