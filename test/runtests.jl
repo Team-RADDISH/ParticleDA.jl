@@ -2,6 +2,7 @@ using ParticleDA
 using LinearAlgebra, Test, HDF5, Random, YAML
 using MPI
 using StableRNGs
+using FFTW
 
 using ParticleDA: FilterParameters
 
@@ -297,8 +298,9 @@ end
     arr = rand(ComplexF64,10,10)
     arr2 = zeros(ComplexF64,10,10)
     arr3 = zeros(ComplexF64,10,10)
-    ParticleDA.normalized_2d_fft!(arr2,arr,grid_ext)
-    ParticleDA.normalized_inverse_2d_fft!(arr3,arr2,grid_ext)
+    fft_plan, fft_plan! = FFTW.plan_fft(arr), FFTW.plan_fft!(arr)
+    ParticleDA.normalized_2d_fft!(arr2, arr, fft_plan, fft_plan!, grid_ext)
+    ParticleDA.normalized_2d_fft!(arr3, arr2, fft_plan, fft_plan!, grid_ext, inv)
     @test arr ≈ arr3
 
     cov_1 = zeros(stations.nst, grid_ext.nx * grid_ext.ny)
@@ -314,14 +316,16 @@ end
 
     height = rand(grid.nx, grid.ny, filter_params.nprt)
     obs = randn(stations.nst)
-    mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, noise_params, model_params.obs_noise_std, Float64)
+    tmp_array = Matrix{ComplexF64}(undef, grid_ext.nx, grid_ext.ny)
+    fft_plan, fft_plan! = FFTW.plan_fft(tmp_array), FFTW.plan_fft!(tmp_array)
+    mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, noise_params, model_params.obs_noise_std, fft_plan, fft_plan!, Float64)
     mat_on = ParticleDA.init_online_matrices(grid, grid_ext, stations, filter_params, Float64)
     @test minimum(mat_off.Lambda) > 0.0
-    ParticleDA.calculate_mean_height!(mat_on.mean, height, mat_off, obs, stations, grid, grid_ext, filter_params, model_params.obs_noise_std)
+    ParticleDA.calculate_mean_height!(mat_on.mean, height, mat_off, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params, model_params.obs_noise_std)
     @test all(isfinite, mat_on.mean)
 
     rng = Random.MersenneTwister(seed)
-    ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, filter_params, rng, model_params.obs_noise_std)
+    ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params, rng, model_params.obs_noise_std)
     @test all(isfinite, mat_on.samples)
 
 end
@@ -368,10 +372,12 @@ end
         obs[i] = height[stations.ist[i], stations.jst[i],1] + rand()
     end
 
-    mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, noise_params, model_params.obs_noise_std, Float64)
+    tmp_array = Matrix{ComplexF64}(undef, grid_ext.nx, grid_ext.ny)
+    fft_plan, fft_plan! = FFTW.plan_fft(tmp_array), FFTW.plan_fft!(tmp_array)
+    mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, noise_params, model_params.obs_noise_std, fft_plan, fft_plan!, Float64)
     mat_on = ParticleDA.init_online_matrices(grid, grid_ext, stations, filter_params, Float64)
 
-    ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, filter_params, rng, model_params.obs_noise_std)
+    ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params, rng, model_params.obs_noise_std)
 
     Yobs_t = copy(obs)
     FH_t = copy(reshape(permutedims(height, [3 1 2]), filter_params.nprt, (model_params.nx)*(model_params.ny)))
