@@ -326,8 +326,6 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
     end
     timer = TimerOutput()
 
-    nprt_per_rank = Int(filter_params.nprt / MPI.Comm_size(MPI.COMM_WORLD))
-
     # Do memory allocations
     @timeit_debug timer "Model initialization" model_data = init(model_params_dict, nprt_per_rank, my_rank)
 
