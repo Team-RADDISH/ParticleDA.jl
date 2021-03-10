@@ -241,9 +241,9 @@ end
         x_true,x_avg,x_var = ParticleDA.run_particle_filter(init_with_rng, joinpath(@__DIR__, "integration_test_4.yaml"), BootstrapFilter())
         @test !(x_avg ≈ avg_ref)
 
+        # Test optimal filter
         avg_ref = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_6")
         rng = StableRNG(123)
-        Random.seed!(rng, 123)
         x_true,x_avg,x_var = ParticleDA.run_particle_filter(init_with_rng, joinpath(@__DIR__, "optimal_filter_test_1.yaml"), OptimalFilter())
         @test x_avg ≈ avg_ref
 
