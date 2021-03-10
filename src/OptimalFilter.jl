@@ -258,7 +258,11 @@ function init_offline_matrices(grid::Grid,
 
     A = real.(matrices.R22 .- matrices.K*KH)
 
-    matrices.L .= cholesky(Hermitian(A)).L
+    if A ≈ Hermitian(A)
+        matrices.L .= cholesky(Hermitian(A)).L
+    else
+        error("R22 - K*KH is not hermitian! Increasing the grid size may help. See Dietrich and Newsam '96 for details.")
+    end
 
     matrices.mu20 .= obs_noise_std^(-2) .* (matrices.R22 .- I(stations.nst) .* obs_noise_std^2)
 
