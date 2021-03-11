@@ -812,11 +812,14 @@ function Sample_Height_Proposal(FH_t, th, st, Yobs_t, Sobs, gr)
   ######### calculation for each particle. ##########
   means = Calculate_Mean(FH_t, th, st, Yobs_t, Sobs, gr)
   rng = Random.MersenneTwister(123)
+
+  e1 = Vector{ComplexF64}(undef, bar_n1)
+  e2 = Vector{ComplexF64}(undef, n2)
+
   for i in 0:(N0-1)
 
-    e1 = randn(rng, bar_n1) + randn(rng, bar_n1)im
-
-    e2 = randn(rng, n2) + randn(rng, n2)im
+    @. e1 = complex(randn(rng), randn(rng))
+    @. e2 = complex(randn(rng), randn(rng))
 
     bar_z1 = f_W(Lambda^(1/2)*e1, gr)
     z2 = (K*e1) + (L*e2)

@@ -363,10 +363,13 @@ function sample_height_proposal!(height::AbstractArray{T,3},
     i_n1 = LinearIndices((grid.nx, grid.ny))
     i_n1_bar = LinearIndices((grid_ext.nx, grid_ext.ny))
 
+    e1 = Vector{ComplexF64}(undef, grid_ext.nx * grid_ext.ny)
+    e2 = Vector{ComplexF64}(undef, stations.nst)
+
     for iprt in 1:2:filter_params.nprt
-        # TODO we could pre-create all our random numbers in one go before the loop, would that be faster?
-        e1 = complex.(randn(rng, grid_ext.nx*grid_ext.ny), randn(rng, grid_ext.nx*grid_ext.ny))
-        e2 = complex.(randn(rng, stations.nst), randn(rng, stations.nst))
+
+        @. e1 = complex(randn(rng), randn(rng))
+        @. e2 = complex(randn(rng), randn(rng))
 
         # This gives the vector z1_bar
         normalized_2d_fft!(online_matrices.z1_bar, Diagonal(offline_matrices.Lambda)^(1/2) * e1, fft_plan, fft_plan!, grid_ext, inv)
