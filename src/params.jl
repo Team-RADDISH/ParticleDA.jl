@@ -13,6 +13,7 @@ Parameters for ParticleDA run. Keyword arguments:
 * `output_filename::String` : Name of output file
 * `nprt::Int` : Number of particles for particle filter
 * `weight_std`: Standard deviation of the distribution of the weights
+* `random_seed::Int` : Seed number for the pseudorandom number generator
 * `enable_timers::Bool` : Flag to control run time measurements
 """
 Base.@kwdef struct FilterParameters{T<:AbstractFloat}
@@ -27,6 +28,8 @@ Base.@kwdef struct FilterParameters{T<:AbstractFloat}
     nprt::Int = 4
 
     weight_std::T = 1.0
+
+    random_seed::Int = 12345
 
     enable_timers::Bool = false
 
