@@ -5,7 +5,6 @@ using ParticleDA
 using Random, Distributions, Base.Threads, GaussianRandomFields, HDF5
 using ParticleDA.Default_params
 using DelimitedFiles
-import Future
 
 include("llw2d.jl")
 using .LLW2d
@@ -46,7 +45,6 @@ Parameters for the model. Keyword arguments:
 * `sigma_initial_state::AbstractFloat` : Marginal standard deviation for Matérn covariance kernel in initial state of particles
 * `padding::Int` : Min padding for circulant embedding gaussian random field generator
 * `primes::Int`: Whether the size of the minimum circulant embedding of the covariance matrix can be written as a product of small primes (2, 3, 5 and 7). Default is `true`.
-* `random_seed::Int` : Seed number for the pseudorandom number generator
 * `particle_initial_state::String` : Initial state of the particles before noise is added. Possible options are
   * "zero" : initialise height and velocity to 0 everywhere
   * "true" : copy the true initial state
@@ -68,8 +66,6 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
 
     time_step::T = 50.0
     n_integration_step::Int = 50
-
-    random_seed::Int = 12345
 
     station_filename::String = ""
     nobs::Int = 4
@@ -415,7 +411,6 @@ ParticleDA.get_truth(d::ModelData) = d.states.truth
 ParticleDA.get_stations(d::ModelData) = (nst = d.model_params.nobs,
                                          ist = d.stations.ist,
                                          jst = d.stations.jst)
-ParticleDA.get_rng(d::ModelData) = d.rng
 ParticleDA.get_obs_noise_std(d::ModelData) = d.model_params.obs_noise_std
 ParticleDA.get_model_noise_params(d::ModelData) = (sigma = d.model_params.sigma,
                                                    lambda = d.model_params.lambda,
@@ -431,19 +426,10 @@ ParticleDA.get_grid_domain_size(d::ModelData) = d.model_params.x_length,d.model_
 ParticleDA.get_grid_cell_size(d::ModelData) = d.model_params.dx,d.model_params.dy
 ParticleDA.get_n_state_var(d::ModelData) = d.model_params.n_state_var
 
-function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, _rng::Union{Random.AbstractRNG,Nothing}=nothing)
+function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, rng::Vector{<:Random.AbstractRNG})
 
     model_params = ParticleDA.get_params(ModelParameters, get(model_params_dict, "llw2d", Dict()))
     states, observations, stations, field_buffer = init_arrays(model_params, nprt_per_rank)
-
-    rng = let
-        m = if isnothing(_rng)
-            Random.MersenneTwister(model_params.random_seed + my_rank)
-        else
-            _rng
-        end
-        [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
-    end
 
     background_grf = init_gaussian_random_field_generator(model_params)
 
