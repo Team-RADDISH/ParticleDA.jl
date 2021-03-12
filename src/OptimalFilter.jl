@@ -372,7 +372,8 @@ function sample_height_proposal!(height::AbstractArray{T,3},
         normalized_2d_fft!(online_matrices.z1_bar, Diagonal(offline_matrices.Lambda)^(1/2) * e1, fft_plan, fft_plan!, grid_ext, inv)
 
         # This is the vector z2
-        online_matrices.z2 .= offline_matrices.K * e1 .+ offline_matrices.L * e2
+        mul!(online_matrices.z2, offline_matrices.K, e1)
+        mul!(online_matrices.z2, offline_matrices.L, e2, 1, 1)
 
         # Restrict z1_bar to Omega1 and reshape into an array
         online_matrices.Z1 .= online_matrices.z1_bar[i_n1_bar[1:grid.nx,1:grid.nx]]
