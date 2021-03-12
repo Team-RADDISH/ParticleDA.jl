@@ -335,12 +335,12 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
     size = get_grid_size(model_data)
     n_state_var = get_n_state_var(model_data)
 
-    statistics = Array{SummaryStat{T}, 3}(undef, size..., n_state_var)
-    avg_arr = Array{T,3}(undef, size..., n_state_var)
-    var_arr = Array{T,3}(undef, size..., n_state_var)
+    statistics = Array{SummaryStat{T}, length(size) + 1}(undef, size..., n_state_var)
+    avg_arr = Array{T, length(size) + 1}(undef, size..., n_state_var)
+    var_arr = Array{T, length(size) + 1}(undef, size..., n_state_var)
 
     # Memory buffer used during copy of the states
-    copy_buffer = Array{T,4}(undef, size..., n_state_var, nprt_per_rank)
+    copy_buffer = Array{T, length(size) + 2}(undef, size..., n_state_var, nprt_per_rank)
 
     return (;weights, resampling_indices, statistics, avg_arr, var_arr, copy_buffer)
 end
