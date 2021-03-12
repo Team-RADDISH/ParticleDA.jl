@@ -363,16 +363,20 @@ function sample_height_proposal!(height::AbstractArray{T,3},
     i_n1 = LinearIndices((grid.nx, grid.ny))
     i_n1_bar = LinearIndices((grid_ext.nx, grid_ext.ny))
 
+    e1 = Vector{ComplexF64}(undef, grid_ext.nx * grid_ext.ny)
+    e2 = Vector{ComplexF64}(undef, stations.nst)
+
     for iprt in 1:2:filter_params.nprt
-        # TODO we could pre-create all our random numbers in one go before the loop, would that be faster?
-        e1 = complex.(randn(rng, grid_ext.nx*grid_ext.ny), randn(rng, grid_ext.nx*grid_ext.ny))
-        e2 = complex.(randn(rng, stations.nst), randn(rng, stations.nst))
+
+        @. e1 = complex(randn(rng), randn(rng))
+        @. e2 = complex(randn(rng), randn(rng))
 
         # This gives the vector z1_bar
         normalized_2d_fft!(online_matrices.z1_bar, Diagonal(offline_matrices.Lambda)^(1/2) * e1, fft_plan, fft_plan!, grid_ext, inv)
 
         # This is the vector z2
-        online_matrices.z2 .= offline_matrices.K * e1 .+ offline_matrices.L * e2
+        mul!(online_matrices.z2, offline_matrices.K, e1)
+        mul!(online_matrices.z2, offline_matrices.L, e2, 1, 1)
 
         # Restrict z1_bar to Omega1 and reshape into an array
         online_matrices.Z1 .= online_matrices.z1_bar[i_n1_bar[1:grid.nx,1:grid.nx]]
