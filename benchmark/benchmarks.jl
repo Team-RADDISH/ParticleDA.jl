@@ -1,6 +1,9 @@
 using BenchmarkTools
 using ParticleDA
 using MPI
+using Random
+using Future
+using Base.Threads
 
 include(joinpath(joinpath(@__DIR__, "..", "test"), "model", "model.jl"))
 using .Model
@@ -15,6 +18,7 @@ const my_size = MPI.Comm_size(MPI.COMM_WORLD)
 
 SUITE["base"] = BenchmarkGroup()
 SUITE["BootstrapFilter"] = BenchmarkGroup()
+SUITE["OptimalFilter"] = BenchmarkGroup()
 
 const params = Dict(
     "filter" => Dict(
@@ -34,8 +38,12 @@ const params = Dict(
 )
 
 const nprt_per_rank = Int(params["filter"]["nprt"] / my_size)
-const model_data = Model.init(params["model"]["llw2d"], nprt_per_rank, my_rank)
-const bootstrap_filter_data = ParticleDA.init_filter(ParticleDA.get_params(ParticleDA.FilterParameters, params["filter"]), model_data, nprt_per_rank, Float64)
+const rng = let
+    m = Random.default_rng()
+    [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
+end
+const model_data = Model.init(params["model"]["llw2d"], nprt_per_rank, my_rank, rng)
+const bootstrap_filter_data = ParticleDA.init_filter(ParticleDA.get_params(ParticleDA.FilterParameters, params["filter"]), model_data, nprt_per_rank, rng, Float64, BootstrapFilter())
 const filter_params = ParticleDA.get_params(ParticleDA.FilterParameters, params["filter"])
 
 SUITE["base"]["get_particles"] = @benchmarkable ParticleDA.get_particles($(model_data))
@@ -48,5 +56,8 @@ SUITE["base"]["normalized_exp!"] = @benchmarkable ParticleDA.normalized_exp!(wei
 SUITE["base"]["resample!"] = @benchmarkable ParticleDA.resample!(resampling_indices, weights) setup=(resampling_indices = Vector{Int}(undef, filter_params.nprt); weights = rand(filter_params.nprt))
 # SUITE["base"]["copy_states!"] = @benchmarkable ParticleDA.copy_states!($(ParticleDA.get_particles(model_data)), $(bootstrap_filter_data.copy_buffer), $(bootstrap_filter_data.resampling_indices), $(my_rank), $(nprt_per_rank))
 
-SUITE["BootstrapFilter"]["init_filter"] = @benchmarkable ParticleDA.init_filter($(filter_params), $(model_data), $(nprt_per_rank), Float64)
+SUITE["BootstrapFilter"]["init_filter"] = @benchmarkable ParticleDA.init_filter($(filter_params), $(model_data), $(nprt_per_rank), $(rng), Float64, $(BootstrapFilter()))
 SUITE["BootstrapFilter"]["run_particle_filter"] = @benchmarkable ParticleDA.run_particle_filter($(Model.init), $(params), $(BootstrapFilter())) seconds=30 setup=(cd(mktempdir()))
+
+SUITE["OptimalFilter"]["init_filter"] = @benchmarkable ParticleDA.init_filter($(filter_params), $(model_data), $(nprt_per_rank), $(rng), Float64, $(OptimalFilter()))
+SUITE["OptimalFilter"]["run_particle_filter"] = @benchmarkable ParticleDA.run_particle_filter($(Model.init), $(params), $(OptimalFilter())) seconds=30 setup=(cd(mktempdir()))

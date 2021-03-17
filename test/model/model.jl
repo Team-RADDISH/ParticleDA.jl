@@ -5,7 +5,6 @@ using ParticleDA
 using Random, Distributions, Base.Threads, GaussianRandomFields, HDF5
 using ParticleDA.Default_params
 using DelimitedFiles
-import Future
 
 include("llw2d.jl")
 using .LLW2d
@@ -46,7 +45,6 @@ Parameters for the model. Keyword arguments:
 * `sigma_initial_state::AbstractFloat` : Marginal standard deviation for Matérn covariance kernel in initial state of particles
 * `padding::Int` : Min padding for circulant embedding gaussian random field generator
 * `primes::Int`: Whether the size of the minimum circulant embedding of the covariance matrix can be written as a product of small primes (2, 3, 5 and 7). Default is `true`.
-* `random_seed::Int` : Seed number for the pseudorandom number generator
 * `particle_initial_state::String` : Initial state of the particles before noise is added. Possible options are
   * "zero" : initialise height and velocity to 0 everywhere
   * "true" : copy the true initial state
@@ -61,15 +59,13 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     ny::Int = 200
     x_length::T = 400.0e3
     y_length::T = 400.0e3
-    dx::T = x_length / nx
-    dy::T = y_length / ny
+    dx::T = x_length / (nx - 1)
+    dy::T = y_length / (ny - 1)
 
     n_state_var::Int = 3
 
     time_step::T = 50.0
     n_integration_step::Int = 50
-
-    random_seed::Int = 12345
 
     station_filename::String = ""
     nobs::Int = 4
@@ -109,7 +105,6 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     title_params::String = "params"
 
     obs_noise_std::T = 1.0
-
 end
 
 
@@ -413,22 +408,28 @@ ParticleDA.get_particles(d::ModelData) = d.states.particles
 # TODO: we should probably get rid of `get_truth`: it is only used as return
 # value of `particle_filter`, we may just return the whole `model_data`.
 ParticleDA.get_truth(d::ModelData) = d.states.truth
-ParticleDA.get_grid_size(d::ModelData) = d.model_params.nx, d.model_params.ny
+ParticleDA.get_stations(d::ModelData) = (nst = d.model_params.nobs,
+                                         ist = d.stations.ist,
+                                         jst = d.stations.jst)
+ParticleDA.get_obs_noise_std(d::ModelData) = d.model_params.obs_noise_std
+ParticleDA.get_model_noise_params(d::ModelData) = (sigma = d.model_params.sigma,
+                                                   lambda = d.model_params.lambda,
+                                                   nu = d.model_params.nu)
+
+function ParticleDA.set_particles!(d::ModelData, particles::AbstractArray{T}) where T
+
+    d.states.particles .= particles
+
+end
+ParticleDA.get_grid_size(d::ModelData) = d.model_params.nx,d.model_params.ny
+ParticleDA.get_grid_domain_size(d::ModelData) = d.model_params.x_length,d.model_params.y_length
+ParticleDA.get_grid_cell_size(d::ModelData) = d.model_params.dx,d.model_params.dy
 ParticleDA.get_n_state_var(d::ModelData) = d.model_params.n_state_var
 
-function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, _rng::Union{Random.AbstractRNG,Nothing}=nothing)
+function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, rng::Vector{<:Random.AbstractRNG})
 
     model_params = ParticleDA.get_params(ModelParameters, get(model_params_dict, "llw2d", Dict()))
     states, observations, stations, field_buffer = init_arrays(model_params, nprt_per_rank)
-
-    rng = let
-        m = if isnothing(_rng)
-            Random.MersenneTwister(model_params.random_seed + my_rank)
-        else
-            _rng
-        end
-        [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
-    end
 
     background_grf = init_gaussian_random_field_generator(model_params)
 
@@ -550,9 +551,9 @@ function write_stations(output_filename, ist::AbstractVector, jst::AbstractVecto
         if !haskey(file, params.title_stations)
             group = create_group(file, params.title_stations)
 
-            for (dataset_name, index, d) in zip(("x", "y"), (ist, jst), (params.dx, params.dy))
-                ds, dtype = create_dataset(group, dataset_name, index)
-                ds[:] = index .* d
+            for (dataset_name, val) in zip(("x", "y"), (ist .* params.dx, jst .* params.dy))
+                ds, dtype = create_dataset(group, dataset_name, val)
+                ds[:] = val
                 attributes(ds)["Description"] = "Station coordinates"
                 attributes(ds)["Unit"] = "m"
             end

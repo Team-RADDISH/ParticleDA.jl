@@ -1,12 +1,15 @@
 module ParticleDA
 
+using Random
 using Distributions, Statistics, MPI, Base.Threads, YAML, HDF5
 using TimerOutputs
+import Future
 
-export run_particle_filter, BootstrapFilter
+export run_particle_filter, BootstrapFilter, OptimalFilter
 
 include("params.jl")
 include("io.jl")
+include("OptimalFilter.jl")
 
 using .Default_params
 
@@ -15,9 +18,21 @@ using .Default_params
 """
     ParticleDA.get_grid_size(model_data) -> NTuple{N, Int} where N
 
-Return a tuple with the size of the data.
+Return a tuple with the dimensions (number of nodes) of the grid.
 """
 function get_grid_size end
+"""
+    ParticleDA.get_grid_domain_size(model_data) -> NTuple{N, float} where N
+
+Return a tuple with the dimensions (metres) of the grid domain.
+"""
+function get_grid_domain_size end
+"""
+    ParticleDA.get_grid_cell_size(model_data) -> NTuple{N, float} where N
+
+Return a tuple with the dimensions (metres) of a grid cell.
+"""
+function get_grid_cell_size end
 
 """
     ParticleDA.get_n_state_var(model_data) -> Int
@@ -25,6 +40,20 @@ function get_grid_size end
 Return the number of state variables.
 """
 function get_n_state_var end
+
+"""
+    ParticleDa.get_obs_noise_std(model_data) -> Float
+
+Return standard deviation of observation noise. Required for optimal filter only.
+"""
+function get_obs_noise_std end
+
+"""
+    ParticleDa.get_model_noise(model_data) -> NamedTuple({:sigma, :lambda, :nu},Tuple{Float, Float, Float})
+
+Return standard deviation of observation noise. Required for optimal filter only.
+"""
+function get_model_noise_params end
 
 """
     ParticleDA.get_particle(model_data) -> particles
@@ -35,12 +64,30 @@ user with the above signature, specifying the type of `model_data`.
 function get_particles end
 
 """
+   ParticleDA.set_particles!(model_data, particles)
+
+Overwrite particle state in model_data with the vector particles. This method is intended to be extended by the
+user with the above signature, specifying the type of `model_data`.
+"""
+function set_particles! end
+
+"""
     ParticleDA.get_truth(model_data) -> truth_observations
 
 Return the vector of true observations.  This method is intended to be extended
 by the user with the above signature, specifying the type of `model_data`.
 """
 function get_truth end
+
+"""
+    ParticleDA.get_stations(model_data) -> NamedTuple({:nst,:ist,:jst},Tuple{Int, Array{Float,1}, Array{Float,1}})
+
+Return a named tuple with number of stations and their coordinates (nst,ist,jst) of the
+points of observation. This method is intended to be extended by the user with the above signature,
+specifying the type of `model_data`.
+Required for optimal filter only.
+"""
+function get_stations end
 
 """
     ParticleDA.update_truth!(model_data, nprt_per_rank::Int) -> truth_observations
@@ -93,6 +140,23 @@ signature, specifying the type of `model_data`.
 """
 function write_snapshot end
 
+"""
+    ParticleFilter
+
+Abstract type for the particle filter to use.  Currently used subtypes are:
+* [`BootstrapFilter`](@ref)
+* [`OptimalFilter`](@ref)
+"""
+abstract type ParticleFilter end
+"""
+    BootstrapFilter()
+
+Instantiate the singleton type `BootstrapFilter`.  This can be used as argument
+of [`run_particle_filter`](@ref) to select the bootstrap filter.
+"""
+struct BootstrapFilter <: ParticleFilter end
+struct OptimalFilter <: ParticleFilter end
+
 # Get weights for particles by evaluating the probability of the observations predicted by the model
 # from independent normal pdfs for each observation.
 function get_log_weights!(weight::AbstractVector{T},
@@ -133,7 +197,7 @@ function normalized_exp!(weight::AbstractVector)
 end
 
 # Resample particles from given weights using Stochastic Universal Sampling
-function resample!(resampled_indices::AbstractVector{Int}, weight::AbstractVector{T}) where T
+function resample!(resampled_indices::AbstractVector{Int}, weight::AbstractVector{T}, rng::Random.AbstractRNG=Random.default_rng()) where T
 
     nprt = length(weight)
     nprt_inv = 1.0 / nprt
@@ -142,7 +206,7 @@ function resample!(resampled_indices::AbstractVector{Int}, weight::AbstractVecto
     #TODO: Do we need to sort state by weight here?
 
     weight_cdf = cumsum(weight)
-    u0 = nprt_inv * rand(T)
+    u0 = nprt_inv * rand(rng, T)
 
     # Note: To parallelise this loop, updates to k and u have to be atomic.
     # TODO: search for better parallel implementations
@@ -258,7 +322,7 @@ function copy_states!(particles::AbstractArray{T,4},
 end
 
 # Initialize arrays used by the filter
-function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank::Int, T::Type)
+function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank::Int, ::Vector{<:Random.AbstractRNG}, T::Type, ::BootstrapFilter)
 
     if MPI.Comm_rank(MPI.COMM_WORLD) == filter_params.master_rank
         weights = Vector{T}(undef, filter_params.nprt)
@@ -278,36 +342,74 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
     # Memory buffer used during copy of the states
     copy_buffer = Array{T, length(size) + 2}(undef, size..., n_state_var, nprt_per_rank)
 
-    return FilterData(weights, resampling_indices, statistics, avg_arr, var_arr, copy_buffer)
+    return (;weights, resampling_indices, statistics, avg_arr, var_arr, copy_buffer)
 end
 
-struct FilterData{T, S, U, V, X}
+# Initialize arrays used by the filter
+function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank::Int, rng::Vector{<:Random.AbstractRNG}, T::Type, ::OptimalFilter)
 
-    weights::T
-    resampling_indices::U
-    statistics::S
-    avg_arr::V
-    var_arr::V
-    copy_buffer::X
+    filter_data = init_filter(filter_params, model_data, nprt_per_rank, rng, T, BootstrapFilter())
+
+    stations = get_stations(model_data)
+    size = get_grid_size(model_data)
+    domain_size = get_grid_domain_size(model_data)
+    cell_size = get_grid_cell_size(model_data)
+
+    grid = Grid(size...,cell_size...,domain_size...)
+    grid_ext = Grid((grid.nx-1)*2, (grid.ny-1)*2, grid.dx, grid.dy, (grid.x_length-grid.dx)*2, (grid.y_length-grid.dy)*2)
+
+    model_noise_params = get_model_noise_params(model_data)
+    obs_noise_std = get_obs_noise_std(model_data)
+    # Precompute two FFT plans, one in-place and the other out-of-place
+    C = complex(T)
+    tmp_array = Matrix{C}(undef, grid_ext.nx, grid_ext.ny)
+    fft_plan, fft_plan! = FFTW.plan_fft(tmp_array), FFTW.plan_fft!(tmp_array)
+
+    offline_matrices = init_offline_matrices(grid, grid_ext, stations, model_noise_params, obs_noise_std, fft_plan, fft_plan!, T)
+    online_matrices = init_online_matrices(grid, grid_ext, stations, filter_params, T)
+
+    return (; filter_data..., offline_matrices, online_matrices, stations, grid, grid_ext, rng, obs_noise_std, fft_plan, fft_plan!)
+end
+
+function update_particle_proposal!(model_data, filter_data, filter_params, truth_observations, nprt_per_rank, filter_type::BootstrapFilter)
+
+    update_particle_noise!(model_data, nprt_per_rank)
 
 end
 
-"""
-    ParticleFilter
+function update_particle_proposal!(model_data, filter_data, filter_params, truth_observations, nprt_per_rank, filter_type::OptimalFilter)
 
-Abstract type for the particle filter to use.  Currently used subtypes are:
-* [`BootstrapFilter`](@ref)
-"""
-abstract type ParticleFilter end
-"""
-    BootstrapFilter()
+        # Optimal Filter: After updating the particle dynamics, we apply the "optimal proposal" in
+        #                 sample_height_proposal!() to the first state variable (height). We apply
+        #                 a sample from the gaussian random field in update_particle_noise!() to the other
+        #                 state variables (velocity).
 
-Instantiate the singleton type `BootstrapFilter`.  This can be used as argument
-of [`run_particle_filter`](@ref) to select the bootstrap filter.
-"""
-struct BootstrapFilter <: ParticleFilter end
+        particles = get_particles(model_data)
 
-function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict, ::BootstrapFilter)
+        # Apply optimal proposal, the result will be in offline_matrices.samples
+        sample_height_proposal!(@view(particles[:,:,1,:]),
+                                filter_data.offline_matrices,
+                                filter_data.online_matrices,
+                                truth_observations,
+                                filter_data.stations,
+                                filter_data.grid,
+                                filter_data.grid_ext,
+                                filter_data.fft_plan,
+                                filter_data.fft_plan!,
+                                filter_params,
+                                filter_data.rng[threadid()],
+                                filter_data.obs_noise_std)
+
+        # Add noise from the standard gaussian random field to all state variables in model_data
+        update_particle_noise!(model_data, nprt_per_rank)
+
+        # Overwrite the height state variable with the samples of the optimal proposal
+        particles[:,:,1,:] .= filter_data.online_matrices.samples
+        set_particles!(model_data, particles)
+
+end
+
+function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict, filter_type; rng::Union{Random.AbstractRNG,Nothing}=nothing)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -326,11 +428,22 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
     end
     timer = TimerOutput()
 
+    nprt_per_rank = Int(filter_params.nprt / MPI.Comm_size(MPI.COMM_WORLD))
+
+    _rng = let
+        m = if isnothing(rng)
+            Random.MersenneTwister(filter_params.random_seed + my_rank)
+        else
+            rng
+        end
+        [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
+    end
+
     # Do memory allocations
-    @timeit_debug timer "Model initialization" model_data = init(model_params_dict, nprt_per_rank, my_rank)
+    @timeit_debug timer "Model initialization" model_data = init(model_params_dict, nprt_per_rank, my_rank, _rng)
 
     # TODO: put the body of this block in a function
-    @timeit_debug timer "Filter initialization" filter_data = init_filter(filter_params, model_data, nprt_per_rank, Float64)
+    @timeit_debug timer "Filter initialization" filter_data = init_filter(filter_params, model_data, nprt_per_rank, _rng, Float64, filter_type)
 
     @timeit_debug timer "get_particles" particles = get_particles(model_data)
     @timeit_debug timer "Mean and Var" get_mean_and_var!(filter_data.statistics, particles, filter_params.master_rank)
@@ -357,7 +470,7 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
         # Parallelised with threads.
 
         @timeit_debug timer "Particle Dynamics" update_particle_dynamics!(model_data, nprt_per_rank);
-        @timeit_debug timer "Particle Noise" update_particle_noise!(model_data, nprt_per_rank)
+        @timeit_debug timer "Particle Proposal" update_particle_proposal!(model_data, filter_data, filter_params, truth_observations, nprt_per_rank, filter_type)
         @timeit_debug timer "Particle Observations" model_observations = get_particle_observations!(model_data, nprt_per_rank)
 
         @timeit_debug timer "Particle Weights" get_log_weights!(@view(filter_data.weights[1:nprt_per_rank]),
@@ -376,7 +489,7 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
                                                          filter_params.master_rank,
                                                          MPI.COMM_WORLD)
             @timeit_debug timer "Weights" normalized_exp!(filter_data.weights)
-            @timeit_debug timer "Resample" resample!(filter_data.resampling_indices, filter_data.weights)
+            @timeit_debug timer "Resample" resample!(filter_data.resampling_indices, filter_data.weights, _rng[threadid()])
 
         else
             @timeit_debug timer "MPI Gather" MPI.Gather!(filter_data.weights,
@@ -477,7 +590,7 @@ Run the particle filter.  `init` is the function which initialise the model,
 `filter_type` is the particle filter to use.  See [`ParticleFilter`](@ref) for
 the possible values.
 """
-function run_particle_filter(init, path_to_input_file::String, filter_type::ParticleFilter)
+function run_particle_filter(init, path_to_input_file::String, filter_type::ParticleFilter; rng::Union{Random.AbstractRNG,Nothing}=nothing)
 
     if !MPI.Initialized()
         MPI.Init()
@@ -496,7 +609,7 @@ function run_particle_filter(init, path_to_input_file::String, filter_type::Part
 
     user_input_dict = MPI.bcast(user_input_dict, 0, MPI.COMM_WORLD)
 
-    return run_particle_filter(init, user_input_dict, filter_type)
+    return run_particle_filter(init, user_input_dict, filter_type; rng)
 
 end
 
@@ -508,12 +621,12 @@ Run the particle filter.  `init` is the function which initialise the model,
 is the particle filter to use.  See [`ParticleFilter`](@ref) for the possible
 values.
 """
-function run_particle_filter(init, user_input_dict::Dict, filter_type::ParticleFilter)
+function run_particle_filter(init, user_input_dict::Dict, filter_type::ParticleFilter; rng::Union{Random.AbstractRNG,Nothing}=nothing)
 
     filter_params = get_params(FilterParameters, get(user_input_dict, "filter", Dict()))
     model_params_dict = get(user_input_dict, "model", Dict())
 
-    return run_particle_filter(init, filter_params, model_params_dict, filter_type)
+    return run_particle_filter(init, filter_params, model_params_dict, filter_type; rng)
 
 end
 

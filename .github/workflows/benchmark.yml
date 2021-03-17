@@ -28,7 +28,7 @@ jobs:
                   env = Dict(
                       "JULIA_NUM_THREADS" => "2",
                   ),
-              )
+              ),
           )
       - name: Print judgement
         shell: julia --color=yes {0}
