@@ -48,10 +48,10 @@ Parameters for the model. Keyword arguments:
 * `particle_initial_state::String` : Initial state of the particles before noise is added. Possible options are
   * "zero" : initialise height and velocity to 0 everywhere
   * "true" : copy the true initial state
-* `absorber_thickness_fraction` : Thickness of absorber for sponge absorbing boundary conditions, fraction of grid size
-* `boundary_damping` : damping for boundaries
-* `cutoff_depth` : Shallowest water depth
-* `obs_noise_std`: Standard deviation of noise added to observations of the true state
+* `absorber_thickness_fraction::Float` : Thickness of absorber for sponge absorbing boundary conditions, fraction of grid size
+* `boundary_damping::Float` : damping for boundaries
+* `cutoff_depth::Float` : Shallowest water depth
+* `obs_noise_std::Float`: Standard deviation of noise added to observations of the true state
 * `particle_dump_file::String:` file name for dump of particle state vectors
 * `particle_dump_time::Int: list of (one more more) time steps to dump particle states`
 """
