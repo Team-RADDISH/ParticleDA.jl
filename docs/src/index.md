@@ -128,21 +128,31 @@ using .Model
 run_particle_filter(Model.init, input_file, BootstrapFilter())
 ```
 
+### Parameters of the test model
+
+The [Input parameters](@ref) section shows how to pass the input parameters for
+the filter and the model.  For the model included in the test suite, called
+`llw2d`, you can set the following parameters:
+
+```@docs
+Model.ModelParameters
+```
+
 ### Observation Station Coordinates
 
-The coordinates of the observation stations can be set in two different ways. Either way, the parameter `nobs` 
+The coordinates of the observation stations can be set in two different ways. Either way, the parameter `nobs`
 should be set to the total number of observation stations.
 
 1. Provide the coordinates in an input file. Set the parameter `station_filename` to the name of your input file.
    The input file is in plain text, the format is one row per station containing x, y - coordinates in metres. Here is
    a simple example with two stations
-   
+
    ```julia
    # Comment lines starting with '#' will be ignored by the code
    # This file contains two stations: at [1km, 1km] and [2km, 2km]
    1.0e3, 1.0e3
    2.0e3, 2.0e3
-   ```   
+   ```
 2. Provide parameters for an array of observation stations. The values of these parameters should be set:
 
    ```julia
@@ -151,9 +161,9 @@ should be set to the total number of observation stations.
    station_boundary_x : Distance between bottom left edge of box and first station in the x direction [m]
    station_boundary_y : Distance between bottom left edge of box and first station in the y direction [m]
    ```
-   
+
    As an example, one could set
-   
+
    ```julia
    nobs : 4
    station_distance_x : 1.0e3
@@ -161,7 +171,7 @@ should be set to the total number of observation stations.
    station_boundary_x : 10.0e3
    station_boundary_y : 10.0e3
    ```
-   
+
    to generate 4 stations at `[10km, 10km]`, `[10km, 11km]`, `[11km, 10km]` and `[11km, 11km]`. Note that when using this method, the square root of `nobs` has to be an integer.
 
 ## Output
@@ -178,7 +188,7 @@ The particle state update is parallelised using both MPI and threading. Accordin
 Threads.nthreads()
 ```
 
-To use the MPI parallelisation, write a julia script that calls the `tdac() ` function and run it in an unix shell with 
+To use the MPI parallelisation, write a julia script that calls the `tdac() ` function and run it in an unix shell with
 
 ```bash
 mpirun -np <your_number_of_processes> julia <your_julia_script>
