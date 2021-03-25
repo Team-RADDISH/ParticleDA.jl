@@ -52,8 +52,8 @@ Parameters for the model. Keyword arguments:
 * `boundary_damping::Float` : damping for boundaries
 * `cutoff_depth::Float` : Shallowest water depth
 * `obs_noise_std::Float`: Standard deviation of noise added to observations of the true state
-* `particle_dump_file::String:` file name for dump of particle state vectors
-* `particle_dump_time::Int: list of (one more more) time steps to dump particle states`
+* `particle_dump_file::String`: file name for dump of particle state vectors
+* `particle_dump_time::Int`: list of (one more more) time steps to dump particle states
 """
 Base.@kwdef struct ModelParameters{T<:AbstractFloat}
 
