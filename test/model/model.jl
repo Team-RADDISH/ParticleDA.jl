@@ -48,10 +48,12 @@ Parameters for the model. Keyword arguments:
 * `particle_initial_state::String` : Initial state of the particles before noise is added. Possible options are
   * "zero" : initialise height and velocity to 0 everywhere
   * "true" : copy the true initial state
-* `absorber_thickness_fraction` : Thickness of absorber for sponge absorbing boundary conditions, fraction of grid size
-* `boundary_damping` : damping for boundaries
-* `cutoff_depth` : Shallowest water depth
-* `obs_noise_std`: Standard deviation of noise added to observations of the true state
+* `absorber_thickness_fraction::Float` : Thickness of absorber for sponge absorbing boundary conditions, fraction of grid size
+* `boundary_damping::Float` : damping for boundaries
+* `cutoff_depth::Float` : Shallowest water depth
+* `obs_noise_std::Float`: Standard deviation of noise added to observations of the true state
+* `particle_dump_file::String:` file name for dump of particle state vectors
+* `particle_dump_time::Int: list of (one more more) time steps to dump particle states`
 """
 Base.@kwdef struct ModelParameters{T<:AbstractFloat}
 
@@ -105,6 +107,9 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     title_params::String = "params"
 
     obs_noise_std::T = 1.0
+
+    particle_dump_file = "particle_dump.h5"
+    particle_dump_time = [-1]
 end
 
 
@@ -621,6 +626,37 @@ function ParticleDA.write_snapshot(output_filename::AbstractString,
 
 end
 
+function write_particles(output_filename::AbstractString,
+                         particles::AbstractArray{T,4},
+                         it::Int,
+                         params::ModelParameters) where T
+
+    println("Writing particle states at timestep = ", it)
+    nprt = size(particles,4)
+
+    h5open(output_filename, "cw") do file
+
+        dset_height = "height"
+        dset_vx = "vx"
+        dset_vy = "vy"
+
+        desc_height = "Ocean surface height"
+        desc_vx = "Ocean surface velocity x-component"
+        desc_vy = "Ocean surface velocity y-component"
+
+        for iprt = 1:nprt
+            group_name = "particle" * string(iprt)
+
+            write_field(file, @view(particles[:,:,1,iprt]), it, "m", group_name, dset_height, desc_height, params)
+            write_field(file, @view(particles[:,:,2,iprt]), it, "m/s", group_name, dset_vx, desc_vx, params)
+            write_field(file, @view(particles[:,:,3,iprt]), it, "m/s", group_name, dset_vy, desc_vy, params)
+
+        end
+
+    end
+
+end
+
 function ParticleDA.write_snapshot(output_filename::AbstractString,
                                    d::ModelData,
                                    avg::AbstractArray{T,3},
@@ -633,6 +669,10 @@ function ParticleDA.write_snapshot(output_filename::AbstractString,
         write_grid(output_filename, d.model_params)
         write_params(output_filename, d.model_params)
         write_stations(output_filename, d.stations.ist, d.stations.jst, d.model_params)
+    end
+
+    if any(d.model_params.particle_dump_time .== it)
+        write_particles(d.model_params.particle_dump_file, d.states.particles, it, d.model_params)
     end
 
     return ParticleDA.write_snapshot(output_filename, d.states.truth, avg, var, weights, it, d.model_params)
