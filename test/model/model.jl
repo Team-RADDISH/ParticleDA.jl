@@ -5,6 +5,7 @@ using ParticleDA
 using Random, Distributions, Base.Threads, GaussianRandomFields, HDF5
 using ParticleDA.Default_params
 using DelimitedFiles
+using FieldMetadata
 
 include("llw2d.jl")
 using .LLW2d
@@ -183,10 +184,14 @@ struct RandomField{F<:GaussianRandomField,X<:AbstractArray,W<:AbstractArray,Z<:A
     z::Z
 end
 
-struct StateVectors{T<:AbstractArray, S<:AbstractArray}
+@metadata name ("","","") NTuple{3, String}
+@metadata unit ("","","") NTuple{3, String}
+@metadata description ("","","") NTuple{3, String}
 
-    particles::T
-    truth::S
+@name @description @unit struct StateVectors{T<:AbstractArray, S<:AbstractArray}
+
+    particles::T | ("height","vx","vy") | ("Ocean surface height","Ocean surface velocity x-component","Ocean surface velocity y-component") | ("m","m/s","m/s")
+    truth::S | ("height","vx","vy") | ("Ocean surface height","Ocean surface velocity x-component","Ocean surface velocity y-component") | ("m","m/s","m/s")
 
 end
 
@@ -315,6 +320,7 @@ function init_arrays(params::ModelParameters, nprt_per_rank)
 end
 
 function init_arrays(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_per_rank::Int)
+
     # TODO: ideally this will be an argument of the function, to choose a
     # different datatype.
     T = Float64
@@ -559,7 +565,7 @@ function write_stations(output_filename, ist::AbstractVector, jst::AbstractVecto
             for (dataset_name, val) in zip(("x", "y"), (ist .* params.dx, jst .* params.dy))
                 ds, dtype = create_dataset(group, dataset_name, val)
                 ds[:] = val
-                attributes(ds)["Description"] = "Station coordinates"
+                attributes(ds)["Description"] = "Station "*dataset_name*" coordinate"
                 attributes(ds)["Unit"] = "m"
             end
         else
@@ -581,78 +587,10 @@ function write_weights(file::HDF5.File, weights::AbstractVector, unit::String, i
         ds[:] = weights
         attributes(ds)["Description"] = "Particle Weights"
         attributes(ds)["Unit"] = unit
-        attributes(ds)["Time_step"] = it
+        attributes(ds)["Time step"] = it
         attributes(ds)["Time (s)"] = it * params.time_step
     else
         @warn "Write failed, dataset " * group_name * "/" * dataset_name *  " already exists in " * file.filename * "!"
-    end
-
-end
-
-function ParticleDA.write_snapshot(output_filename::AbstractString,
-                                   truth::AbstractArray{T,3},
-                                   avg::AbstractArray{T,3},
-                                   var::AbstractArray{T,3},
-                                   weights::AbstractVector{T},
-                                   it::Int,
-                                   params::ModelParameters) where T
-
-    println("Writing output at timestep = ", it)
-
-    h5open(output_filename, "cw") do file
-
-        dset_height = "height"
-        dset_vx = "vx"
-        dset_vy = "vy"
-
-        desc_height = "Ocean surface height"
-        desc_vx = "Ocean surface velocity x-component"
-        desc_vy = "Ocean surface velocity y-component"
-
-        write_field(file, @view(truth[:,:,1]), it, "m", params.title_syn, dset_height, desc_height, params)
-        write_field(file, @view(avg[:,:,1]), it, "m"  , params.title_avg, dset_height, desc_height, params)
-        write_field(file, @view(var[:,:,1]), it, "m^2", params.title_var, dset_height, desc_height, params)
-
-        write_field(file, @view(truth[:,:,2]), it, "m/s",   params.title_syn, dset_vx, desc_vx, params)
-        write_field(file, @view(avg[:,:,2]), it, "m/s"  ,   params.title_avg, dset_vx, desc_vx, params)
-        write_field(file, @view(var[:,:,2]), it, "m^2/s^2", params.title_var, dset_vx, desc_vx, params)
-
-        write_field(file, @view(truth[:,:,3]), it, "m/s",   params.title_syn, dset_vy, desc_vy, params)
-        write_field(file, @view(avg[:,:,3]), it, "m/s"  ,   params.title_avg, dset_vy, desc_vy, params)
-        write_field(file, @view(var[:,:,3]), it, "m^2/s^2", params.title_var, dset_vy, desc_vy, params)
-
-        write_weights(file, weights, "", it, params)
-    end
-
-end
-
-function write_particles(output_filename::AbstractString,
-                         particles::AbstractArray{T,4},
-                         it::Int,
-                         params::ModelParameters) where T
-
-    println("Writing particle states at timestep = ", it)
-    nprt = size(particles,4)
-
-    h5open(output_filename, "cw") do file
-
-        dset_height = "height"
-        dset_vx = "vx"
-        dset_vy = "vy"
-
-        desc_height = "Ocean surface height"
-        desc_vx = "Ocean surface velocity x-component"
-        desc_vy = "Ocean surface velocity y-component"
-
-        for iprt = 1:nprt
-            group_name = "particle" * string(iprt)
-
-            write_field(file, @view(particles[:,:,1,iprt]), it, "m", group_name, dset_height, desc_height, params)
-            write_field(file, @view(particles[:,:,2,iprt]), it, "m/s", group_name, dset_vx, desc_vx, params)
-            write_field(file, @view(particles[:,:,3,iprt]), it, "m/s", group_name, dset_vy, desc_vy, params)
-
-        end
-
     end
 
 end
@@ -672,10 +610,60 @@ function ParticleDA.write_snapshot(output_filename::AbstractString,
     end
 
     if any(d.model_params.particle_dump_time .== it)
-        write_particles(d.model_params.particle_dump_file, d.states.particles, it, d.model_params)
+        write_particles(d.model_params.particle_dump_file, d.states, it, d.model_params)
     end
 
-    return ParticleDA.write_snapshot(output_filename, d.states.truth, avg, var, weights, it, d.model_params)
+    return ParticleDA.write_snapshot(output_filename, d.states, avg, var, weights, it, d.model_params)
+end
+
+function ParticleDA.write_snapshot(output_filename::AbstractString,
+                                   states::StateVectors,
+                                   avg::AbstractArray{T,3},
+                                   var::AbstractArray{T,3},
+                                   weights::AbstractVector{T},
+                                   it::Int,
+                                   params::ModelParameters) where T
+
+    println("Writing output at timestep = ", it)
+
+    h5open(output_filename, "cw") do file
+
+        for (i,(name,desc,unit)) in enumerate(zip(name(states, :truth), description(states, :truth), unit(states, :truth)))
+
+            write_field(file, @view(states.truth[:,:,i]), it, unit, params.title_syn, name, desc, params)
+            write_field(file, @view(avg[:,:,i]), it, unit, params.title_avg, name, desc, params)
+            write_field(file, @view(var[:,:,i]), it, "("*unit*")^2", params.title_var, name, desc, params)
+
+        end
+
+        write_weights(file, weights, "", it, params)
+    end
+
+end
+
+function write_particles(output_filename::AbstractString,
+                         states::StateVectors,
+                         it::Int,
+                         params::ModelParameters) where T
+
+    println("Writing particle states at timestep = ", it)
+    nprt = size(states.particles,4)
+
+    h5open(output_filename, "cw") do file
+
+        for iprt = 1:nprt
+            group_name = "particle" * string(iprt)
+
+            for (i,(name,desc,unit)) in enumerate(zip(name(states, :particles), description(states, :particles), unit(states, :particles)))
+
+                write_field(file, @view(states.particles[:,:,i,iprt]), it, unit, group_name, name, desc, params)
+
+            end
+
+        end
+
+    end
+
 end
 
 function write_field(file::HDF5.File,
@@ -699,7 +687,7 @@ function write_field(file::HDF5.File,
         ds[:,:] = field
         attributes(ds)["Description"] = description
         attributes(ds)["Unit"] = unit
-        attributes(ds)["Time_step"] = it
+        attributes(ds)["Time step"] = it
         attributes(ds)["Time (s)"] = it * params.time_step
     else
         @warn "Write failed, dataset " * group_name * "/" * subgroup_name * "/" * dataset_name *  " already exists in " * file.filename * "!"
