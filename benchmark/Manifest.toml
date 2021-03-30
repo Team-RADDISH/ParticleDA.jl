@@ -141,6 +141,11 @@ git-tree-sha1 = "5829b25887e53fb6730a9df2ff89ed24baa6abf6"
 uuid = "442a2c76-b920-505d-bb47-c5924d526838"
 version = "0.4.7"
 
+[[FieldMetadata]]
+git-tree-sha1 = "c279c6eab9767a3f62685e5276c850512e0a1afd"
+uuid = "bf96fef3-21d2-5d20-8afa-0e7d4c32a885"
+version = "0.3.1"
+
 [[FillArrays]]
 deps = ["LinearAlgebra", "Random", "SparseArrays"]
 git-tree-sha1 = "dd4ab4257c257532003eb9836eea07473fcc732e"
@@ -349,7 +354,7 @@ uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
 version = "1.0.16"
 
 [[ParticleDA]]
-deps = ["Distributions", "FFTW", "Future", "HDF5", "LinearAlgebra", "MPI", "Random", "SparseArrays", "Statistics", "TimerOutputs", "YAML"]
+deps = ["Distributions", "FFTW", "FieldMetadata", "Future", "HDF5", "LinearAlgebra", "MPI", "Random", "SparseArrays", "Statistics", "TimerOutputs", "YAML"]
 path = ".."
 uuid = "61cd1fb4-f4c4-4bc8-80c6-ea5639a6ca2e"
 version = "0.1.0"
@@ -411,10 +416,10 @@ uuid = "79098fc4-a85e-5d69-aa6a-4863f24498fa"
 version = "0.6.1"
 
 [[Rmath_jll]]
-deps = ["Libdl", "Pkg"]
-git-tree-sha1 = "d76185aa1f421306dec73c057aa384bad74188f0"
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
+git-tree-sha1 = "1b7bf41258f6c5c9c31df8c1ba34c1fc88674957"
 uuid = "f50d1b31-88e8-58de-be2c-1cc44531875f"
-version = "0.2.2+1"
+version = "0.2.2+2"
 
 [[SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
