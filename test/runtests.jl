@@ -176,10 +176,10 @@ end
     @test h5read(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_avg * "/t0/height") ≈ data2
     attr = h5readattr(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_syn * "/t0/height")
     @test attr["Unit"] == "m"
-    @test attr["Time_step"] == tstep
+    @test attr["Time step"] == tstep
     attr = h5readattr(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_avg * "/t0/height")
     @test attr["Unit"] == "inch"
-    @test attr["Time_step"] == tstep
+    @test attr["Time step"] == tstep
     Model.write_params(filter_params.output_filename, model_params)
     attr = h5readattr(filter_params.output_filename, model_params.title_params)
     @test attr["nx"] == model_params.nx
