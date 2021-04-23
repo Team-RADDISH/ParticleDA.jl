@@ -154,10 +154,11 @@ end
     # Test gaussian random field sampling
     x = 1.:2.
     y = 1.:2.
-    grf = Model.init_gaussian_random_field_generator(1.0,1.0,1.0,x,y,0,false)
+    sigma = lambda = nu = fill(1.0,3)
+    grf = Model.init_gaussian_random_field_generator(lambda, nu, sigma,x,y,0,false)
     f = zeros(2, 2)
     rnn = [9.,9.,9.,9.]
-    Model.sample_gaussian_random_field!(f,grf,rnn)
+    Model.sample_gaussian_random_field!(f,grf[1],rnn)
     @test f ≈ [16.2387054353321 5.115956753643808; 5.115956753643809 2.8210669567042155]
 
     # Test IO
@@ -282,7 +283,7 @@ end
                                grid.dy,
                                (grid.x_length-grid.dx)*2,
                                (grid.y_length-grid.dy)*2)
-    noise_params = (sigma = model_params.sigma, lambda = model_params.lambda, nu = model_params.nu)
+    noise_params = (sigma = model_params.sigma[1], lambda = model_params.lambda[1], nu = model_params.nu[1])
 
     # Set station coordinates
     ist = rand(1:model_params.nx, model_params.nobs)
@@ -352,7 +353,7 @@ end
                                (grid.x_length-grid.dx)*2,
                                (grid.y_length-grid.dy)*2)
 
-    noise_params = (sigma = model_params.sigma, lambda = model_params.lambda, nu = model_params.nu)
+    noise_params = (sigma = model_params.sigma[1], lambda = model_params.lambda[1], nu = model_params.nu[1])
 
     stations = (nst = model_params.nobs, ist = st.st_ij[:,1].+1, jst = st.st_ij[:,2].+1)
 

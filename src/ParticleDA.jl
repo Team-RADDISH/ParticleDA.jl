@@ -51,7 +51,7 @@ function get_obs_noise_std end
 """
     ParticleDa.get_model_noise(model_data) -> NamedTuple({:sigma, :lambda, :nu},Tuple{Float, Float, Float})
 
-Return standard deviation of observation noise. Required for optimal filter only.
+Return parameters of the noise covariance function of the first state variable (height). Required for optimal filter only.
 """
 function get_model_noise_params end
 
