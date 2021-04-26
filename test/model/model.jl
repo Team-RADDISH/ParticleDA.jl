@@ -82,16 +82,16 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     peak_height = 1.0
     peak_position = [floor(Int, nx / 4) * dx, floor(Int, ny / 4) * dy]
 
-    lambda::T = 1.0e4
-    nu::T = 2.5
-    sigma::T = 1.0
+    lambda::Vector{T} = [1.0e4, 1.0e4, 1.0e4]
+    nu::Vector{T} = [2.5, 2.5, 2.5]
+    sigma::Vector{T} = [1.0, 1.0, 1.0]
 
+    lambda_initial_state::Vector{T} = [1.0e4, 1.0e4, 1.0e4]
+    nu_initial_state::Vector{T} = [2.5, 2.5, 2.5]
+    sigma_initial_state::Vector{T} = [10.0, 10.0, 10.0]
+    
     padding::Int = 100
     primes::Bool = true
-
-    lambda_initial_state::T = 1.0e4
-    nu_initial_state::T = 2.5
-    sigma_initial_state::T = 10.0
 
     particle_initial_state::String = "zero"
 
@@ -113,6 +113,18 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     particle_dump_time = [-1]
 end
 
+function ParticleDA.get_params(T::Type{ModelParameters}, user_input_dict::Dict)
+
+    for key in ("lambda", "nu", "sigma", "lambda_initial_state", "nu_initial_state", "sigma_initial_state")
+        if haskey(user_input_dict, key) && !isa(user_input_dict[key], Vector)
+            user_input_dict[key] = fill(user_input_dict[key], 3)
+        end
+    end
+    
+    user_input = (; (Symbol(k) => v for (k,v) in user_input_dict)...)
+    params = T(;user_input...)
+
+end
 
 function get_obs!(obs::AbstractVector{T},
                   state::AbstractArray{T,3},
@@ -233,9 +245,9 @@ end
 # Initialize a gaussian random field generating function using the Matern covariance kernel
 # and circulant embedding generation method
 # TODO: Could generalise this
-function init_gaussian_random_field_generator(lambda::T,
-                                              nu::T,
-                                              sigma::T,
+function init_gaussian_random_field_generator(lambda::Vector{T},
+                                              nu::Vector{T},
+                                              sigma::Vector{T},
                                               x::AbstractVector{T},
                                               y::AbstractVector{T},
                                               pad::Int,
@@ -244,14 +256,17 @@ function init_gaussian_random_field_generator(lambda::T,
     # Let's limit ourselves to two-dimensional fields
     dim = 2
 
-    cov = CovarianceFunction(dim, Matern(lambda, nu, σ = sigma))
-    grf = GaussianRandomField(cov, CirculantEmbedding(), x, y, minpadding=pad, primes=primes)
-    v = grf.data[1]
-    xi = Array{eltype(grf.cov)}(undef, size(v)..., nthreads())
-    w = Array{complex(float(eltype(v)))}(undef, size(v)..., nthreads())
-    z = Array{eltype(grf.cov)}(undef, length.(grf.pts)..., nthreads())
+    function _generate(l, n, s)
+        cov = CovarianceFunction(dim, Matern(l, n, σ = s))
+        grf = GaussianRandomField(cov, CirculantEmbedding(), x, y, minpadding=pad, primes=primes)
+        v = grf.data[1]
+        xi = Array{eltype(grf.cov)}(undef, size(v)..., nthreads())
+        w = Array{complex(float(eltype(v)))}(undef, size(v)..., nthreads())
+        z = Array{eltype(grf.cov)}(undef, length.(grf.pts)..., nthreads())
+        RandomField(grf, xi, w, z)
+    end
 
-    return RandomField(grf, xi, w, z)
+    return [_generate(l, n, s) for (l, n, s) in zip(lambda, nu, sigma)]
 end
 
 # Get a random sample from random_field_generator using random number generator rng
@@ -279,7 +294,7 @@ end
 # Add a gaussian random field to the height in the state vector of all particles
 function add_random_field!(state::AbstractArray{T,4},
                            field_buffer::AbstractArray{T,4},
-                           generator::RandomField,
+                           generators::Vector{<:RandomField},
                            rng::AbstractVector{<:Random.AbstractRNG},
                            nvar::Int,
                            nprt::Int) where T
@@ -288,8 +303,7 @@ function add_random_field!(state::AbstractArray{T,4},
 
         for ivar in 1:nvar
 
-            sample_gaussian_random_field!(@view(field_buffer[:, :, 1, threadid()]), generator, rng[threadid()])
-            # Add the random field only to the height component.
+            sample_gaussian_random_field!(@view(field_buffer[:, :, 1, threadid()]), generators[ivar], rng[threadid()])
             @view(state[:, :, ivar, ip]) .+= @view(field_buffer[:, :, 1, threadid()])
 
         end
@@ -423,9 +437,9 @@ ParticleDA.get_stations(d::ModelData) = (nst = d.model_params.nobs,
                                          ist = d.stations.ist,
                                          jst = d.stations.jst)
 ParticleDA.get_obs_noise_std(d::ModelData) = d.model_params.obs_noise_std
-ParticleDA.get_model_noise_params(d::ModelData) = (sigma = d.model_params.sigma,
-                                                   lambda = d.model_params.lambda,
-                                                   nu = d.model_params.nu)
+ParticleDA.get_model_noise_params(d::ModelData) = (sigma = d.model_params.sigma[1],
+                                                   lambda = d.model_params.lambda[1],
+                                                   nu = d.model_params.nu[1])
 
 function ParticleDA.set_particles!(d::ModelData, particles::AbstractArray{T}) where T
 
