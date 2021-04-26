@@ -256,19 +256,17 @@ function init_gaussian_random_field_generator(lambda::Vector{T},
     # Let's limit ourselves to two-dimensional fields
     dim = 2
 
-    generators = Vector{RandomField}(undef, 3)
-    
-    for (i,(l,n,s)) in enumerate(zip(lambda, nu, sigma))
+    function _generate(l, n, s)
         cov = CovarianceFunction(dim, Matern(l, n, σ = s))
         grf = GaussianRandomField(cov, CirculantEmbedding(), x, y, minpadding=pad, primes=primes)
         v = grf.data[1]
         xi = Array{eltype(grf.cov)}(undef, size(v)..., nthreads())
         w = Array{complex(float(eltype(v)))}(undef, size(v)..., nthreads())
         z = Array{eltype(grf.cov)}(undef, length.(grf.pts)..., nthreads())
-        generators[i] = (RandomField(grf, xi, w, z))
+        RandomField(grf, xi, w, z)
     end
 
-    return generators
+    return [_generate(l, n, s) for (l, n, s) in zip(lambda, nu, sigma)]
 end
 
 # Get a random sample from random_field_generator using random number generator rng
@@ -296,7 +294,7 @@ end
 # Add a gaussian random field to the height in the state vector of all particles
 function add_random_field!(state::AbstractArray{T,4},
                            field_buffer::AbstractArray{T,4},
-                           generators::Vector{RandomField},
+                           generators::Vector{<:RandomField},
                            rng::AbstractVector{<:Random.AbstractRNG},
                            nvar::Int,
                            nprt::Int) where T
