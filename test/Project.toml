@@ -14,7 +14,7 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
 [compat]
-Distributions = "0.22, 0.23, 0.24"
+Distributions = "0.22, 0.23, 0.24, 0.25"
 FFTW = "1"
 FieldMetadata = "0.3.1"
 GaussianRandomFields = "2.1.1"
