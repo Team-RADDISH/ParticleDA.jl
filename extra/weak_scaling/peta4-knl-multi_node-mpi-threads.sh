@@ -8,9 +8,12 @@
 #SBATCH --constraint=cache
 
 module purge
-module load rhel7/default-peta4   
-module load julia/1.4
+module load rhel7/default-peta4
 module load hdf5/impi
+
+module use /usr/local/software/spack/current/share/spack/tcl/linux-scientific7-skylake_avx512
+module load julia-1.5.2-gcc-9.3.0-tq7xeeu
+
 
 #! Work directory (i.e. where the job will run):
 workdir="$SLURM_SUBMIT_DIR"  # The value of SLURM_SUBMIT_DIR sets workdir to the directory
@@ -24,6 +27,5 @@ rm -f weak_scaling_r*.h5
 
 for ranks in 16 32 64 128 256
 do
-    srun -n $ranks julia run_tdac.jl
+    srun -n $ranks julia run_particleda.jl
 done
-
