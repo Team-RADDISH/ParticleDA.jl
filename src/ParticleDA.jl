@@ -59,7 +59,9 @@ function get_model_noise_params end
     ParticleDA.get_particle(model_data) -> particles
 
 Return the vector of particles.  This method is intended to be extended by the
-user with the above signature, specifying the type of `model_data`.
+user with the above signature, specifying the type of `model_data`.  Note: this
+function should return the vector of particles itself and not a copy, because it
+will be modified in-place.
 """
 function get_particles end
 
