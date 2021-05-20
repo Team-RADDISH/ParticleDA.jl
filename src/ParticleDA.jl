@@ -508,7 +508,6 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
                                                       my_rank,
                                                       nprt_per_rank)
 
-        @timeit_debug timer "get_particles" particles = get_particles(model_data)
         @timeit_debug timer "Mean and Var" get_mean_and_var!(filter_data.statistics, particles, filter_params.master_rank)
 
         if my_rank == filter_params.master_rank && filter_params.verbose
