@@ -36,7 +36,9 @@ Parameters for the model. Keyword arguments:
 * `title_grid::String` : Name of the grid data group in output
 * `title_stations::String` : Name of the station coordinates data group in output
 * `title_params::String` : Name of the parameters data group in output
-* `source_size::AbstractFloat` : Initial condition parameter
+* `peak_position::Vector{AbstractFloat}` : The [x,y] coordinates (m) of the initial wave peak
+* `peak_height::AbstractFloat` : The height (m) of the initial wave peak
+* `source_size::AbstractFloat` : Cutoff distance (m) from the peak for the initial wave
 * `bathymetry_setup::AbstractFloat` : Bathymetry set-up.
 * `lambda::AbstractFloat` : Length scale for Matérn covariance kernel in background noise
 * `nu::AbstractFloat` : Smoothess parameter for Matérn covariance kernel in background noise
