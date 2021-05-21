@@ -593,7 +593,7 @@ end
 function write_weights(file::HDF5.File, weights::AbstractVector, unit::String, it::Int, params::ModelParameters)
 
     group_name = "weights"
-    dataset_name = "t" * string(it)
+    dataset_name = "t" * lpad(string(it),4,'0')
 
     group, subgroup = ParticleDA.create_or_open_group(file, group_name)
 
