@@ -59,7 +59,9 @@ function get_model_noise_params end
     ParticleDA.get_particle(model_data) -> particles
 
 Return the vector of particles.  This method is intended to be extended by the
-user with the above signature, specifying the type of `model_data`.
+user with the above signature, specifying the type of `model_data`.  Note: this
+function should return the vector of particles itself and not a copy, because it
+will be modified in-place.
 """
 function get_particles end
 
@@ -508,7 +510,6 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
                                                       my_rank,
                                                       nprt_per_rank)
 
-        @timeit_debug timer "get_particles" particles = get_particles(model_data)
         @timeit_debug timer "Mean and Var" get_mean_and_var!(filter_data.statistics, particles, filter_params.master_rank)
 
         if my_rank == filter_params.master_rank && filter_params.verbose

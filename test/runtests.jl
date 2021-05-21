@@ -208,6 +208,16 @@ end
     @test attr["Unit"] == "m"
 
     rm(filter_params.output_filename, force=true)
+
+    # Model data and get particles
+    input_file = joinpath(dirname(pathof(ParticleDA)), "..", "test", "integration_test_1.yaml")
+    model_params_dict = get(ParticleDA.read_input_file(input_file), "model", Dict())
+    nprt_per_rank = 1
+    my_rank = 0
+    _rng = [Random.MersenneTwister()]
+    model_data = Model.init(model_params_dict, nprt_per_rank, my_rank, _rng)
+    # Make sure `get_particles` always returns the same array
+    @test pointer(ParticleDA.get_particles(model_data)) == pointer(ParticleDA.get_particles(model_data))
 end
 
 @testset "ParticleDA integration tests" begin
