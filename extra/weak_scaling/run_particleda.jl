@@ -8,6 +8,10 @@ mpi_size = MPI.Comm_size(MPI.COMM_WORLD)
 test_dir = joinpath(dirname(pathof(ParticleDA)), "..", "test")
 module_src = joinpath(test_dir, "model", "model.jl")
 
+using Pkg
+Pkg.activate(test_dir)
+Pkg.instantiate()
+
 include(module_src)
 using .Model
 
