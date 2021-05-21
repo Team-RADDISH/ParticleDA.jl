@@ -692,7 +692,7 @@ function write_field(file::HDF5.File,
                      params::ModelParameters) where T
 
     group_name = params.state_prefix * "_" * group
-    subgroup_name = "t" * string(it)
+    subgroup_name = "t" * lpad(string(it),4,'0')
     dataset_name = dataset
 
     group, subgroup = ParticleDA.create_or_open_group(file, group_name, subgroup_name)
