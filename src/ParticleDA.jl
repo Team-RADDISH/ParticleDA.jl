@@ -413,9 +413,7 @@ end
 
 function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict, filter_type; rng::Union{Random.AbstractRNG,Nothing}=nothing)
 
-    if !MPI.Initialized()
-        MPI.Init()
-    end
+    MPI.Init()
 
     my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
     my_size = MPI.Comm_size(MPI.COMM_WORLD)
@@ -593,9 +591,7 @@ the possible values.
 """
 function run_particle_filter(init, path_to_input_file::String, filter_type::ParticleFilter; rng::Union{Random.AbstractRNG,Nothing}=nothing)
 
-    if !MPI.Initialized()
-        MPI.Init()
-    end
+    MPI.Init()
 
     # Do I/O on rank 0 only and then broadcast params
     if MPI.Comm_rank(MPI.COMM_WORLD) == 0
