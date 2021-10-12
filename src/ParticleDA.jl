@@ -531,21 +531,16 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
             # Gather string representations of timers from all ranks and write them on master
             str_timer = string(timer)
 
-            # Assume the length of the timer string on master is the longest (because master does more stuff)
+            timer_lengths = MPI.Gather(sizeof(str_timer), filter_params.master_rank, MPI.COMM_WORLD)
+
             if my_rank == filter_params.master_rank
-                length_timer = length(string(timer))
+                timer_chars = MPI.Gatherv!(str_timer,
+                                           MPI.VBuffer(Vector{UInt8}(undef, sum(timer_lengths)), timer_lengths),
+                                           filter_params.master_rank,
+                                           MPI.COMM_WORLD)
+                @timeit_debug timer "IO" write_timers(timer_lengths, my_size, timer_chars, filter_params)
             else
-                length_timer = nothing
-            end
-
-            length_timer = MPI.bcast(length_timer, filter_params.master_rank, MPI.COMM_WORLD)
-
-            chr_timer = Vector{Char}(rpad(str_timer,length_timer))
-
-            timer_chars = MPI.Gather(chr_timer, filter_params.master_rank, MPI.COMM_WORLD)
-
-            if my_rank == filter_params.master_rank
-                @timeit_debug timer "IO" write_timers(length_timer, my_size, timer_chars, filter_params)
+                MPI.Gatherv!(str_timer, nothing, filter_params.master_rank, MPI.COMM_WORLD)
             end
         end
     end
