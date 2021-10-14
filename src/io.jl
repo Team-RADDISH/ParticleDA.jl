@@ -22,13 +22,13 @@ function create_or_open_group(file::HDF5.File, group_name::String, subgroup_name
 
 end
 
-function write_timers(length::Int, size::Int, chars::AbstractVector{Char}, params::FilterParameters)
+function write_timers(lengths::Vector{Int}, size::Int, chars::AbstractVector{UInt8}, params::FilterParameters)
 
-    write_timers(length, size, chars, params.output_filename)
+    write_timers(lengths, size, chars, params.output_filename)
 
 end
 
-function write_timers(length::Int, size::Int, chars::AbstractVector{Char}, filename::String)
+function write_timers(lengths::Vector{Int}, size::Int, chars::AbstractVector{UInt8}, filename::String)
 
     group_name = "timer"
 
@@ -40,8 +40,9 @@ function write_timers(length::Int, size::Int, chars::AbstractVector{Char}, filen
             group = open_group(file, group_name)
         end
 
+        sum_lengths = cumsum(lengths)
         for i in 1:size
-            timer_string = String(chars[(i - 1) * length + 1 : i * length])
+            timer_string = String(chars[1 + (i > 1 ? sum_lengths[i - 1] : 0):sum_lengths[i]])
             dataset_name = "rank" * string(i-1)
 
             if !haskey(group, dataset_name)
