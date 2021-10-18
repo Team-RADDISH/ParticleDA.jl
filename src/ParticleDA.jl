@@ -4,6 +4,7 @@ using Random
 using Distributions, Statistics, MPI, Base.Threads, YAML, HDF5
 using TimerOutputs
 import Future
+using EllipsisNotation
 
 export run_particle_filter, BootstrapFilter, OptimalFilter
 
@@ -254,10 +255,12 @@ function stats_reduction(S1::SummaryStat, S2::SummaryStat)
 
 end
 
-function get_mean_and_var!(statistics::Array{SummaryStat{T},3},
-                           particles::AbstractArray{T,4},
+function get_mean_and_var!(statistics::Array{SummaryStat{T}},
+                           particles::AbstractArray{T},
                            master_rank::Int) where T
 
+    ndims(particles) != ndims(statistics) + 1 &&
+        error("particles must have one dimension more than statistics")
     Threads.@threads for idx in CartesianIndices(statistics)
         statistics[idx] = SummaryStat(@view(particles[idx,:]))
     end
@@ -274,8 +277,8 @@ function unpack_statistics!(avg::AbstractArray{T}, var::AbstractArray{T}, statis
     end
 end
 
-function copy_states!(particles::AbstractArray{T,4},
-                      buffer::AbstractArray{T,4},
+function copy_states!(particles::AbstractArray{T},
+                      buffer::AbstractArray{T},
                       resampling_indices::Vector{Int},
                       my_rank::Int,
                       nprt_per_rank::Int) where T
@@ -298,7 +301,7 @@ function copy_states!(particles::AbstractArray{T,4},
         rank_wants = floor(Int, (k - 1) / nprt_per_rank)
         if id in particles_have && rank_wants != my_rank
             local_id = id - my_rank * nprt_per_rank
-            req = MPI.Isend(@view(particles[:,:,:,local_id]), rank_wants, id, MPI.COMM_WORLD)
+            req = MPI.Isend(@view(particles[..,local_id]), rank_wants, id, MPI.COMM_WORLD)
             push!(reqs, req)
         end
     end
@@ -309,9 +312,9 @@ function copy_states!(particles::AbstractArray{T,4},
     for (k,proc,id) in zip(1:nprt_per_rank, rank_has, particles_want)
         if proc == my_rank
             local_id = id - my_rank * nprt_per_rank
-            @view(buffer[:,:,:,k]) .= @view(particles[:,:,:,local_id])
+            @view(buffer[..,k]) .= @view(particles[..,local_id])
         else
-            req = MPI.Irecv!(@view(buffer[:,:,:,k]), proc, id, MPI.COMM_WORLD)
+            req = MPI.Irecv!(@view(buffer[..,k]), proc, id, MPI.COMM_WORLD)
             push!(reqs,req)
         end
     end
