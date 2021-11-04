@@ -6,12 +6,3 @@ model:
     nlat: 48
     IDate: "1982010100"
     dtDate: "1982010106"
-
-
-model:
-  speedy:
-    FYYYY: 1983
-    FMM: 03
-    FDD: 01
-    FHH: 00
-    SPEEDY: "/Users/dangiles/Documents/UCL/Raddish/DA/speedy"

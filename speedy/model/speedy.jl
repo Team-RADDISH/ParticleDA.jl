@@ -28,3 +28,4 @@ function setup(nx::Int,
 
     return Matrices(u,v,Temp,q,ps,rain)
 end
+end# module
