@@ -1,15 +1,12 @@
 filter:
   nprt: 2
-<<<<<<< HEAD
-
 model:
   speedy:
     nlon: 96
     nlat: 48
     IDate: "1982010100"
     dtDate: "1982010106"
-=======
-  n_time_step: 5
+
 
 model:
   speedy:
@@ -18,4 +15,3 @@ model:
     FDD: 01
     FHH: 00
     SPEEDY: "/Users/dangiles/Documents/UCL/Raddish/DA/speedy"
->>>>>>> fd5d2a8 (Addition of speedy files)
