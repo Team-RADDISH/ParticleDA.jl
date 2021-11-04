@@ -3,41 +3,37 @@ module Model
 using ParticleDA
 
 using Random, Distributions, Base.Threads, GaussianRandomFields, HDF5
+<<<<<<< HEAD
+# using Default_params
+using DelimitedFiles
+using FieldMetadata
+using FortranFiles
+using Setfield
+using Dates
+# include("../params.jl")
+# using .Default_params
+=======
 using ParticleDA.Default_params
 using DelimitedFiles
 using FieldMetadata
 
-include("llw2d.jl")
-using .LLW2d
+>>>>>>> fd5d2a8 (Addition of speedy files)
+include("speedy.jl")
+using .SPEEDY
 
 """
     ModelParameters()
 
 Parameters for the model. Keyword arguments:
+<<<<<<< HEAD
 
-* `nx::Int` : Number of grid points in the x direction
-* `ny::Int` : Number of grid points in the y direction
-* `x_length::AbstractFloat` : Domain size (m) in the x direction
-* `y_length::AbstractFloat` : Domain size (m) in the y direction
-* `dx::AbstractFloat` : Distance (m) between grid points in the x direction
-* `dy::AbstractFloat` : Distance (m) between grid points in the y direction
+* `IDate::String` : Start date for the simulations in the format: YYYYmmddHH
+* `dtDate::String` : Incremental date in the format: YYYYmmddHH
+* `Hinc::Int` : Hourly increment
+* `obs_network::String` : Location of observations (real or uniform)
+* `nobs::Int` : Number of observations
 * `n_state_var::Int`: Number of variables in the state vector
 * `nobs::Int` : Number of observation stations
-* `station_filename::String` : Name of input file for station coordinates
-* `station_distance_x::Float` : Distance between stations in the x direction [m]
-* `station_distance_y::Float` : Distance between stations in the y direction [m]
-* `station_boundary_x::Float` : Distance between bottom left edge of box and first station in the x direction [m]
-* `station_boundary_y::Float` : Distance between bottom left edge of box and first station in the y direction [m]
-* `n_integration_step::Int` : Number of sub-steps to integrate the forward model per time step.
-* `time_step::AbstractFloat` : Time step length (s)
-* `state_prefix::String` : Prefix of the time slice data groups in output
-* `title_da::String` : Suffix of the data assimilated data group in output
-* `title_syn::String` : Suffix of the true state data group in output
-* `title_grid::String` : Name of the grid data group in output
-* `title_stations::String` : Name of the station coordinates data group in output
-* `title_params::String` : Name of the parameters data group in output
-* `source_size::AbstractFloat` : Initial condition parameter
-* `bathymetry_setup::AbstractFloat` : Bathymetry set-up.
 * `lambda::AbstractFloat` : Length scale for Matérn covariance kernel in background noise
 * `nu::AbstractFloat` : Smoothess parameter for Matérn covariance kernel in background noise
 * `sigma::AbstractFloat` : Marginal standard deviation for Matérn covariance kernel in background noise
@@ -55,32 +51,121 @@ Parameters for the model. Keyword arguments:
 * `obs_noise_std::Float`: Standard deviation of noise added to observations of the true state
 * `particle_dump_file::String`: file name for dump of particle state vectors
 * `particle_dump_time::Int`: list of (one more more) time steps to dump particle states
+* `SPEEDY::String` : Path to the SPEEDY directory
+* `output_folder::String` : Output folder
+* `station_filename::String` : Path to the station file which defines the observation locations
+* `nature_dir::String`: Path to the directory with the ouputs of the nature run
+* `nlon::Int`: Number of points in the longitude direction
+* `nlat::Int`: Number of points in the latitude direction
+* `lon_length::AbstractFloat`: Domain size in the lon direction
+* `lat_length::AbstractFloat`: Domain size in the lat direction
+* `dx::AbstractFloat` : Distance between grid points in the lon direction
+* `dy::AbstractFloat` : Distance between grid points in the lat direction
+* `nlev::Int`: Number of points in the vertical direction
+* `n_state_var::Int`: Number of variables in the state vector
+"""
+
+Base.@kwdef struct ModelParameters{T<:AbstractFloat}
+    # Initial date
+    # IDate::String = Dates.format(DateTime(1982, 01, 01, 00), "YYYYmmddHH")
+    IDate::String=""
+    dtDate::String=""
+    # Hour interval
+    Hinc::Int = 6
+    # Number of ensemble members
+    # n_ens::Int = 20
+
+    # Number of MPI processes to use
+    # n_procs::Int = 2
+
+    # Nature run resolution (choose t30 or t39)
+    # nat_res::String = "t30"
+
+    # # Use perturbed parameters for model or not
+    # pert::Int = 0
+    #
+    # # Save all members or not (if it's 0 then only the mean and spread are saved)
+    # save_ens::Int = 0
+
+    # Choose observation network (choose "real" or "uniform")
+    obs_network::String = "real"
+    nobs::Int = 416
+    # Observation errors
+    # u_err::T = 1.0
+    # v_err::T = 1.0
+    # t_err::T = 1.0
+    # q_err::T = 1.0e-03
+    # ps_err::T = 1.0e3
+
+    # RTPP factor
+    # rtpp::T = 0.0
+
+    # Horizontal and vertical covariance localisation length scales (in metres and
+    # sigma coordinates, respectively)
+    # hor_loc::T = 1000.0
+    # ver_loc::T = 0.1
+
+    # Multiplicative covariance inflation factor (negative means use adaptive
+    # inflation
+    # cov_infl::T = -1.01
+
+    # Additive inflation directory (set "0" if you don't want to use it)
+    # addi_dir::Int = 0
+=======
 """
 Base.@kwdef struct ModelParameters{T<:AbstractFloat}
+    # Initial date
+    IYYYY::Int = 1982
+    IMM::Int = 01
+    IDD::Int = 01
+    IHH::Int = 00
 
-    nx::Int = 200
-    ny::Int = 200
-    x_length::T = 400.0e3
-    y_length::T = 400.0e3
-    dx::T = x_length / (nx - 1)
-    dy::T = y_length / (ny - 1)
+    # Final date
+    FYYYY::Int = 1983
+    FMM::Int = 03
+    FDD::Int = 01
+    FHH::Int = 00
 
-    n_state_var::Int = 3
+    # Number of ensemble members
+    n_ens::Int = 20
 
-    time_step::T = 50.0
-    n_integration_step::Int = 50
+    # Number of MPI processes to use
+    n_procs::Int = 2
 
-    station_filename::String = ""
-    nobs::Int = 4
-    station_distance_x::T = 20.0e3
-    station_distance_y::T = 20.0e3
-    station_boundary_x::T = 150.0e3
-    station_boundary_y::T = 150.0e3
+    # Nature run resolution (choose t30 or t39)
+    nat_res::String = "t30"
 
-    source_size::T = 3.0e4
-    bathymetry_setup::T = 3.0e3
-    peak_height = 1.0
-    peak_position = [floor(Int, nx / 4) * dx, floor(Int, ny / 4) * dy]
+    # Use perturbed parameters for model or not
+    pert::Int = 0
+
+    # Save all members or not (if it's 0 then only the mean and spread are saved)
+    save_ens::Int = 0
+
+    # Choose observation network (choose "real" or "uniform")
+    obs_network::String = "real"
+
+    # Observation errors
+    u_err::T = 1.0
+    v_err::T = 1.0
+    t_err::T = 1.0
+    q_err::T = 1.0e-03
+    ps_err::T = 1.0e3
+
+    # RTPP factor
+    rtpp::T = 0.0
+
+    # Horizontal and vertical covariance localisation length scales (in metres and
+    # sigma coordinates, respectively)
+    hor_loc::T = 1000.0
+    ver_loc::T = 0.1
+
+    # Multiplicative covariance inflation factor (negative means use adaptive
+    # inflation
+    cov_infl::T = -1.01
+
+    # Additive inflation directory (set "0" if you don't want to use it)
+    addi_dir::Int = 0
+>>>>>>> fd5d2a8 (Addition of speedy files)
 
     lambda::Vector{T} = [1.0e4, 1.0e4, 1.0e4]
     nu::Vector{T} = [2.5, 2.5, 2.5]
@@ -95,10 +180,6 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
 
     particle_initial_state::String = "zero"
 
-    absorber_thickness_fraction::T = 0.1
-    boundary_damping::T = 0.015
-    cutoff_depth::T = 10.0
-
     state_prefix::String = "data"
     title_avg::String = "avg"
     title_var::String = "var"
@@ -107,12 +188,101 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     title_stations::String = "stations"
     title_params::String = "params"
 
-    obs_noise_std::T = 1.0
+    # obs_noise_std::T = 1.0
 
     particle_dump_file = "particle_dump.h5"
     particle_dump_time = [-1]
+<<<<<<< HEAD
+    #Path to the the local speedy directory
+    SPEEDY::String = "/Users/dangiles/Documents/UCL/Raddish/speedy"
+    output_folder::String = string(pwd(),"/speedy")
+    station_filename::String = string(SPEEDY,"/obs/networks/",obs_network,".txt")
+    nature_dir::String = string(SPEEDY,"/DATA/nature/")
+    nlon::Int = 96
+    nlat::Int = 48
+    lon_length::T = 360.0
+    lat_length::T = 180.0
+    dx::T = lon_length / (nlon - 1)
+    dy::T = lat_length / (nlat - 1)
+
+    nij0::Int = nlon*nlat
+    # iolen::Int = 4
+    # nv3d::Int = 4
+    # nv2d::Int = 2
+    nlev::Int = 8
+    n_state_var::Int = 1
+
+end
+function step_datetime(idate::String,dtdate::String)
+    new_idate = Dates.format(DateTime(idate, "YYYYmmddHH") + Dates.Hour(6),"YYYYmmddHH")
+    new_dtdate = Dates.format(DateTime(dtdate, "YYYYmmddHH") + Dates.Hour(6),"YYYYmmddHH")
+    return new_idate,new_dtdate
 end
 
+
+# function set_time!(model_params::ModelParameters)
+#     @view model_params.IDate[..] = Dates.format(DateTime(model_params.IYYYY,model_params.IMM,model_params.IDD,model_params.IHH), "YYYYmmddHH")
+#     @view model_params.dtDate[..] = Dates.format(DateTime(model_params.dYYYY,model_params.dMM,model_params.dDD,model_params.dHH), "YYYYmmddHH")
+# end
+
+
+=======
+    #Path to the the local speedy directory - defined in .yaml
+    SPEEDY::String = "define_local_path_to_speedy"
+    isc::Int = 1
+    ntrun::Int = 30
+    mtrun::Int = 30
+    ix::Int = 96
+    iy::Int = 24
+    nx::Int = ntrun+2
+    mx::Int = mtrun+1
+    mxnx::Int = mx*nx
+    mx2::Int = 2*mx
+    il::Int = 2*iy
+    ntrun1::Int = ntrun+1
+    nxp::Int = nx+1
+    mxp::Int = isc*mtrun+1
+    lmax::Int = mxp+nx-2
+    kx::Int = 8
+    kx2::Int = 2*kx
+    kxm::Int = kx-1
+    kxp::Int = kx+1
+    ntr::Int = 1
+
+
+    nmonts::Int = 1
+    ndaysl::Int = 0
+    nsteps::Int = 36
+    nstdia::Int = 36*5
+    nstppr::Int = 6
+    nstout::Int = -1
+    idout::Int  = 0
+    nmonrs::Int = 0
+    ihout::Bool = true
+    ipout::Bool = true
+    sixhrrun::Bool = true
+    iseasc::Int = 1
+    istart::Int = 0
+    iyear0::Int = IYYYY
+    imont0::Int = IMM
+    nstrad::Int = 3
+    sppt_on::Bool = false
+    nstrdf::Int = 0
+    indrdf::Int = -1
+    issty0::Int = 1979
+    # isst0::Int
+    delt::T = 86400.0 / nsteps
+    delt2::T = 2 * delt
+    rob::T = 0.05
+    wil::T = 0.53
+    n_state_var::Int = 6
+    nobs::Int = 12064
+    # alph::T
+
+end
+
+
+>>>>>>> fd5d2a8 (Addition of speedy files)
 function ParticleDA.get_params(T::Type{ModelParameters}, user_input_dict::Dict)
 
     for key in ("lambda", "nu", "sigma", "lambda_initial_state", "nu_initial_state", "sigma_initial_state")
@@ -126,20 +296,67 @@ function ParticleDA.get_params(T::Type{ModelParameters}, user_input_dict::Dict)
 
 end
 
+<<<<<<< HEAD
+function get_obs!(obs::AbstractVector{T},
+                  state::AbstractArray{T},
+=======
+function init_arrays(params::ModelParameters, nprt_per_rank)
+
+    return init_arrays(params.ix, params.iy, params.n_state_var, params.nobs, nprt_per_rank)
+
+end
+
+function init_arrays(ix::Int, iy::Int, n_state_var::Int, nobs::Int, nprt_per_rank::Int)
+
+    # TODO: ideally this will be an argument of the function, to choose a
+    # different datatype.
+    T = Float64
+
+    state_avg = zeros(T, ix, iy, n_state_var) # average of particle state vectors
+    state_var = zeros(T, ix, iy, n_state_var) # variance of particle state vectors
+
+    # Model vector for data assimilation
+    #   state[:, :, 1, :]: tsunami height eta(nx,ny)
+    #   state[:, :, 2, :]: vertically integrated velocity Mx(nx,ny)
+    #   state[:, :, 3, :]: vertically integrated velocity Mx(nx,ny)
+    state_particles = zeros(T, ix, iy, n_state_var, nprt_per_rank)
+    state_truth = zeros(T, ix, iy, n_state_var) # model vector: true wavefield (observation)
+    obs_truth = Vector{T}(undef, nobs)          # observed tsunami height
+    obs_model = Matrix{T}(undef, nobs, nprt_per_rank) # forecasted tsunami height
+
+    # station location in digital grids
+    ist = Vector{Int}(undef, nobs)
+    jst = Vector{Int}(undef, nobs)
+
+    # Buffer array to be used in the tsunami update
+    field_buffer = Array{T}(undef, ix, iy, 2, nthreads())
+
+    return StateVectors(state_particles, state_truth), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), field_buffer
+end
+
 function get_obs!(obs::AbstractVector{T},
                   state::AbstractArray{T,3},
+>>>>>>> fd5d2a8 (Addition of speedy files)
                   ist::AbstractVector{Int},
                   jst::AbstractVector{Int},
                   params::ModelParameters) where T
 
+<<<<<<< HEAD
+    get_obs!(obs,state,ist,jst)
+=======
     get_obs!(obs,state,params.nx,ist,jst)
+>>>>>>> fd5d2a8 (Addition of speedy files)
 
 end
 
 # Return observation data at stations from given model state
 function get_obs!(obs::AbstractVector{T},
+<<<<<<< HEAD
+                  state::AbstractArray{T},
+=======
                   state::AbstractArray{T,3},
                   nx::Integer,
+>>>>>>> fd5d2a8 (Addition of speedy files)
                   ist::AbstractVector{Int},
                   jst::AbstractVector{Int}) where T
     @assert length(obs) == length(ist) == length(jst)
@@ -147,48 +364,29 @@ function get_obs!(obs::AbstractVector{T},
     for i in eachindex(obs)
         ii = ist[i]
         jj = jst[i]
+<<<<<<< HEAD
+        obs[i] = state[ii,jj]
+    end
+end
+
+function speedy_update!(SPEEDY::String,
+                        output::String,
+                        YMDH::String,
+                        TYMDH::String,
+                        MEM::String,
+                        N::String)
+    # Path to the bash script which carries out the forecast
+    forecast = "./speedy/model/dafcst.sh"
+    # Bash script call to speedy
+    run(`$forecast $SPEEDY $output $YMDH $TYMDH $MEM $N`)
+end
+=======
         iptr = (jj - 1) * nx + ii
         obs[i] = state[iptr]
     end
 end
 
-function tsunami_update!(dx_buffer::AbstractMatrix{T},
-                         dy_buffer::AbstractMatrix{T},
-                         state::AbstractArray{T,3},
-                         model_matrices::LLW2d.Matrices{T},
-                         params::ModelParameters) where T
-
-    tsunami_update!(dx_buffer, dy_buffer, state, params.n_integration_step,
-                    params.dx, params.dy, params.time_step, model_matrices)
-
-end
-
-# Update tsunami wavefield with LLW2d in-place.
-function tsunami_update!(dx_buffer::AbstractMatrix{T},
-                         dy_buffer::AbstractMatrix{T},
-                         state::AbstractArray{T,3},
-                         nt::Int,
-                         dx::Real,
-                         dy::Real,
-                         time_interval::Real,
-                         model_matrices::LLW2d.Matrices{T}) where T
-
-    eta_a = @view(state[:, :, 1])
-    mm_a  = @view(state[:, :, 2])
-    nn_a  = @view(state[:, :, 3])
-    eta_f = @view(state[:, :, 1])
-    mm_f  = @view(state[:, :, 2])
-    nn_f  = @view(state[:, :, 3])
-
-    dt = time_interval / nt
-
-    for it in 1:nt
-        # Parts of model vector are aliased to tsunami heiht and velocities
-        LLW2d.timestep!(dx_buffer, dy_buffer, eta_f, mm_f, nn_f, eta_a, mm_a, nn_a, model_matrices, dx, dy, dt)
-    end
-
-end
-
+>>>>>>> fd5d2a8 (Addition of speedy files)
 struct RandomField{F<:GaussianRandomField,X<:AbstractArray,W<:AbstractArray,Z<:AbstractArray}
     grf::F
     xi::X
@@ -196,6 +394,8 @@ struct RandomField{F<:GaussianRandomField,X<:AbstractArray,W<:AbstractArray,Z<:A
     z::Z
 end
 
+<<<<<<< HEAD
+=======
 @metadata name ("","","") NTuple{3, String}
 @metadata unit ("","","") NTuple{3, String}
 @metadata description ("","","") NTuple{3, String}
@@ -207,6 +407,7 @@ end
 
 end
 
+>>>>>>> fd5d2a8 (Addition of speedy files)
 struct ObsVectors{T<:AbstractArray,S<:AbstractArray}
 
     truth::T
@@ -221,18 +422,43 @@ struct StationVectors{T<:AbstractArray}
 
 end
 
-function get_axes(params::ModelParameters)
+<<<<<<< HEAD
+@metadata name ("","","","","","") NTuple{6, String}
+@metadata unit ("","","","","","") NTuple{6, String}
+@metadata description ("","","","","","") NTuple{6, String}
 
-    return get_axes(params.nx, params.ny, params.dx, params.dy)
+@name @description @unit struct StateVectors{T<:AbstractArray, S<:AbstractArray}
+
+    particles::T | ("u","v","T","q","ps","rain") | ("velocity x-component","velocity y-component","Temperature", "Specific Humidity", "Pressure", "Rain") | ("m/s","m/s","K","kg/kg","Pa","mm/hr")
+    truth::S | ("u","v","T","q","ps","rain") | ("velocity x-component","velocity y-component","Temperature", "Specific Humidity", "Pressure", "Rain") | ("m/s","m/s","K","kg/kg","Pa","mm/hr")
 
 end
 
-function get_axes(nx::Int, ny::Int, dx::Real, dy::Real)
+function get_axes(params::ModelParameters)
 
-    x = range(0, length=nx, step=dx)
-    y = range(0, length=ny, step=dy)
+    return get_axes(params.nlon, params.nlat, params.nlev)
+
+end
+function get_axes(ix::Int, iy::Int, iz::Int)
+    x = LinRange(0, 360, ix)
+    y = LinRange(-90,90, iy)
+    z = LinRange(0,1,iz)
+
+    return x,y,z
+=======
+function get_axes(params::ModelParameters)
+
+    return get_axes(params.ix, params.iy)
+
+end
+
+function get_axes(ix::Int, iy::Int)
+# LinRange(a, b, n)
+    x = LinRange(0, 360, ix)
+    y = LinRange(-180,180, iy)
 
     return x,y
+>>>>>>> fd5d2a8 (Addition of speedy files)
 end
 
 function init_gaussian_random_field_generator(params::ModelParameters)
@@ -268,7 +494,10 @@ function init_gaussian_random_field_generator(lambda::Vector{T},
 
     return [_generate(l, n, s) for (l, n, s) in zip(lambda, nu, sigma)]
 end
+<<<<<<< HEAD
+=======
 
+>>>>>>> fd5d2a8 (Addition of speedy files)
 # Get a random sample from random_field_generator using random number generator rng
 function sample_gaussian_random_field!(field::AbstractMatrix{T},
                                        random_field_generator::RandomField,
@@ -312,6 +541,10 @@ function add_random_field!(state::AbstractArray{T,4},
 
 end
 
+<<<<<<< HEAD
+
+=======
+>>>>>>> fd5d2a8 (Addition of speedy files)
 function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, params::ModelParameters) where T
 
     add_noise!(vec, rng, 0.0, params.obs_noise_std)
@@ -326,51 +559,55 @@ function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, mean::T, st
 
 end
 
-
+<<<<<<< HEAD
 function init_arrays(params::ModelParameters, nprt_per_rank)
 
-    return init_arrays(params.nx, params.ny, params.n_state_var, params.nobs, nprt_per_rank)
+    return init_arrays(params.nlon, params.nlat, params.nlev, params.n_state_var, params.nobs, nprt_per_rank)
 
 end
 
-function init_arrays(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_per_rank::Int)
+function init_arrays(ix::Int, iy::Int, iz::Int, n_state_var::Int, nobs::Int, nprt_per_rank::Int)
 
     # TODO: ideally this will be an argument of the function, to choose a
     # different datatype.
     T = Float64
 
-    state_avg = zeros(T, nx, ny, n_state_var) # average of particle state vectors
-    state_var = zeros(T, nx, ny, n_state_var) # variance of particle state vectors
+    state_avg = zeros(T, ix, iy, n_state_var) # average of particle state vectors
+    state_var = zeros(T, ix, iy, n_state_var) # variance of particle state vectors
 
-    # Model vector for data assimilation
-    #   state[:, :, 1, :]: tsunami height eta(nx,ny)
-    #   state[:, :, 2, :]: vertically integrated velocity Mx(nx,ny)
-    #   state[:, :, 3, :]: vertically integrated velocity Mx(nx,ny)
-    state_particles = zeros(T, nx, ny, n_state_var, nprt_per_rank)
-    state_truth = zeros(T, nx, ny, n_state_var) # model vector: true wavefield (observation)
-    obs_truth = Vector{T}(undef, nobs)          # observed tsunami height
-    obs_model = Matrix{T}(undef, nobs, nprt_per_rank) # forecasted tsunami height
+    state_particles = zeros(T, ix, iy, n_state_var, nprt_per_rank)
+    state_truth = zeros(T, ix, iy, n_state_var) # model vector: true wavefield (observation)
+    obs_truth = Vector{T}(undef, nobs)          # observed
+    obs_model = Matrix{T}(undef, nobs, nprt_per_rank) # forecasted
 
     # station location in digital grids
-    ist = Vector{Int}(undef, nobs)
-    jst = Vector{Int}(undef, nobs)
+    ist = zeros(Int64,0)
+    jst = zeros(Int64,0)
 
-    # Buffer array to be used in the tsunami update
-    field_buffer = Array{T}(undef, nx, ny, 2, nthreads())
+    # Buffer array to be used in the update
+    field_buffer = Array{T}(undef, ix, iy, 2, nthreads())
 
     return StateVectors(state_particles, state_truth), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), field_buffer
 end
 
-function set_initial_state!(states::StateVectors, model_matrices::LLW2d.Matrices{T},
+function set_initial_state!(states::StateVectors, model_matrices::SPEEDY.Matrices,
+=======
+function set_initial_state!(states::StateVectors, model_matrices::SPEEDY.Matrices{T},
+>>>>>>> fd5d2a8 (Addition of speedy files)
                             field_buffer::AbstractArray{T, 4},
                             rng::AbstractVector{<:Random.AbstractRNG},
                             nprt_per_rank::Int,
                             params::ModelParameters) where T
 
     # Set true initial state
-    LLW2d.initheight!(@view(states.truth[:, :, 1]), model_matrices, params.dx, params.dy,
+<<<<<<< HEAD
+    # Read in the initial nature run - just surface pressure
+    read_grd!(string(params.nature_dir,params.IDate,".grd"), params.nlon, params.nlat, params.nlev, @view(states.truth[:,:,1]))
+=======
+    SPEEDY.initheight!(@view(states.truth[:, :, 1]), model_matrices, params.dx, params.dy,
                       params.source_size, params.peak_height, params.peak_position)
 
+>>>>>>> fd5d2a8 (Addition of speedy files)
     # Create generator for the initial random field
     x,y = get_axes(params)
     initial_grf = init_gaussian_random_field_generator(params.lambda_initial_state,
@@ -393,6 +630,24 @@ function set_initial_state!(states::StateVectors, model_matrices::LLW2d.Matrices
 
 end
 
+<<<<<<< HEAD
+# Set station locations.
+function set_stations!(stations::StationVectors, params::ModelParameters) where T
+    set_stations!(stations.ist,
+                  stations.jst,
+                  params.station_filename)
+
+end
+
+function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::String) where T
+    f = open(filename,"r")
+    readline(f)
+    readline(f)
+    for line in eachline(f)
+        append!(ist, parse(Int64,split(line)[1]))
+        append!(jst, parse(Int64,split(line)[2]))
+    end
+=======
 function set_stations!(stations::StationVectors, params::ModelParameters) where T
 
     set_stations!(stations.ist,
@@ -414,9 +669,10 @@ function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::Strin
         ist .= floor.(Int, coords[:,1] / dx)
         jst .= floor.(Int, coords[:,2] / dy)
     else
-        LLW2d.set_stations!(ist,jst,distance_x,distance_y,boundary_x,boundary_y,dx,dy)
+        SPEEDY.set_stations!(ist,jst,distance_x,distance_y,boundary_x,boundary_y,dx,dy)
     end
 
+>>>>>>> fd5d2a8 (Addition of speedy files)
 end
 
 struct ModelData{A,B,C,D,E,F,G,H}
@@ -446,25 +702,18 @@ function ParticleDA.set_particles!(d::ModelData, particles::AbstractArray{T}) wh
     d.states.particles .= particles
 
 end
-ParticleDA.get_grid_size(d::ModelData) = d.model_params.nx,d.model_params.ny
-ParticleDA.get_grid_domain_size(d::ModelData) = d.model_params.x_length,d.model_params.y_length
+<<<<<<< HEAD
+ParticleDA.get_grid_size(d::ModelData) = d.model_params.nlon,d.model_params.nlat#,d.model_params.nlev
+ParticleDA.get_grid_domain_size(d::ModelData) = d.model_params.lon_length,d.model_params.lat_length
 ParticleDA.get_grid_cell_size(d::ModelData) = d.model_params.dx,d.model_params.dy
 ParticleDA.get_n_state_var(d::ModelData) = d.model_params.n_state_var
 
 function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, rng::Vector{<:Random.AbstractRNG})
-    print(model_params_dict, my_rank)
-    model_params = ParticleDA.get_params(ModelParameters, get(model_params_dict, "llw2d", Dict()))
+    model_params = ParticleDA.get_params(ModelParameters, get(model_params_dict, "speedy", Dict()))
     states, observations, stations, field_buffer = init_arrays(model_params, nprt_per_rank)
-
     background_grf = init_gaussian_random_field_generator(model_params)
-
-    # Set up tsunami model
-    model_matrices = LLW2d.setup(model_params.nx,
-                                 model_params.ny,
-                                 model_params.bathymetry_setup,
-                                 model_params.absorber_thickness_fraction,
-                                 model_params.boundary_damping,
-                                 model_params.cutoff_depth)
+    # # Set up model
+    model_matrices = SPEEDY.setup(model_params.nlon,model_params.nlat, model_params.nlev)
 
     set_stations!(stations, model_params)
 
@@ -472,25 +721,123 @@ function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, rng
 
     return ModelData(model_params, states, observations, stations, field_buffer, background_grf, model_matrices, rng)
 end
+function read_grd!(filename::String,nlon::Int, nlat::Int, nlev::Int,truth::AbstractMatrix{T}) where T
+
+    nij0 = nlon*nlat
+    iolen = 4
+    nv3d = 4
+    nv2d = 2
+
+    v3d = Array{Float32, 4}(undef, nlon, nlat, nlev, nv3d)
+    v2d = Array{Float32, 3}(undef, nlon, nlat, nv2d)
+
+    f = FortranFile(filename, access="direct", recl=nij0*iolen, convert="big-endian")
+
+    irec = 1
+
+    for n = 1:nv3d
+        for k = 1:nlev
+            v3d[:,:,k,n] = read(f, (Float32, nlon, nlat), rec=irec)
+            irec += 1
+        end
+    end
+
+    for n = 1:nv2d
+        v2d[:,:,n] = read(f, (Float32, nlon, nlat), rec = irec)
+        irec += 1
+    end
+
+    close(f)
+    truth .= v2d[:,:,1]
+end
+
+function write_grd(filename::String,nlon::Int, nlat::Int, nlev::Int,truth::AbstractMatrix{T}) where T
+
+    nij0 = nlon*nlat
+    iolen = 4
+    nv3d = 4
+    nv2d = 2
+
+    v3d = Array{Float32, 4}(undef, nlon, nlat, nlev, nv3d)
+    v2d = Array{Float32, 3}(undef, nlon, nlat, 1)
+    v2d .= truth
+    f = FortranFile(filename, access="direct", recl=nij0*iolen, convert="big-endian")
+
+    irec = 1
+    write(f, v2d, rec = irec)
+    close(f)
+end
 
 function ParticleDA.update_truth!(d::ModelData, _)
-    tsunami_update!(@view(d.field_buffer[:, :, 1, 1]),
-                    @view(d.field_buffer[:, :, 2, 1]),
-                    d.states.truth, d.model_matrices, d.model_params)
-
     # Get observation from true synthetic wavefield
     get_obs!(d.observations.truth, d.states.truth, d.stations.ist, d.stations.jst, d.model_params)
     return d.observations.truth
 end
 
 function ParticleDA.update_particle_dynamics!(d::ModelData, nprt_per_rank)
-    # Update dynamics
+    # SPEEDY file names
     Threads.@threads for ip in 1:nprt_per_rank
-        tsunami_update!(@view(d.field_buffer[:, :, 1, threadid()]), @view(d.field_buffer[:, :, 2, threadid()]),
-                        @view(d.states.particles[:, :, :, ip]), d.model_matrices, d.model_params)
+        write_grd(string(d.model_params.output_folder,"/DATA/ensemble/anal/",ip,'/',d.model_params.IDate,".grd"),d.model_params.nlon, d.model_params.nlat, d.model_params.nlev,@view(d.states.particles[:, :, 1, ip]))
+        speedy_update!(d.model_params.SPEEDY,d.model_params.output_folder,d.model_params.IDate,d.model_params.dtDate,string(ip),"1")
+        # Read back in the data and update the states
+        read_grd!(string(d.model_params.output_folder,"/DATA/ensemble/gues/1/",d.model_params.dtDate,".grd"), d.model_params.nlon, d.model_params.nlat, d.model_params.nlev,@view(d.states.particles[:, :, 1, ip]))
     end
 end
 
+=======
+ParticleDA.get_grid_size(d::ModelData) = d.model_params.ix,d.model_params.iy
+ParticleDA.get_grid_domain_size(d::ModelData) = d.model_params.x_length,d.model_params.y_length
+ParticleDA.get_grid_cell_size(d::ModelData) = d.model_params.dx,d.model_params.dy
+ParticleDA.get_n_state_var(d::ModelData) = d.model_params.n_state_var
+
+function ParticleDA.update_truth!(d::ModelData, _)
+    ### Read in the SPEEDY model nature runs
+
+    # Get observation from true synthetic wavefield
+    get_obs!(d.observations.truth, d.states.truth, d.stations.ist, d.stations.jst, d.model_params)
+    return d.observations.truth
+end
+
+function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, rng::Vector{<:Random.AbstractRNG})
+    model_params = ParticleDA.get_params(ModelParameters, get(model_params_dict, "speedy", Dict()))
+    states, observations, stations, field_buffer = init_arrays(model_params, nprt_per_rank)
+
+    background_grf = init_gaussian_random_field_generator(model_params)
+
+    # Set up tsunami model
+    model_matrices = SPEEDY.setup(model_params.ix,
+                                 model_params.iy)
+
+    # set_stations!(stations, model_params)
+
+    # set_initial_state!(states, model_matrices, field_buffer, rng, nprt_per_rank, model_params)
+
+    return ModelData(model_params, states, observations, stations, field_buffer, background_grf, model_matrices, rng)
+end
+
+
+function speedy_update!(SPEEDY::String,
+                        output::String,
+                        YMDH::Int,
+                        TYMDH::Int,
+                        MEM::Int,
+                        PROC::Int,
+                        state::AbstractArray{T,6})
+    # Path to the bash script which carries out the forecast
+    speedy = string(SPEEDY,"/letkf/run/ensfcst.sh")
+    # Bash script call to speedy
+    run(`$speedy $output $YMDH $TYMDH $MEM $N`)
+    # Read back in the data and update the states
+
+end
+
+function ParticleDA.update_particle_dynamics!(d::ModelData, nprt_per_rank)
+    # Update dynamics
+    Threads.@threads for ip in 1:nprt_per_rank
+        speedy_update!(d.SPEEDY, d.output, d.time,d.dt,d.m,ip,d.states.particles)
+    end
+end
+>>>>>>> fd5d2a8 (Addition of speedy files)
 function ParticleDA.update_particle_noise!(d::ModelData, nprt_per_rank)
     # Add process noise
     add_random_field!(d.states.particles,
@@ -541,33 +888,32 @@ function write_params(output_filename, params)
     close(file)
 
 end
-
-function write_grid(output_filename, params)
-
-    h5open(output_filename, "cw") do file
-
-        if !haskey(file, params.title_grid)
-
-            # Write grid axes
-            group = create_group(file, params.title_grid)
-            x,y = get_axes(params)
-            #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
-            ds_x,dtype_x = create_dataset(group, "x", collect(x))
-            ds_y,dtype_x = create_dataset(group, "y", collect(x))
-            ds_x[1:params.nx] = collect(x)
-            ds_y[1:params.ny] = collect(y)
-            attributes(ds_x)["Unit"] = "m"
-            attributes(ds_y)["Unit"] = "m"
-
-        else
-
-            @warn "Write failed, group " * params.title_grid * " already exists in " * file.filename * "!"
-
-        end
-
-    end
-
-end
+# function write_grid(output_filename, params)
+#
+#     h5open(output_filename, "cw") do file
+#
+#         if !haskey(file, params.title_grid)
+#
+#             # Write grid axes
+#             group = create_group(file, params.title_grid)
+#             x,y = get_axes(params)
+#             #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
+#             ds_x,dtype_x = create_dataset(group, "x", collect(x))
+#             ds_y,dtype_x = create_dataset(group, "y", collect(x))
+#             ds_x[1:params.ix] = collect(x)
+#             ds_y[1:params.iy] = collect(y)
+#             attributes(ds_x)["Unit"] = "m"
+#             attributes(ds_y)["Unit"] = "m"
+#
+#         else
+#
+#             @warn "Write failed, group " * params.title_grid * " already exists in " * file.filename * "!"
+#
+#         end
+#
+#     end
+#
+# end
 
 function write_stations(output_filename, ist::AbstractVector, jst::AbstractVector, params::ModelParameters) where T
 
@@ -632,8 +978,13 @@ end
 
 function ParticleDA.write_snapshot(output_filename::AbstractString,
                                    states::StateVectors,
+<<<<<<< HEAD
+                                   avg::AbstractArray{T,1},
+                                   var::AbstractArray{T,1},
+=======
                                    avg::AbstractArray{T,3},
                                    var::AbstractArray{T,3},
+>>>>>>> fd5d2a8 (Addition of speedy files)
                                    weights::AbstractVector{T},
                                    it::Int,
                                    params::ModelParameters) where T

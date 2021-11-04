@@ -1,4 +1,5 @@
 module Default_params
+using Dates
 
 export FilterParameters
 
@@ -20,7 +21,7 @@ Base.@kwdef struct FilterParameters{T<:AbstractFloat}
 
     master_rank::Int = 0
 
-    n_time_step::Int = 20
+    # n_time_step::Int = 0
     verbose::Bool = false
 
     output_filename::String = "particle_da.h5"
@@ -32,6 +33,21 @@ Base.@kwdef struct FilterParameters{T<:AbstractFloat}
     random_seed::Int = 12345
 
     enable_timers::Bool = false
+
+    # Initial date
+    IYYYY::Int = 1982
+    IMM::Int = 01
+    IDD::Int = 01
+    IHH::Int = 00
+
+    # Final date
+    FYYYY::Int = 1983
+    FMM::Int = 03
+    FDD::Int = 01
+    FHH::Int = 00
+    Hinc::Int = 6
+
+    n_time_step::Int = length(DateTime(IYYYY,IMM,IDD,IHH):Hour(Hinc):DateTime(FYYYY,FMM,FDD,FHH))
 
 end
 

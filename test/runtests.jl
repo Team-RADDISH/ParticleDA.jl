@@ -173,12 +173,12 @@ end
         Model.write_field(file, @view(data1[:,:,1]), tstep, "m", model_params.title_syn, "height", "unit test", model_params)
         Model.write_field(file, @view(data2[:,:,1]), tstep, "inch", model_params.title_avg,  "height", "unit test", model_params)
     end
-    @test h5read(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_syn * "/t0000/height") ≈ data1
-    @test h5read(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_avg * "/t0000/height") ≈ data2
-    attr = h5readattr(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_syn * "/t0000/height")
+    @test h5read(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_syn * "/t0/height") ≈ data1
+    @test h5read(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_avg * "/t0/height") ≈ data2
+    attr = h5readattr(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_syn * "/t0/height")
     @test attr["Unit"] == "m"
     @test attr["Time step"] == tstep
-    attr = h5readattr(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_avg * "/t0000/height")
+    attr = h5readattr(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_avg * "/t0/height")
     @test attr["Unit"] == "inch"
     @test attr["Time step"] == tstep
     Model.write_params(filter_params.output_filename, model_params)
@@ -208,16 +208,6 @@ end
     @test attr["Unit"] == "m"
 
     rm(filter_params.output_filename, force=true)
-
-    # Model data and get particles
-    input_file = joinpath(dirname(pathof(ParticleDA)), "..", "test", "integration_test_1.yaml")
-    model_params_dict = get(ParticleDA.read_input_file(input_file), "model", Dict())
-    nprt_per_rank = 1
-    my_rank = 0
-    _rng = [Random.MersenneTwister()]
-    model_data = Model.init(model_params_dict, nprt_per_rank, my_rank, _rng)
-    # Make sure `get_particles` always returns the same array
-    @test pointer(ParticleDA.get_particles(model_data)) == pointer(ParticleDA.get_particles(model_data))
 end
 
 @testset "ParticleDA integration tests" begin
