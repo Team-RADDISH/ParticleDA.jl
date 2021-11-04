@@ -1,0 +1,8 @@
+filter:
+  nprt: 2
+model:
+  speedy:
+    nlon: 96
+    nlat: 48
+    IDate: "1982010100"
+    dtDate: "1982010106"
