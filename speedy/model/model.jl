@@ -9,7 +9,8 @@ using FieldMetadata
 using FortranFiles
 using Setfield
 using Dates
-# include("../params.jl")
+using PlotlyJS
+
 # using .Default_params
 include("speedy.jl")
 using .SPEEDY
@@ -23,8 +24,6 @@ Parameters for the model. Keyword arguments:
 * `dtDate::String` : Incremental date in the format: YYYYmmddHH
 * `Hinc::Int` : Hourly increment
 * `obs_network::String` : Location of observations (real or uniform)
-* `nobs::Int` : Number of observations
-* `n_state_var::Int`: Number of variables in the state vector
 * `nobs::Int` : Number of observation stations
 * `lambda::AbstractFloat` : Length scale for Matérn covariance kernel in background noise
 * `nu::AbstractFloat` : Smoothess parameter for Matérn covariance kernel in background noise
@@ -37,9 +36,6 @@ Parameters for the model. Keyword arguments:
 * `particle_initial_state::String` : Initial state of the particles before noise is added. Possible options are
   * "zero" : initialise height and velocity to 0 everywhere
   * "true" : copy the true initial state
-* `absorber_thickness_fraction::Float` : Thickness of absorber for sponge absorbing boundary conditions, fraction of grid size
-* `boundary_damping::Float` : damping for boundaries
-* `cutoff_depth::Float` : Shallowest water depth
 * `obs_noise_std::Float`: Standard deviation of noise added to observations of the true state
 * `particle_dump_file::String`: file name for dump of particle state vectors
 * `particle_dump_time::Int`: list of (one more more) time steps to dump particle states
@@ -59,50 +55,15 @@ Parameters for the model. Keyword arguments:
 
 Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     # Initial date
-    # IDate::String = Dates.format(DateTime(1982, 01, 01, 00), "YYYYmmddHH")
     IDate::String=""
+    # Incremental date
     dtDate::String=""
     # Hour interval
     Hinc::Int = 6
-    # Number of ensemble members
-    # n_ens::Int = 20
-
-    # Number of MPI processes to use
-    # n_procs::Int = 2
-
-    # Nature run resolution (choose t30 or t39)
-    # nat_res::String = "t30"
-
-    # # Use perturbed parameters for model or not
-    # pert::Int = 0
-    #
-    # # Save all members or not (if it's 0 then only the mean and spread are saved)
-    # save_ens::Int = 0
-
     # Choose observation network (choose "real" or "uniform")
     obs_network::String = "real"
+    # Number of obs stations
     nobs::Int = 416
-    # Observation errors
-    # u_err::T = 1.0
-    # v_err::T = 1.0
-    # t_err::T = 1.0
-    # q_err::T = 1.0e-03
-    # ps_err::T = 1.0e3
-
-    # RTPP factor
-    # rtpp::T = 0.0
-
-    # Horizontal and vertical covariance localisation length scales (in metres and
-    # sigma coordinates, respectively)
-    # hor_loc::T = 1000.0
-    # ver_loc::T = 0.1
-
-    # Multiplicative covariance inflation factor (negative means use adaptive
-    # inflation
-    # cov_infl::T = -1.01
-
-    # Additive inflation directory (set "0" if you don't want to use it)
-    # addi_dir::Int = 0
 
     lambda::Vector{T} = [1.0e4, 1.0e4, 1.0e4]
     nu::Vector{T} = [2.5, 2.5, 2.5]
@@ -124,14 +85,14 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     title_grid::String = "grid"
     title_stations::String = "stations"
     title_params::String = "params"
-
-    # obs_noise_std::T = 1.0
-
     particle_dump_file = "particle_dump.h5"
     particle_dump_time = [-1]
+    obs_noise_std::T = 1.0
     #Path to the the local speedy directory
     SPEEDY::String = "/Users/dangiles/Documents/UCL/Raddish/speedy"
     output_folder::String = string(pwd(),"/speedy")
+    guess_folder::String = string(output_folder,"/DATA/ensemble/gues/")
+    anal_folder::String = string(output_folder,"/DATA/ensemble/anal/")
     station_filename::String = string(SPEEDY,"/obs/networks/",obs_network,".txt")
     nature_dir::String = string(SPEEDY,"/DATA/nature/")
     nlon::Int = 96
@@ -147,6 +108,8 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     # nv2d::Int = 2
     nlev::Int = 8
     n_state_var::Int = 1
+    n_2d::Int = 2
+    n_3d::Int = 4
 
 end
 function step_datetime(idate::String,dtdate::String)
@@ -154,12 +117,6 @@ function step_datetime(idate::String,dtdate::String)
     new_dtdate = Dates.format(DateTime(dtdate, "YYYYmmddHH") + Dates.Hour(6),"YYYYmmddHH")
     return new_idate,new_dtdate
 end
-
-
-# function set_time!(model_params::ModelParameters)
-#     @view model_params.IDate[..] = Dates.format(DateTime(model_params.IYYYY,model_params.IMM,model_params.IDD,model_params.IHH), "YYYYmmddHH")
-#     @view model_params.dtDate[..] = Dates.format(DateTime(model_params.dYYYY,model_params.dMM,model_params.dDD,model_params.dHH), "YYYYmmddHH")
-# end
 
 
 function ParticleDA.get_params(T::Type{ModelParameters}, user_input_dict::Dict)
@@ -238,7 +195,7 @@ end
 @name @description @unit struct StateVectors{T<:AbstractArray, S<:AbstractArray}
 
     particles::T | ("u","v","T","q","ps","rain") | ("velocity x-component","velocity y-component","Temperature", "Specific Humidity", "Pressure", "Rain") | ("m/s","m/s","K","kg/kg","Pa","mm/hr")
-    truth::S | ("u","v","T","q","ps","rain") | ("velocity x-component","velocity y-component","Temperature", "Specific Humidity", "Pressure", "Rain") | ("m/s","m/s","K","kg/kg","Pa","mm/hr")
+    truth::S | ("ps") | ("Pressure") | ("kPa")
 
 end
 
@@ -311,7 +268,7 @@ function sample_gaussian_random_field!(field::AbstractMatrix{T},
 end
 
 # Add a gaussian random field to the height in the state vector of all particles
-function add_random_field!(state::AbstractArray{T,4},
+function add_random_field!(state::AbstractArray{T,5},
                            field_buffer::AbstractArray{T,4},
                            generators::Vector{<:RandomField},
                            rng::AbstractVector{<:Random.AbstractRNG},
@@ -320,12 +277,12 @@ function add_random_field!(state::AbstractArray{T,4},
 
     Threads.@threads for ip in 1:nprt
 
-        for ivar in 1:nvar
+        # for ivar in 1:nvar
 
-            sample_gaussian_random_field!(@view(field_buffer[:, :, 1, threadid()]), generators[ivar], rng[threadid()])
-            @view(state[:, :, ivar, ip]) .+= @view(field_buffer[:, :, 1, threadid()])
+        sample_gaussian_random_field!(@view(field_buffer[:, :, 1, threadid()]), generators[1], rng[threadid()])
+        @view(state[:, :, :, 5, ip]) .+= @view(field_buffer[:, :, 1, threadid()])
 
-        end
+        # end
 
     end
 
@@ -348,11 +305,11 @@ end
 
 function init_arrays(params::ModelParameters, nprt_per_rank)
 
-    return init_arrays(params.nlon, params.nlat, params.nlev, params.n_state_var, params.nobs, nprt_per_rank)
+    return init_arrays(params.nlon, params.nlat, params.nlev, params.n_2d, params.n_3d, params.n_state_var, params.nobs, nprt_per_rank)
 
 end
 
-function init_arrays(ix::Int, iy::Int, iz::Int, n_state_var::Int, nobs::Int, nprt_per_rank::Int)
+function init_arrays(ix::Int, iy::Int, iz::Int, n2d::Int, n3d::Int, n_state_var::Int, nobs::Int, nprt_per_rank::Int)
 
     # TODO: ideally this will be an argument of the function, to choose a
     # different datatype.
@@ -361,7 +318,8 @@ function init_arrays(ix::Int, iy::Int, iz::Int, n_state_var::Int, nobs::Int, npr
     state_avg = zeros(T, ix, iy, n_state_var) # average of particle state vectors
     state_var = zeros(T, ix, iy, n_state_var) # variance of particle state vectors
 
-    state_particles = zeros(T, ix, iy, n_state_var, nprt_per_rank)
+    # state_particles_2d = zeros(T, ix, iy, n2d, nprt_per_rank)
+    state_particles = zeros(T, ix, iy, iz, (n3d+n2d), nprt_per_rank)
     state_truth = zeros(T, ix, iy, n_state_var) # model vector: true wavefield (observation)
     obs_truth = Vector{T}(undef, nobs)          # observed
     obs_model = Matrix{T}(undef, nobs, nprt_per_rank) # forecasted
@@ -376,6 +334,30 @@ function init_arrays(ix::Int, iy::Int, iz::Int, n_state_var::Int, nobs::Int, npr
     return StateVectors(state_particles, state_truth), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), field_buffer
 end
 
+function maps1(data,Idate,i)
+    trace = contour(
+            x=LinRange(0, 360, 96), # horizontal axis
+            y=LinRange(-90,90, 48), # vertical axis
+            z=data,
+            contours_coloring="lines",
+            line_width=2,
+            colorbar=attr(title=string("Surface Pressure (hPa)"),
+            titleside="right",
+            titlefont=attr(
+                size=14,
+                family="Arial, sans-serif")))
+    layout=Layout(
+        title=attr(
+        text= string(Idate),
+        xanchor= "center",
+        yanchor= "top"),
+        xaxis_title="Lon (•)",
+        yaxis_title="Lat (•)",
+        )
+    ps = plot(trace, layout)
+    savefig(ps,string("/Users/dangiles/.julia/dev/ParticleDA/speedy/DATA/ensemble/anal/",string(i),".png"))
+end
+
 function set_initial_state!(states::StateVectors, model_matrices::SPEEDY.Matrices,
                             field_buffer::AbstractArray{T, 4},
                             rng::AbstractVector{<:Random.AbstractRNG},
@@ -384,7 +366,11 @@ function set_initial_state!(states::StateVectors, model_matrices::SPEEDY.Matrice
 
     # Set true initial state
     # Read in the initial nature run - just surface pressure
-    read_grd!(string(params.nature_dir,params.IDate,".grd"), params.nlon, params.nlat, params.nlev, @view(states.truth[:,:,1]))
+    read_ps!(string(params.nature_dir,params.IDate,".grd"), params.nlon, params.nlat, params.nlev, @view(states.truth[:,:,1]))
+    Threads.@threads for ip in 1:nprt_per_rank
+        read_grd!(string(params.nature_dir,params.IDate,".grd"), params.nlon, params.nlat, params.nlev, @view(states.particles[:,:,:,:,ip]))
+    end
+
     # Create generator for the initial random field
     x,y = get_axes(params)
     initial_grf = init_gaussian_random_field_generator(params.lambda_initial_state,
@@ -399,11 +385,10 @@ function set_initial_state!(states::StateVectors, model_matrices::SPEEDY.Matrice
     # to get the default behaviour
 
     if params.particle_initial_state == "true"
-        states.particles .= states.truth
+        states.particles[:,:,1,5,1] .= states.truth
     end
-
     # Add samples of the initial random field to all particles
-    add_random_field!(states.particles, field_buffer, initial_grf, rng, params.n_state_var, nprt_per_rank)
+    add_random_field!(states.particles, field_buffer, initial_grf, rng, (params.n_2d + params.n_3d), nprt_per_rank)
 
 end
 
@@ -425,7 +410,7 @@ function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::Strin
     end
 end
 
-struct ModelData{A,B,C,D,E,F,G,H}
+struct ModelData{A,B,C,D,E,F,G,H,I}
     model_params::A
     states::B
     observations::C
@@ -434,6 +419,7 @@ struct ModelData{A,B,C,D,E,F,G,H}
     background_grf::F
     model_matrices::G
     rng::H
+    dates::I
 end
 ParticleDA.get_particles(d::ModelData) = d.states.particles
 # TODO: we should probably get rid of `get_truth`: it is only used as return
@@ -452,25 +438,55 @@ function ParticleDA.set_particles!(d::ModelData, particles::AbstractArray{T}) wh
     d.states.particles .= particles
 
 end
-ParticleDA.get_grid_size(d::ModelData) = d.model_params.nlon,d.model_params.nlat#,d.model_params.nlev
+ParticleDA.get_grid_size(d::ModelData) = d.model_params.nlon,d.model_params.nlat,d.model_params.nlev
 ParticleDA.get_grid_domain_size(d::ModelData) = d.model_params.lon_length,d.model_params.lat_length
 ParticleDA.get_grid_cell_size(d::ModelData) = d.model_params.dx,d.model_params.dy
-ParticleDA.get_n_state_var(d::ModelData) = d.model_params.n_state_var
+ParticleDA.get_n_state_var(d::ModelData) = d.model_params.n_2d+d.model_params.n_3d
 
 function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, rng::Vector{<:Random.AbstractRNG})
     model_params = ParticleDA.get_params(ModelParameters, get(model_params_dict, "speedy", Dict()))
     states, observations, stations, field_buffer = init_arrays(model_params, nprt_per_rank)
     background_grf = init_gaussian_random_field_generator(model_params)
-    # # Set up model
+    # Set up model
     model_matrices = SPEEDY.setup(model_params.nlon,model_params.nlat, model_params.nlev)
-
+    model_dates = [model_params.IDate,model_params.dtDate]
     set_stations!(stations, model_params)
 
     set_initial_state!(states, model_matrices, field_buffer, rng, nprt_per_rank, model_params)
 
-    return ModelData(model_params, states, observations, stations, field_buffer, background_grf, model_matrices, rng)
+    return ModelData(model_params, states, observations, stations, field_buffer, background_grf, model_matrices, rng, model_dates)
 end
-function read_grd!(filename::String,nlon::Int, nlat::Int, nlev::Int,truth::AbstractMatrix{T}) where T
+function read_grd!(filename::String,nlon::Int, nlat::Int, nlev::Int,truth::AbstractArray{T}) where T
+
+    nij0 = nlon*nlat
+    iolen = 4
+    nv3d = 4
+    nv2d = 2
+
+    # v3d = Array{Float32, 4}(undef, nlon, nlat, nlev, nv3d)
+    # v2d = Array{Float32, 3}(undef, nlon, nlat, nv2d)
+
+    f = FortranFile(filename, access="direct", recl=nij0*iolen, convert="big-endian")
+
+    irec = 1
+
+    for n = 1:nv3d
+        for k = 1:nlev
+            truth[:,:,k,n] .= read(f, (Float32, nlon, nlat), rec=irec)
+            irec += 1
+        end
+    end
+
+    for n = 1:nv2d
+        truth[:,:,1,(n+nv3d)] .= read(f, (Float32, nlon, nlat), rec = irec)
+        irec += 1
+    end
+
+    close(f)
+
+end
+
+function read_ps!(filename::String,nlon::Int, nlat::Int, nlev::Int,truth::AbstractMatrix{T}) where T
 
     nij0 = nlon*nlat
     iolen = 4
@@ -500,6 +516,24 @@ function read_grd!(filename::String,nlon::Int, nlat::Int, nlev::Int,truth::Abstr
     truth .= v2d[:,:,1]
 end
 
+function write_fortran(filename::String,nlon::Int, nlat::Int, nlev::Int,dataset::AbstractArray{T}) where T
+
+    nij0 = nlon*nlat
+    iolen = 4
+    nv3d = 4
+    nv2d = 2
+    iolen = 4
+    v3d = Array{Float32, 4}(undef, nlon, nlat, nlev, nv3d)
+    v2d = Array{Float32, 3}(undef, nlon, nlat, nv2d)
+    v3d .= dataset[:,:,:,:4]
+    # print(size(v2d), size(dataset[:,:,1,5:6]))
+    v2d .= dataset[:,:,1,5:6]
+
+    f = FortranFile(filename, "w", convert="big-endian", access="direct", recl=(nij0*nv3d*nlev*iolen+nij0*nv2d*iolen))
+    write(f,v3d,v2d, rec=1)
+    close(f)
+end
+
 function ParticleDA.update_truth!(d::ModelData, _)
     # Get observation from true synthetic wavefield
     get_obs!(d.observations.truth, d.states.truth, d.stations.ist, d.stations.jst, d.model_params)
@@ -509,11 +543,20 @@ end
 function ParticleDA.update_particle_dynamics!(d::ModelData, nprt_per_rank)
     # SPEEDY file names
     Threads.@threads for ip in 1:nprt_per_rank
-        speedy_update!(d.model_params.SPEEDY,d.model_params.output_folder,d.model_params.IDate,d.model_params.dtDate,string(ip),"1")
+        #Write to file
+        anal_file = string(d.model_params.anal_folder,string(ip),"/",d.dates[1],".grd")
+        write_fortran(anal_file,d.model_params.nlon, d.model_params.nlat, d.model_params.nlev,d.states.particles[:, :, :, :, ip])
+        # Update the dynamics
+        speedy_update!(d.model_params.SPEEDY,d.model_params.output_folder,d.dates[1],d.dates[2],string(ip),"1")
         # Read back in the data and update the states
-        read_grd!(string(d.model_params.output_folder,"/DATA/ensemble/gues/1/",d.model_params.dtDate,".grd"), d.model_params.nlon, d.model_params.nlat, d.model_params.nlev,@view(d.states.particles[:, :, 1, ip]))
+        guess_file = string(d.model_params.guess_folder,string(ip),"/",d.dates[2],".grd")
+        read_grd!(guess_file, d.model_params.nlon, d.model_params.nlat, d.model_params.nlev,@view(d.states.particles[:, :, :, :, ip]))
+        # Check by plotting output
+        # maps1(d.states.particles[:,:,1,5,ip],d.dates[2],(ip+2))
     end
-    ## Need to update the time strings
+    ## Update the time strings
+    d.dates[1],d.dates[2] = step_datetime(d.dates[1],d.dates[2])
+    print(d.dates[1],',', d.dates[2],'\n')
 end
 
 function ParticleDA.update_particle_noise!(d::ModelData, nprt_per_rank)
@@ -530,10 +573,11 @@ function ParticleDA.get_particle_observations!(d::ModelData, nprt_per_rank)
     # get observations
     for ip in 1:nprt_per_rank
         get_obs!(@view(d.observations.model[:,ip]),
-                 @view(d.states.particles[:, :, :, ip]),
+                 @view(d.states.particles[:, :, 1, 5, ip]),
                  d.stations.ist,
                  d.stations.jst,
                  d.model_params)
+
     end
     return d.observations.model
 end
