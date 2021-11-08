@@ -94,7 +94,8 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     guess_folder::String = string(output_folder,"/DATA/ensemble/gues/")
     anal_folder::String = string(output_folder,"/DATA/ensemble/anal/")
     station_filename::String = string(SPEEDY,"/obs/networks/",obs_network,".txt")
-    nature_dir::String = string(SPEEDY,"/DATA/nature/")
+    # nature_dir::String = string(SPEEDY,"/DATA/nature/")
+    nature_dir::String = string(output_folder,"/DATA/init/")
     nlon::Int = 96
     nlat::Int = 48
     lon_length::T = 360.0
@@ -366,9 +367,9 @@ function set_initial_state!(states::StateVectors, model_matrices::SPEEDY.Matrice
 
     # Set true initial state
     # Read in the initial nature run - just surface pressure
-    read_ps!(string(params.nature_dir,params.IDate,".grd"), params.nlon, params.nlat, params.nlev, @view(states.truth[:,:,1]))
+    read_ps!(string(params.nature_dir,"init.grd"), params.nlon, params.nlat, params.nlev, @view(states.truth[:,:,1]))
     Threads.@threads for ip in 1:nprt_per_rank
-        read_grd!(string(params.nature_dir,params.IDate,".grd"), params.nlon, params.nlat, params.nlev, @view(states.particles[:,:,:,:,ip]))
+        read_grd!(string(params.nature_dir,"init.grd"), params.nlon, params.nlat, params.nlev, @view(states.particles[:,:,:,:,ip]))
     end
 
     # Create generator for the initial random field
@@ -526,11 +527,22 @@ function write_fortran(filename::String,nlon::Int, nlat::Int, nlev::Int,dataset:
     v3d = Array{Float32, 4}(undef, nlon, nlat, nlev, nv3d)
     v2d = Array{Float32, 3}(undef, nlon, nlat, nv2d)
     v3d .= dataset[:,:,:,:4]
-    # print(size(v2d), size(dataset[:,:,1,5:6]))
     v2d .= dataset[:,:,1,5:6]
-
-    f = FortranFile(filename, "w", convert="big-endian", access="direct", recl=(nij0*nv3d*nlev*iolen+nij0*nv2d*iolen))
-    write(f,v3d,v2d, rec=1)
+    f = FortranFile(filename, "w", access="direct", recl=(nij0*iolen))
+    print(Int64*iolen)
+    irec = 1
+    for n = 1:nv3d
+        write(f,Int64*iolen, rec = irec)
+        for k = 1:nlev
+            write(f,v3d[:,:,k,n],rec=irec)
+            irec=irec+1
+        end
+        write(f,Int64*iolen, rec = irec)
+    end
+    for n = 1:nv2d
+        write(f,v2d[:,:,n],rec=irec)
+        irec=irec+1
+    end
     close(f)
 end
 
