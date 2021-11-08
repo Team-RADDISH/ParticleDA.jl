@@ -528,7 +528,7 @@ function write_fortran(filename::String,nlon::Int, nlat::Int, nlev::Int,dataset:
     v2d = Array{Float32, 3}(undef, nlon, nlat, nv2d)
     v3d .= dataset[:,:,:,:4]
     v2d .= dataset[:,:,1,5:6]
-    f = FortranFile(filename, "w", access="direct", recl=(nij0*iolen))
+    f = FortranFile(filename, "w", convert="big-endian", access="direct", recl=(nij0*iolen))
     irec = 1
     for n = 1:nv3d
         for k = 1:nlev
