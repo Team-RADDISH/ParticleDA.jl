@@ -529,7 +529,6 @@ function write_fortran(filename::String,nlon::Int, nlat::Int, nlev::Int,dataset:
     v3d .= dataset[:,:,:,:4]
     v2d .= dataset[:,:,1,5:6]
     f = FortranFile(filename, "w", access="direct", recl=(nij0*iolen))
-    print(Int64*iolen)
     irec = 1
     for n = 1:nv3d
         write(f,Int64*iolen, rec = irec)

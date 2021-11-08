@@ -35,7 +35,7 @@ cp    $SC/ssta.grd  $MEM/fort.30
 
 # Run
 cd $MEM
-ln -fs $OUTPUT/anal/$MEM/init.grd fort.90
+ln -fs $OUTPUT/anal/$MEM/${YMDH}.grd fort.90
 ln -fs $OUTPUT/gues/$MEM/fluxes.grd fluxes.grd
 FORT2=2
 echo $FORT2 > fort.2
@@ -46,8 +46,8 @@ echo $YMDH | cut -c9-10 >> fort.2
 ./imp > out.lis 2> out.lis.2
 # Move output
 # mv ${YMDH}.grd $OUTPUT/anal_f/$MEM
-ls
-echo " Output folder $OUTPUT/gues/$MEM"
+# ls
+# echo " Output folder $OUTPUT/gues/$MEM"
 mv ${TYMDH}.grd $OUTPUT/gues/$MEM
 echo "Finished"
 exit 0
