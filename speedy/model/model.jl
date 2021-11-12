@@ -10,6 +10,7 @@ using FortranFiles
 using Setfield
 using Dates
 using PlotlyJS
+using MPI
 
 # using .Default_params
 include("speedy.jl")
@@ -161,12 +162,12 @@ function speedy_update!(SPEEDY::String,
                         output::String,
                         YMDH::String,
                         TYMDH::String,
-                        MEM::String,
-                        N::String)
+                        rank::String,
+                        particle::String)
     # Path to the bash script which carries out the forecast
     forecast = "./speedy/model/dafcst.sh"
     # Bash script call to speedy
-    run(`$forecast $SPEEDY $output $YMDH $TYMDH $MEM $N`)
+    run(`$forecast $SPEEDY $output $YMDH $TYMDH $rank $particle`)
 end
 struct RandomField{F<:GaussianRandomField,X<:AbstractArray,W<:AbstractArray,Z<:AbstractArray}
     grf::F
@@ -279,10 +280,8 @@ function add_random_field!(state::AbstractArray{T,5},
     Threads.@threads for ip in 1:nprt
 
         # for ivar in 1:nvar
-
         sample_gaussian_random_field!(@view(field_buffer[:, :, 1, threadid()]), generators[1], rng[threadid()])
-        @view(state[:, :, :, 5, ip]) .+= @view(field_buffer[:, :, 1, threadid()])
-
+        @view(state[:, :, 1, 5, ip]) .+= @view(field_buffer[:, :, 1, threadid()])
         # end
 
     end
@@ -444,6 +443,25 @@ ParticleDA.get_grid_domain_size(d::ModelData) = d.model_params.lon_length,d.mode
 ParticleDA.get_grid_cell_size(d::ModelData) = d.model_params.dx,d.model_params.dy
 ParticleDA.get_n_state_var(d::ModelData) = d.model_params.n_2d+d.model_params.n_3d
 
+
+function create_folders(output_folder::String, anal_folder::String, gues_folder::String, nprt_per_rank::Int, my_rank::Integer)
+    ens = string(output_folder,"/DATA/ensemble/")
+    run(`rm -r $ens`)
+    run(`mkdir $ens`)
+    run(`mkdir $anal_folder`)
+    run(`mkdir $gues_folder`)
+    rank_anal = string(anal_folder,my_rank)
+    rank_gues = string(gues_folder,my_rank)
+    run(`mkdir $rank_anal`)
+    run(`mkdir $rank_gues`)
+    Threads.@threads for ip in 1:nprt_per_rank
+        part_anal = string(rank_anal,"/",ip)
+        part_gues = string(rank_gues,"/",ip)
+        run(`mkdir $part_anal`)
+        run(`mkdir $part_gues`)
+    end
+end
+
 function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, rng::Vector{<:Random.AbstractRNG})
     model_params = ParticleDA.get_params(ModelParameters, get(model_params_dict, "speedy", Dict()))
     states, observations, stations, field_buffer = init_arrays(model_params, nprt_per_rank)
@@ -454,6 +472,8 @@ function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, rng
     set_stations!(stations, model_params)
 
     set_initial_state!(states, model_matrices, field_buffer, rng, nprt_per_rank, model_params)
+
+    create_folders(model_params.output_folder, model_params.anal_folder, model_params.guess_folder, nprt_per_rank, my_rank)
 
     return ModelData(model_params, states, observations, stations, field_buffer, background_grf, model_matrices, rng, model_dates)
 end
@@ -467,7 +487,7 @@ function read_grd!(filename::String,nlon::Int, nlat::Int, nlev::Int,truth::Abstr
     # v3d = Array{Float32, 4}(undef, nlon, nlat, nlev, nv3d)
     # v2d = Array{Float32, 3}(undef, nlon, nlat, nv2d)
 
-    f = FortranFile(filename, access="direct", recl=nij0*iolen, convert="big-endian")
+    f = FortranFile(filename, access="direct", recl=nij0*iolen)
 
     irec = 1
 
@@ -497,7 +517,7 @@ function read_ps!(filename::String,nlon::Int, nlat::Int, nlev::Int,truth::Abstra
     v3d = Array{Float32, 4}(undef, nlon, nlat, nlev, nv3d)
     v2d = Array{Float32, 3}(undef, nlon, nlat, nv2d)
 
-    f = FortranFile(filename, access="direct", recl=nij0*iolen, convert="big-endian")
+    f = FortranFile(filename, access="direct", recl=nij0*iolen)
 
     irec = 1
 
@@ -514,7 +534,7 @@ function read_ps!(filename::String,nlon::Int, nlat::Int, nlev::Int,truth::Abstra
     end
 
     close(f)
-    truth .= v2d[:,:,1]
+
 end
 
 function write_fortran(filename::String,nlon::Int, nlat::Int, nlev::Int,dataset::AbstractArray{T}) where T
@@ -526,9 +546,10 @@ function write_fortran(filename::String,nlon::Int, nlat::Int, nlev::Int,dataset:
     iolen = 4
     v3d = Array{Float32, 4}(undef, nlon, nlat, nlev, nv3d)
     v2d = Array{Float32, 3}(undef, nlon, nlat, nv2d)
-    v3d .= dataset[:,:,:,:4]
+    v3d .= dataset[:,:,:,1:4]
     v2d .= dataset[:,:,1,5:6]
-    f = FortranFile(filename, "w", convert="big-endian", access="direct", recl=(nij0*iolen))
+
+    f = FortranFile(filename, "w", access="direct", recl=(nij0*iolen))
     irec = 1
     for n = 1:nv3d
         for k = 1:nlev
@@ -550,15 +571,16 @@ function ParticleDA.update_truth!(d::ModelData, _)
 end
 
 function ParticleDA.update_particle_dynamics!(d::ModelData, nprt_per_rank)
+    my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
     # SPEEDY file names
     Threads.@threads for ip in 1:nprt_per_rank
         #Write to file
-        anal_file = string(d.model_params.anal_folder,string(ip),"/",d.dates[1],".grd")
+        anal_file = string(d.model_params.anal_folder,my_rank,"/",ip,"/",d.dates[1],".grd")
         write_fortran(anal_file,d.model_params.nlon, d.model_params.nlat, d.model_params.nlev,d.states.particles[:, :, :, :, ip])
         # Update the dynamics
-        speedy_update!(d.model_params.SPEEDY,d.model_params.output_folder,d.dates[1],d.dates[2],string(ip),"1")
+        speedy_update!(d.model_params.SPEEDY,d.model_params.output_folder,d.dates[1],d.dates[2],string(my_rank),string(ip))
         # Read back in the data and update the states
-        guess_file = string(d.model_params.guess_folder,string(ip),"/",d.dates[2],".grd")
+        guess_file = string(d.model_params.guess_folder,my_rank,"/",ip,"/",d.dates[2],".grd")
         read_grd!(guess_file, d.model_params.nlon, d.model_params.nlat, d.model_params.nlev,@view(d.states.particles[:, :, :, :, ip]))
         # Check by plotting output
         # maps1(d.states.particles[:,:,1,5,ip],d.dates[2],(ip+2))
