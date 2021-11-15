@@ -445,13 +445,24 @@ ParticleDA.get_n_state_var(d::ModelData) = d.model_params.n_2d+d.model_params.n_
 
 
 function create_folders(output_folder::String, anal_folder::String, gues_folder::String, nprt_per_rank::Int, my_rank::Integer)
+    MPI.Init()
+    comm = MPI.COMM_WORLD
     ens = string(output_folder,"/DATA/ensemble/")
-    run(`rm -r $ens`)
-    run(`mkdir $ens`)
-    run(`mkdir $anal_folder`)
-    run(`mkdir $gues_folder`)
+    tmp = string(output_folder,"/DATA/tmp/ensfcst/")
+    if MPI.Comm_rank(comm) == 0
+        run(`rm -r $ens`)
+        run(`rm -r $tmp`)
+        run(`mkdir $ens`)
+        run(`mkdir $tmp`)
+        run(`mkdir $anal_folder`)
+        run(`mkdir $gues_folder`)
+    end
+    MPI.Barrier(comm)
+
     rank_anal = string(anal_folder,my_rank)
     rank_gues = string(gues_folder,my_rank)
+    rank_tmp = string(tmp,my_rank)
+    run(`mkdir $rank_tmp`)
     run(`mkdir $rank_anal`)
     run(`mkdir $rank_gues`)
     Threads.@threads for ip in 1:nprt_per_rank
