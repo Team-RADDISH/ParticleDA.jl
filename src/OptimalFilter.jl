@@ -379,7 +379,7 @@ function sample_height_proposal!(height::AbstractArray{T,3},
         mul!(online_matrices.z2, offline_matrices.L, e2, 1, 1)
 
         # Restrict z1_bar to Omega1 and reshape into an array
-        online_matrices.Z1 .= online_matrices.z1_bar[i_n1_bar[1:grid.nx,1:grid.nx]]
+        online_matrices.Z1 .= online_matrices.z1_bar[i_n1_bar[1:grid.nx,1:grid.ny]]
         # Multiply z2 with R12*R22^-1 and reshape the result into an array
         online_matrices.Z2 .= (offline_matrices.R12_invR22 * online_matrices.z2)[i_n1]
 

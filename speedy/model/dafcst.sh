@@ -23,7 +23,7 @@ mkdir ${rank}
 mkdir ${rank}/${particle}
 cd ${rank}
 # cp $SPEEDY/DATA/tmp/letkf/ensfcst/imp $MEM
-cp $SPEEDY/model/tmp/imp $particle
+cp $SPEEDY/DATA/nature/imp $particle
 # Set up boundary files
 SB=$SPEEDY/model/data/bc/t30/clim
 SC=$SPEEDY/model/data/bc/t30/anom

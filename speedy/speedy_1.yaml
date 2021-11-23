@@ -1,8 +1,9 @@
 filter:
-  nprt: 2
+  nprt: 10
 model:
   speedy:
     nlon: 96
     nlat: 48
     IDate: "1982010100"
     dtDate: "1982010106"
+    ensDate: "1982020100"

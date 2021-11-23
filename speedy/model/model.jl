@@ -61,10 +61,12 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     dtDate::String=""
     # Hour interval
     Hinc::Int = 6
+    # Ensemble initialisation
+    ensDate::String=""
     # Choose observation network (choose "real" or "uniform")
     obs_network::String = "real"
     # Number of obs stations
-    nobs::Int = 416
+    nobs::Int = 1
 
     lambda::Vector{T} = [1.0e4, 1.0e4, 1.0e4]
     nu::Vector{T} = [2.5, 2.5, 2.5]
@@ -95,21 +97,20 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     guess_folder::String = string(output_folder,"/DATA/ensemble/gues/")
     anal_folder::String = string(output_folder,"/DATA/ensemble/anal/")
     station_filename::String = string(SPEEDY,"/obs/networks/",obs_network,".txt")
-    # nature_dir::String = string(SPEEDY,"/DATA/nature/")
-    nature_dir::String = string(output_folder,"/DATA/init/")
+    nature_dir::String = string(SPEEDY,"/DATA/nature/")
+    # nature_dir::String = string(output_folder,"/DATA/init/")
     nlon::Int = 96
     nlat::Int = 48
+    nlev::Int = 8
     lon_length::T = 360.0
     lat_length::T = 180.0
+    z_length::T = 1.0
     dx::T = lon_length / (nlon - 1)
     dy::T = lat_length / (nlat - 1)
+    dz::T = z_length / (nlev - 1)
 
     nij0::Int = nlon*nlat
-    # iolen::Int = 4
-    # nv3d::Int = 4
-    # nv2d::Int = 2
-    nlev::Int = 8
-    n_state_var::Int = 1
+    n_state_var::Int = 6
     n_2d::Int = 2
     n_3d::Int = 4
 
@@ -118,6 +119,11 @@ function step_datetime(idate::String,dtdate::String)
     new_idate = Dates.format(DateTime(idate, "YYYYmmddHH") + Dates.Hour(6),"YYYYmmddHH")
     new_dtdate = Dates.format(DateTime(dtdate, "YYYYmmddHH") + Dates.Hour(6),"YYYYmmddHH")
     return new_idate,new_dtdate
+end
+
+function step_ens(idate::String)
+    new_idate = Dates.format(DateTime(idate, "YYYYmmddHH") + Dates.Hour(6),"YYYYmmddHH")
+    return new_idate
 end
 
 
@@ -158,17 +164,6 @@ function get_obs!(obs::AbstractVector{T},
     end
 end
 
-function speedy_update!(SPEEDY::String,
-                        output::String,
-                        YMDH::String,
-                        TYMDH::String,
-                        rank::String,
-                        particle::String)
-    # Path to the bash script which carries out the forecast
-    forecast = "./speedy/model/dafcst.sh"
-    # Bash script call to speedy
-    run(`$forecast $SPEEDY $output $YMDH $TYMDH $rank $particle`)
-end
 struct RandomField{F<:GaussianRandomField,X<:AbstractArray,W<:AbstractArray,Z<:AbstractArray}
     grf::F
     xi::X
@@ -208,16 +203,16 @@ function get_axes(params::ModelParameters)
 end
 function get_axes(ix::Int, iy::Int, iz::Int)
     x = LinRange(0, 360, ix)
-    y = LinRange(-90,90, iy)
-    z = LinRange(0,1,iz)
+    y = LinRange(-90, 90, iy)
+    z = LinRange(0, 1, iz)
 
     return x,y,z
 end
 
 function init_gaussian_random_field_generator(params::ModelParameters)
 
-    x, y = get_axes(params)
-    return init_gaussian_random_field_generator(params.lambda,params.nu, params.sigma, x, y, params.padding, params.primes)
+    x, y, z = get_axes(params)
+    return init_gaussian_random_field_generator(params.lambda,params.nu, params.sigma, x, y, z, params.padding, params.primes)
 
 end
 
@@ -227,17 +222,17 @@ end
 function init_gaussian_random_field_generator(lambda::Vector{T},
                                               nu::Vector{T},
                                               sigma::Vector{T},
-                                              x::AbstractVector{T},
-                                              y::AbstractVector{T},
+                                              xpts::AbstractVector{T},
+                                              ypts::AbstractVector{T},
+                                              zpts::AbstractVector{T},
                                               pad::Int,
                                               primes::Bool) where T
 
-    # Let's limit ourselves to two-dimensional fields
-    dim = 2
-
+    # Let's limit ourselves to three-dimensional fields
+    dim = 3
     function _generate(l, n, s)
-        cov = CovarianceFunction(dim, Matern(l, n, σ = s))
-        grf = GaussianRandomField(cov, CirculantEmbedding(), x, y, minpadding=pad, primes=primes)
+        cov = CovarianceFunction(dim, Whittle(.1))#Matern(l, n, σ = s))
+        grf = GaussianRandomField(cov, CirculantEmbedding(), xpts, ypts, zpts)#, minpadding=pad, primes=primes)
         v = grf.data[1]
         xi = Array{eltype(grf.cov)}(undef, size(v)..., nthreads())
         w = Array{complex(float(eltype(v)))}(undef, size(v)..., nthreads())
@@ -248,40 +243,41 @@ function init_gaussian_random_field_generator(lambda::Vector{T},
     return [_generate(l, n, s) for (l, n, s) in zip(lambda, nu, sigma)]
 end
 # Get a random sample from random_field_generator using random number generator rng
-function sample_gaussian_random_field!(field::AbstractMatrix{T},
+function sample_gaussian_random_field!(field::AbstractArray{T,3},
                                        random_field_generator::RandomField,
                                        rng::Random.AbstractRNG) where T
 
-    @. @view(random_field_generator.xi[:,:,threadid()]) = randn((rng,), T)
-    sample_gaussian_random_field!(field, random_field_generator, @view(random_field_generator.xi[:,:,threadid()]))
+    @. @view(random_field_generator.xi[:,:,:,threadid()]) = randn((rng,), T)
+    sample_gaussian_random_field!(field, random_field_generator, @view(random_field_generator.xi[:,:,:,threadid()]))
 
 end
 
 # Get a random sample from random_field_generator using random_numbers
-function sample_gaussian_random_field!(field::AbstractMatrix{T},
+function sample_gaussian_random_field!(field::AbstractArray{T,3},
                                        random_field_generator::RandomField,
                                        random_numbers::AbstractArray{T}) where T
 
-    field .= GaussianRandomFields._sample!(@view(random_field_generator.w[:,:,threadid()]),
-                                           @view(random_field_generator.z[:,:,threadid()]),
+    field .= GaussianRandomFields._sample!(@view(random_field_generator.w[:,:,:,threadid()]),
+                                           @view(random_field_generator.z[:,:,:,threadid()]),
                                            random_field_generator.grf,
                                            random_numbers)
 
 end
 
 # Add a gaussian random field to the height in the state vector of all particles
-function add_random_field!(state::AbstractArray{T,5},
-                           field_buffer::AbstractArray{T,4},
+function add_random_field!(state::AbstractArray{T},
+                           field_buffer::AbstractArray{T,5},
                            generators::Vector{<:RandomField},
                            rng::AbstractVector{<:Random.AbstractRNG},
                            nvar::Int,
                            nprt::Int) where T
 
     Threads.@threads for ip in 1:nprt
-
         # for ivar in 1:nvar
-        sample_gaussian_random_field!(@view(field_buffer[:, :, 1, threadid()]), generators[1], rng[threadid()])
-        @view(state[:, :, 1, 5, ip]) .+= @view(field_buffer[:, :, 1, threadid()])
+        sample_gaussian_random_field!(@view(field_buffer[:, :, :, 1, threadid()]), generators[1], rng[threadid()])
+        @view(state[:, :, :, 5, ip]) .+= @view(field_buffer[:, :, :, 1, threadid()])
+            # sample_gaussian_random_field!(@view(field_buffer[:, :, :, ivar, threadid()]), generators[1], rng[threadid()])
+            # @view(state[:, :, :, ivar, ip]) .+= @view(field_buffer[:, :, :, ivar, threadid()])
         # end
 
     end
@@ -318,7 +314,6 @@ function init_arrays(ix::Int, iy::Int, iz::Int, n2d::Int, n3d::Int, n_state_var:
     state_avg = zeros(T, ix, iy, n_state_var) # average of particle state vectors
     state_var = zeros(T, ix, iy, n_state_var) # variance of particle state vectors
 
-    # state_particles_2d = zeros(T, ix, iy, n2d, nprt_per_rank)
     state_particles = zeros(T, ix, iy, iz, (n3d+n2d), nprt_per_rank)
     state_truth = zeros(T, ix, iy, n_state_var) # model vector: true wavefield (observation)
     obs_truth = Vector{T}(undef, nobs)          # observed
@@ -329,7 +324,7 @@ function init_arrays(ix::Int, iy::Int, iz::Int, n2d::Int, n3d::Int, n_state_var:
     jst = zeros(Int64,0)
 
     # Buffer array to be used in the update
-    field_buffer = Array{T}(undef, ix, iy, 2, nthreads())
+    field_buffer = Array{T}(undef, ix, iy, iz, n_state_var, nthreads())
 
     return StateVectors(state_particles, state_truth), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), field_buffer
 end
@@ -359,36 +354,42 @@ function maps1(data,Idate,i)
 end
 
 function set_initial_state!(states::StateVectors, model_matrices::SPEEDY.Matrices,
-                            field_buffer::AbstractArray{T, 4},
+                            field_buffer::AbstractArray{T},
                             rng::AbstractVector{<:Random.AbstractRNG},
                             nprt_per_rank::Int,
                             params::ModelParameters) where T
 
     # Set true initial state
     # Read in the initial nature run - just surface pressure
-    read_ps!(string(params.nature_dir,"init.grd"), params.nlon, params.nlat, params.nlev, @view(states.truth[:,:,1]))
+    read_ps!(string(params.nature_dir,params.IDate,".grd"), params.nlon, params.nlat, params.nlev, @view(states.truth[:,:,1]))
+    ### Read in arbitrary nature run files for the initial conditions
+    ens_date = params.ensDate
     Threads.@threads for ip in 1:nprt_per_rank
-        read_grd!(string(params.nature_dir,"init.grd"), params.nlon, params.nlat, params.nlev, @view(states.particles[:,:,:,:,ip]))
+        read_grd!(string(params.nature_dir,ens_date,".grd"), params.nlon, params.nlat, params.nlev, @view(states.particles[:,:,:,:,ip]))
+        ens_date = step_ens(ens_date)
+        # read_grd!(string(params.nature_dir,"init.grd"), params.nlon, params.nlat, params.nlev, @view(states.particles[:,:,:,:,ip]))
     end
 
     # Create generator for the initial random field
-    x,y = get_axes(params)
+    x,y,z = get_axes(params)
     initial_grf = init_gaussian_random_field_generator(params.lambda_initial_state,
                                                        params.nu_initial_state,
                                                        params.sigma_initial_state,
                                                        x,
                                                        y,
+                                                       z,
                                                        params.padding,
                                                        params.primes)
 
-    # Since states.particles is initially created as `zeros` we don't need to set it to 0 here
-    # to get the default behaviour
-
-    if params.particle_initial_state == "true"
-        states.particles[:,:,1,5,1] .= states.truth
-    end
+    # # Since states.particles is initially created as `zeros` we don't need to set it to 0 here
+    # # to get the default behaviour
+    #
+    # if params.particle_initial_state == "true"
+    #     states.particles[:,:,1,5,1] .= states.truth
+    # end
     # Add samples of the initial random field to all particles
     add_random_field!(states.particles, field_buffer, initial_grf, rng, (params.n_2d + params.n_3d), nprt_per_rank)
+
 
 end
 
@@ -396,17 +397,22 @@ end
 function set_stations!(stations::StationVectors, params::ModelParameters) where T
     set_stations!(stations.ist,
                   stations.jst,
-                  params.station_filename)
+                  params.station_filename,
+                  params.nobs)
 
 end
 
-function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::String) where T
+function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::String, nobs::Int) where T
     f = open(filename,"r")
     readline(f)
     readline(f)
+    ind = 0
     for line in eachline(f)
-        append!(ist, parse(Int64,split(line)[1]))
-        append!(jst, parse(Int64,split(line)[2]))
+        if ind < nobs
+            append!(ist, parse(Int64,split(line)[1]))
+            append!(jst, parse(Int64,split(line)[2]))
+        end
+        ind = ind + 1
     end
 end
 
@@ -439,9 +445,9 @@ function ParticleDA.set_particles!(d::ModelData, particles::AbstractArray{T}) wh
 
 end
 ParticleDA.get_grid_size(d::ModelData) = d.model_params.nlon,d.model_params.nlat,d.model_params.nlev
-ParticleDA.get_grid_domain_size(d::ModelData) = d.model_params.lon_length,d.model_params.lat_length
-ParticleDA.get_grid_cell_size(d::ModelData) = d.model_params.dx,d.model_params.dy
-ParticleDA.get_n_state_var(d::ModelData) = d.model_params.n_2d+d.model_params.n_3d
+ParticleDA.get_grid_domain_size(d::ModelData) = d.model_params.lon_length,d.model_params.lat_length,d.model_params.z_length
+ParticleDA.get_grid_cell_size(d::ModelData) = d.model_params.dx,d.model_params.dy,d.model_params.dz
+ParticleDA.get_n_state_var(d::ModelData) = d.model_params.n_state_var
 
 
 function create_folders(output_folder::String, anal_folder::String, gues_folder::String, nprt_per_rank::Int, my_rank::Integer)
@@ -543,7 +549,7 @@ function read_ps!(filename::String,nlon::Int, nlat::Int, nlev::Int,truth::Abstra
         v2d[:,:,n] = read(f, (Float32, nlon, nlat), rec = irec)
         irec += 1
     end
-
+    truth .= v2d[:,:,1]
     close(f)
 
 end
@@ -576,16 +582,35 @@ function write_fortran(filename::String,nlon::Int, nlat::Int, nlev::Int,dataset:
 end
 
 function ParticleDA.update_truth!(d::ModelData, _)
-    # Get observation from true synthetic wavefield
-    get_obs!(d.observations.truth, d.states.truth, d.stations.ist, d.stations.jst, d.model_params)
+    # Read in Nature run
+    read_ps!(string(d.model_params.nature_dir,d.dates[1],".grd"), d.model_params.nlon, d.model_params.nlat, d.model_params.nlev, @view(d.states.truth[:,:,1]))
+    print(string(d.model_params.nature_dir,d.dates[1],".grd"), '\n')
+    @show maximum(d.states.truth[:,:,1]) minimum(d.states.truth[:,:,1])
+    # Get observation from nature run
+    get_obs!(d.observations.truth, d.states.truth[:,:,1], d.stations.ist, d.stations.jst, d.model_params)
+    @show maximum(d.observations.truth) minimum(d.observations.truth)
     return d.observations.truth
+end
+
+function speedy_update!(SPEEDY::String,
+                        output::String,
+                        YMDH::String,
+                        TYMDH::String,
+                        rank::String,
+                        particle::String)
+    # Path to the bash script which carries out the forecast
+    forecast = "./speedy/model/dafcst.sh"
+    # Bash script call to speedy
+    run(`$forecast $SPEEDY $output $YMDH $TYMDH $rank $particle`)
 end
 
 function ParticleDA.update_particle_dynamics!(d::ModelData, nprt_per_rank)
     my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
     # SPEEDY file names
+    @show maximum(abs.(d.states.particles[:, :, 1, 5, 1]-d.states.particles[:, :, 1, 5, 3]))
     Threads.@threads for ip in 1:nprt_per_rank
         #Write to file
+        # @show maximum(d.states.particles[:, :, 1, 5, ip]), minimum(d.states.particles[:, :, 1, 5, ip]), ip
         anal_file = string(d.model_params.anal_folder,my_rank,"/",ip,"/",d.dates[1],".grd")
         write_fortran(anal_file,d.model_params.nlon, d.model_params.nlat, d.model_params.nlev,d.states.particles[:, :, :, :, ip])
         # Update the dynamics
@@ -596,9 +621,10 @@ function ParticleDA.update_particle_dynamics!(d::ModelData, nprt_per_rank)
         # Check by plotting output
         # maps1(d.states.particles[:,:,1,5,ip],d.dates[2],(ip+2))
     end
+    @show maximum(abs.(d.states.particles[:, :, 1, 5, 1]-d.states.particles[:, :, 1, 5, 3]))
     ## Update the time strings
     d.dates[1],d.dates[2] = step_datetime(d.dates[1],d.dates[2])
-    print(d.dates[1],',', d.dates[2],'\n')
+    @show d.dates[1], d.dates[2]
 end
 
 function ParticleDA.update_particle_noise!(d::ModelData, nprt_per_rank)
@@ -661,7 +687,7 @@ function write_grid(output_filename, params)
 
             # Write grid axes
             group = create_group(file, params.title_grid)
-            x,y = get_axes(params)
+            x,y,z = get_axes(params)
             #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
             ds_x,dtype_x = create_dataset(group, "x", collect(x))
             ds_y,dtype_x = create_dataset(group, "y", collect(x))
