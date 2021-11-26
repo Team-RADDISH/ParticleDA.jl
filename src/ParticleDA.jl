@@ -360,7 +360,7 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
     domain_size = get_grid_domain_size(model_data)
     cell_size = get_grid_cell_size(model_data)
 
-    grid = Grid(size...,cell_size...,domain_size...)
+    grid = Grid(size[1],size[2],cell_size[1],cell_size[2],domain_size[1],domain_size[2])
     grid_ext = Grid((grid.nx-1)*2, (grid.ny-1)*2, grid.dx, grid.dy, (grid.x_length-grid.dx)*2, (grid.y_length-grid.dy)*2)
 
     model_noise_params = get_model_noise_params(model_data)
@@ -392,7 +392,7 @@ function update_particle_proposal!(model_data, filter_data, filter_params, truth
         particles = get_particles(model_data)
 
         # Apply optimal proposal, the result will be in offline_matrices.samples
-        sample_height_proposal!(@view(particles[:,:,1,:]),
+        sample_height_proposal!(@view(particles[:,:,1,5,:]),
                                 filter_data.offline_matrices,
                                 filter_data.online_matrices,
                                 truth_observations,
@@ -409,7 +409,7 @@ function update_particle_proposal!(model_data, filter_data, filter_params, truth
         update_particle_noise!(model_data, nprt_per_rank)
 
         # Overwrite the height state variable with the samples of the optimal proposal
-        particles[:,:,1,:] .= filter_data.online_matrices.samples
+        particles[:,:,1,5,:] .= filter_data.online_matrices.samples
         set_particles!(model_data, particles)
 
 end

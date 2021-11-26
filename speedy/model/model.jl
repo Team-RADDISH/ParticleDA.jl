@@ -66,7 +66,7 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     # Choose observation network (choose "real" or "uniform")
     obs_network::String = "real"
     # Number of obs stations
-    nobs::Int = 1
+    nobs::Int = 10
 
     lambda::Vector{T} = [1.0e4, 1.0e4, 1.0e4]
     nu::Vector{T} = [2.5, 2.5, 2.5]
@@ -90,7 +90,7 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     title_params::String = "params"
     particle_dump_file = "particle_dump.h5"
     particle_dump_time = [-1]
-    obs_noise_std::T = 1.0
+    obs_noise_std::T = 1000.0
     #Path to the the local speedy directory
     SPEEDY::String = "/Users/dangiles/Documents/UCL/Raddish/speedy"
     output_folder::String = string(pwd(),"/speedy")
@@ -122,7 +122,7 @@ function step_datetime(idate::String,dtdate::String)
 end
 
 function step_ens(idate::String)
-    new_idate = Dates.format(DateTime(idate, "YYYYmmddHH") + Dates.Hour(6),"YYYYmmddHH")
+    new_idate = Dates.format(DateTime(idate, "YYYYmmddHH") + Dates.Hour(24),"YYYYmmddHH")
     return new_idate
 end
 
@@ -231,7 +231,7 @@ function init_gaussian_random_field_generator(lambda::Vector{T},
     # Let's limit ourselves to three-dimensional fields
     dim = 3
     function _generate(l, n, s)
-        cov = CovarianceFunction(dim, Whittle(.1))#Matern(l, n, σ = s))
+        cov = CovarianceFunction(dim, Spherical(l))#Matern(l, n, σ = s))
         grf = GaussianRandomField(cov, CirculantEmbedding(), xpts, ypts, zpts)#, minpadding=pad, primes=primes)
         v = grf.data[1]
         xi = Array{eltype(grf.cov)}(undef, size(v)..., nthreads())
@@ -315,7 +315,7 @@ function init_arrays(ix::Int, iy::Int, iz::Int, n2d::Int, n3d::Int, n_state_var:
     state_var = zeros(T, ix, iy, n_state_var) # variance of particle state vectors
 
     state_particles = zeros(T, ix, iy, iz, (n3d+n2d), nprt_per_rank)
-    state_truth = zeros(T, ix, iy, n_state_var) # model vector: true wavefield (observation)
+    state_truth = zeros(T, ix, iy, 1) # model vector: true wavefield (observation)
     obs_truth = Vector{T}(undef, nobs)          # observed
     obs_model = Matrix{T}(undef, nobs, nprt_per_rank) # forecasted
 
@@ -324,7 +324,7 @@ function init_arrays(ix::Int, iy::Int, iz::Int, n2d::Int, n3d::Int, n_state_var:
     jst = zeros(Int64,0)
 
     # Buffer array to be used in the update
-    field_buffer = Array{T}(undef, ix, iy, iz, n_state_var, nthreads())
+    field_buffer = Array{T}(undef, ix, iy, iz, 1, nthreads())
 
     return StateVectors(state_particles, state_truth), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), field_buffer
 end
@@ -589,6 +589,8 @@ function ParticleDA.update_truth!(d::ModelData, _)
     # Get observation from nature run
     get_obs!(d.observations.truth, d.states.truth[:,:,1], d.stations.ist, d.stations.jst, d.model_params)
     @show maximum(d.observations.truth) minimum(d.observations.truth)
+    add_noise!(d.observations.truth, d.rng[1], d.model_params)
+    @show maximum(d.observations.truth) minimum(d.observations.truth)
     return d.observations.truth
 end
 
@@ -610,7 +612,6 @@ function ParticleDA.update_particle_dynamics!(d::ModelData, nprt_per_rank)
     @show maximum(abs.(d.states.particles[:, :, 1, 5, 1]-d.states.particles[:, :, 1, 5, 3]))
     Threads.@threads for ip in 1:nprt_per_rank
         #Write to file
-        # @show maximum(d.states.particles[:, :, 1, 5, ip]), minimum(d.states.particles[:, :, 1, 5, ip]), ip
         anal_file = string(d.model_params.anal_folder,my_rank,"/",ip,"/",d.dates[1],".grd")
         write_fortran(anal_file,d.model_params.nlon, d.model_params.nlat, d.model_params.nlev,d.states.particles[:, :, :, :, ip])
         # Update the dynamics
@@ -619,7 +620,6 @@ function ParticleDA.update_particle_dynamics!(d::ModelData, nprt_per_rank)
         guess_file = string(d.model_params.guess_folder,my_rank,"/",ip,"/",d.dates[2],".grd")
         read_grd!(guess_file, d.model_params.nlon, d.model_params.nlat, d.model_params.nlev,@view(d.states.particles[:, :, :, :, ip]))
         # Check by plotting output
-        # maps1(d.states.particles[:,:,1,5,ip],d.dates[2],(ip+2))
     end
     @show maximum(abs.(d.states.particles[:, :, 1, 5, 1]-d.states.particles[:, :, 1, 5, 3]))
     ## Update the time strings
@@ -645,7 +645,7 @@ function ParticleDA.get_particle_observations!(d::ModelData, nprt_per_rank)
                  d.stations.ist,
                  d.stations.jst,
                  d.model_params)
-
+        @show d.observations.model[:,ip]
     end
     return d.observations.model
 end
