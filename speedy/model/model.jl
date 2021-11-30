@@ -66,7 +66,7 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     # Choose observation network (choose "real" or "uniform")
     obs_network::String = "real"
     # Number of obs stations
-    nobs::Int = 10
+    nobs::Int = 20
 
     lambda::Vector{T} = [1.0e4, 1.0e4, 1.0e4]
     nu::Vector{T} = [2.5, 2.5, 2.5]
@@ -202,7 +202,7 @@ function get_axes(params::ModelParameters)
 
 end
 function get_axes(ix::Int, iy::Int, iz::Int)
-    x = LinRange(0, 360, ix)
+    x = LinRange(-180, 180, ix)
     y = LinRange(-90, 90, iy)
     z = LinRange(0, 1, iz)
 
@@ -301,20 +301,20 @@ end
 
 function init_arrays(params::ModelParameters, nprt_per_rank)
 
-    return init_arrays(params.nlon, params.nlat, params.nlev, params.n_2d, params.n_3d, params.n_state_var, params.nobs, nprt_per_rank)
+    return init_arrays(params.nlon, params.nlat, params.nlev, params.n_state_var, params.nobs, nprt_per_rank)
 
 end
 
-function init_arrays(ix::Int, iy::Int, iz::Int, n2d::Int, n3d::Int, n_state_var::Int, nobs::Int, nprt_per_rank::Int)
+function init_arrays(ix::Int, iy::Int, iz::Int, n_state_var::Int, nobs::Int, nprt_per_rank::Int)
 
     # TODO: ideally this will be an argument of the function, to choose a
     # different datatype.
     T = Float64
 
-    state_avg = zeros(T, ix, iy, n_state_var) # average of particle state vectors
-    state_var = zeros(T, ix, iy, n_state_var) # variance of particle state vectors
+    state_avg = zeros(T, ix, iy, iz, n_state_var) # average of particle state vectors
+    state_var = zeros(T, ix, iy, iz, n_state_var) # variance of particle state vectors
 
-    state_particles = zeros(T, ix, iy, iz, (n3d+n2d), nprt_per_rank)
+    state_particles = zeros(T, ix, iy, iz, n_state_var, nprt_per_rank)
     state_truth = zeros(T, ix, iy, 1) # model vector: true wavefield (observation)
     obs_truth = Vector{T}(undef, nobs)          # observed
     obs_model = Matrix{T}(undef, nobs, nprt_per_rank) # forecasted
@@ -329,7 +329,7 @@ function init_arrays(ix::Int, iy::Int, iz::Int, n2d::Int, n3d::Int, n_state_var:
     return StateVectors(state_particles, state_truth), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), field_buffer
 end
 
-function maps1(data,Idate,i)
+function maps1(data, Idate, path, i)
     trace = contour(
             x=LinRange(0, 360, 96), # horizontal axis
             y=LinRange(-90,90, 48), # vertical axis
@@ -350,7 +350,7 @@ function maps1(data,Idate,i)
         yaxis_title="Lat (•)",
         )
     ps = plot(trace, layout)
-    savefig(ps,string("/Users/dangiles/.julia/dev/ParticleDA/speedy/DATA/ensemble/anal/",string(i),".png"))
+    savefig(ps,string("/Users/dangiles/.julia/dev/ParticleDA/",string(i),".png"))
 end
 
 function set_initial_state!(states::StateVectors, model_matrices::SPEEDY.Matrices,
@@ -608,8 +608,7 @@ end
 
 function ParticleDA.update_particle_dynamics!(d::ModelData, nprt_per_rank)
     my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
-    # SPEEDY file names
-    @show maximum(abs.(d.states.particles[:, :, 1, 5, 1]-d.states.particles[:, :, 1, 5, 3]))
+
     Threads.@threads for ip in 1:nprt_per_rank
         #Write to file
         anal_file = string(d.model_params.anal_folder,my_rank,"/",ip,"/",d.dates[1],".grd")
@@ -690,11 +689,14 @@ function write_grid(output_filename, params)
             x,y,z = get_axes(params)
             #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
             ds_x,dtype_x = create_dataset(group, "x", collect(x))
-            ds_y,dtype_x = create_dataset(group, "y", collect(x))
-            ds_x[1:params.ix] = collect(x)
-            ds_y[1:params.iy] = collect(y)
-            attributes(ds_x)["Unit"] = "m"
-            attributes(ds_y)["Unit"] = "m"
+            ds_y,dtype_x = create_dataset(group, "y", collect(y))
+            ds_z,dtype_x = create_dataset(group, "z", collect(z))
+            ds_x[1:params.nlon] = collect(x)
+            ds_y[1:params.nlat] = collect(y)
+            ds_z[1:params.nlev] = collect(z)
+            attributes(ds_x)["Unit"] = "°"
+            attributes(ds_y)["Unit"] = "°"
+            attributes(ds_z)["Unit"] = "°"
 
         else
 
@@ -707,17 +709,18 @@ function write_grid(output_filename, params)
 end
 
 function write_stations(output_filename, ist::AbstractVector, jst::AbstractVector, params::ModelParameters) where T
-
+    x,y,z = get_axes(params)
     h5open(output_filename, "cw") do file
 
         if !haskey(file, params.title_stations)
             group = create_group(file, params.title_stations)
 
-            for (dataset_name, val) in zip(("x", "y"), (ist .* params.dx, jst .* params.dy))
+            for (dataset_name, val) in zip(("x", "y"), (x[ist], y[jst]))
+                @show val
                 ds, dtype = create_dataset(group, dataset_name, val)
                 ds[:] = val
                 attributes(ds)["Description"] = "Station "*dataset_name*" coordinate"
-                attributes(ds)["Unit"] = "m"
+                attributes(ds)["Unit"] = "°"
             end
         else
             @warn "Write failed, group " * params.title_stations * " already exists in " * file.filename * "!"
@@ -725,7 +728,7 @@ function write_stations(output_filename, ist::AbstractVector, jst::AbstractVecto
     end
 end
 
-function write_weights(file::HDF5.File, weights::AbstractVector, unit::String, it::Int, params::ModelParameters)
+function write_weights(file::HDF5.File, weights::AbstractVector, unit::String, it::Int, d::ModelData)
 
     group_name = "weights"
     dataset_name = "t" * string(it)
@@ -739,7 +742,7 @@ function write_weights(file::HDF5.File, weights::AbstractVector, unit::String, i
         attributes(ds)["Description"] = "Particle Weights"
         attributes(ds)["Unit"] = unit
         attributes(ds)["Time step"] = it
-        attributes(ds)["Time (s)"] = it * params.time_step
+        attributes(ds)["Date"] = d.dates[1]
     else
         @warn "Write failed, dataset " * group_name * "/" * dataset_name *  " already exists in " * file.filename * "!"
     end
@@ -748,8 +751,8 @@ end
 
 function ParticleDA.write_snapshot(output_filename::AbstractString,
                                    d::ModelData,
-                                   avg::AbstractArray{T,3},
-                                   var::AbstractArray{T,3},
+                                   avg::AbstractArray{T,4},
+                                   var::AbstractArray{T,4},
                                    weights::AbstractVector{T},
                                    it::Int) where T
 
@@ -758,36 +761,35 @@ function ParticleDA.write_snapshot(output_filename::AbstractString,
         write_grid(output_filename, d.model_params)
         write_params(output_filename, d.model_params)
         write_stations(output_filename, d.stations.ist, d.stations.jst, d.model_params)
+
     end
 
     if any(d.model_params.particle_dump_time .== it)
-        write_particles(d.model_params.particle_dump_file, d.states, it, d.model_params)
+        write_particles(d.model_params.particle_dump_file, d.states, it, d)
     end
 
-    return ParticleDA.write_snapshot(output_filename, d.states, avg, var, weights, it, d.model_params)
+    return ParticleDA.write_snapshot(output_filename, d.states, avg, var, weights, it, d)
 end
 
 function ParticleDA.write_snapshot(output_filename::AbstractString,
                                    states::StateVectors,
-                                   avg::AbstractArray{T,1},
-                                   var::AbstractArray{T,1},
+                                   avg::AbstractArray{T,4},
+                                   var::AbstractArray{T,4},
                                    weights::AbstractVector{T},
                                    it::Int,
-                                   params::ModelParameters) where T
+                                   d::ModelData) where T
 
     println("Writing output at timestep = ", it)
 
     h5open(output_filename, "cw") do file
-
-        for (i,(name,desc,unit)) in enumerate(zip(name(states, :truth), description(states, :truth), unit(states, :truth)))
-
-            write_field(file, @view(states.truth[:,:,i]), it, unit, params.title_syn, name, desc, params)
-            write_field(file, @view(avg[:,:,i]), it, unit, params.title_avg, name, desc, params)
-            write_field(file, @view(var[:,:,i]), it, "("*unit*")^2", params.title_var, name, desc, params)
+        for (i,(name,desc,unit)) in enumerate(zip(name(states, :particles), description(states, :particles), unit(states, :particles)))
+            write_field(file, @view(states.truth[:,:,1]), it, unit, d.model_params.title_syn, name, desc, d)
+            write_field(file, @view(avg[:,:,:,i]), it, unit, d.model_params.title_avg, name, desc, d)
+            write_field(file, @view(var[:,:,:,i]), it, "("*unit*")^2", d.model_params.title_var, name, desc, d)
 
         end
 
-        write_weights(file, weights, "", it, params)
+        write_weights(file, weights, "", it, d)
     end
 
 end
@@ -795,7 +797,7 @@ end
 function write_particles(output_filename::AbstractString,
                          states::StateVectors,
                          it::Int,
-                         params::ModelParameters) where T
+                         d::ModelData) where T
 
     println("Writing particle states at timestep = ", it)
     nprt = size(states.particles,4)
@@ -807,7 +809,7 @@ function write_particles(output_filename::AbstractString,
 
             for (i,(name,desc,unit)) in enumerate(zip(name(states, :particles), description(states, :particles), unit(states, :particles)))
 
-                write_field(file, @view(states.particles[:,:,i,iprt]), it, unit, group_name, name, desc, params)
+                write_field(file, @view(states.particles[:,:,i,iprt]), it, unit, group_name, name, desc, d)
 
             end
 
@@ -818,15 +820,15 @@ function write_particles(output_filename::AbstractString,
 end
 
 function write_field(file::HDF5.File,
-                     field::AbstractMatrix{T},
+                     field::AbstractArray{T},
                      it::Int,
                      unit::String,
                      group::String,
                      dataset::String,
                      description::String,
-                     params::ModelParameters) where T
+                     d::ModelData) where T
 
-    group_name = params.state_prefix * "_" * group
+    group_name = d.model_params.state_prefix * "_" * group
     subgroup_name = "t" * string(it)
     dataset_name = dataset
 
@@ -835,11 +837,15 @@ function write_field(file::HDF5.File,
     if !haskey(subgroup, dataset_name)
         #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
         ds,dtype = create_dataset(subgroup, dataset_name, field)
-        ds[:,:] = field
+        if ndims(field) < 3
+            ds[:,:] = field
+        else
+            ds[:,:,:] = field
+        end
         attributes(ds)["Description"] = description
         attributes(ds)["Unit"] = unit
         attributes(ds)["Time step"] = it
-        attributes(ds)["Time (s)"] = it * params.time_step
+        attributes(ds)["Date"] = d.dates[1]
     else
         @warn "Write failed, dataset " * group_name * "/" * subgroup_name * "/" * dataset_name *  " already exists in " * file.filename * "!"
     end
