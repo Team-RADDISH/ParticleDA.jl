@@ -16,6 +16,8 @@ using MPI
 include("speedy.jl")
 using .SPEEDY
 
+include("grf.jl")
+using .Periodic_Cov
 """
     ModelParameters()
 
@@ -34,9 +36,6 @@ Parameters for the model. Keyword arguments:
 * `sigma_initial_state::AbstractFloat` : Marginal standard deviation for Matérn covariance kernel in initial state of particles
 * `padding::Int` : Min padding for circulant embedding gaussian random field generator
 * `primes::Int`: Whether the size of the minimum circulant embedding of the covariance matrix can be written as a product of small primes (2, 3, 5 and 7). Default is `true`.
-* `particle_initial_state::String` : Initial state of the particles before noise is added. Possible options are
-  * "zero" : initialise height and velocity to 0 everywhere
-  * "true" : copy the true initial state
 * `obs_noise_std::Float`: Standard deviation of noise added to observations of the true state
 * `particle_dump_file::String`: file name for dump of particle state vectors
 * `particle_dump_time::Int`: list of (one more more) time steps to dump particle states
@@ -64,22 +63,20 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     # Ensemble initialisation
     ensDate::String=""
     # Choose observation network (choose "real" or "uniform")
-    obs_network::String = "real"
+    obs_network::String = "uniform"
     # Number of obs stations
-    nobs::Int = 20
+    nobs::Int = 50
 
-    lambda::Vector{T} = [1.0e4, 1.0e4, 1.0e4]
-    nu::Vector{T} = [2.5, 2.5, 2.5]
-    sigma::Vector{T} = [1.0, 1.0, 1.0]
+    lambda::Vector{T} = [1.0e0, 1.0e0, 1.0e0, 1.0e0, 1.0e0]
+    nu::Vector{T} = [2.5, 2.5, 2.5, 2.5, 2.5]
+    sigma::Vector{T} = [0.1, 0.1, 0.1, 0.00001, 1000.0]
 
-    lambda_initial_state::Vector{T} = [1.0e4, 1.0e4, 1.0e4]
-    nu_initial_state::Vector{T} = [2.5, 2.5, 2.5]
-    sigma_initial_state::Vector{T} = [10.0, 10.0, 10.0]
+    lambda_initial_state::Vector{T} = [1.0e0, 1.0e0, 1.0e0, 1.0e0, 1.0e0]
+    nu_initial_state::Vector{T} = [2.5, 2.5, 2.5, 2.5, 2.5]
+    sigma_initial_state::Vector{T} = [0.1, 0.1, 0.1, 0.0001, 1000.0]
 
     padding::Int = 100
     primes::Bool = true
-
-    particle_initial_state::String = "zero"
 
     state_prefix::String = "data"
     title_avg::String = "avg"
@@ -98,7 +95,7 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     anal_folder::String = string(output_folder,"/DATA/ensemble/anal/")
     station_filename::String = string(SPEEDY,"/obs/networks/",obs_network,".txt")
     nature_dir::String = string(SPEEDY,"/DATA/nature/")
-    # nature_dir::String = string(output_folder,"/DATA/init/")
+
     nlon::Int = 96
     nlat::Int = 48
     nlev::Int = 8
@@ -202,8 +199,8 @@ function get_axes(params::ModelParameters)
 
 end
 function get_axes(ix::Int, iy::Int, iz::Int)
-    x = LinRange(-180, 180, ix)
-    y = LinRange(-90, 90, iy)
+    x = LinRange(0, 2*π, ix)
+    y = LinRange(0, π, iy)
     z = LinRange(0, 1, iz)
 
     return x,y,z
@@ -212,7 +209,7 @@ end
 function init_gaussian_random_field_generator(params::ModelParameters)
 
     x, y, z = get_axes(params)
-    return init_gaussian_random_field_generator(params.lambda,params.nu, params.sigma, x, y, z, params.padding, params.primes)
+    return init_gaussian_random_field_generator(params.lambda,params.nu, params.sigma, x, y, params.padding, params.primes)
 
 end
 
@@ -224,18 +221,21 @@ function init_gaussian_random_field_generator(lambda::Vector{T},
                                               sigma::Vector{T},
                                               xpts::AbstractVector{T},
                                               ypts::AbstractVector{T},
-                                              zpts::AbstractVector{T},
                                               pad::Int,
                                               primes::Bool) where T
 
-    # Let's limit ourselves to three-dimensional fields
-    dim = 3
+    # Let's limit ourselves to two-dimensional fields
+    dim = 2
     function _generate(l, n, s)
-        cov = CovarianceFunction(dim, Spherical(l))#Matern(l, n, σ = s))
-        grf = GaussianRandomField(cov, CirculantEmbedding(), xpts, ypts, zpts)#, minpadding=pad, primes=primes)
-        v = grf.data[1]
+        # cov = CovarianceFunction(dim, Matern(l, n, σ = s))#Spherical(l))#
+        # grf = GaussianRandomField(cov, CirculantEmbedding(), xpts, ypts, minpadding=pad, primes=primes)
+        # v  = grf.data[1]
+        cov = Periodic_Cov.CovarianceFunction(dim, Periodic_Cov.CustomDistanceCovarianceStructure(Periodic_Cov.SphericalDistance(), Matern(l, n, σ = s)))#SquaredExponential(λ)))
+        grf = GaussianRandomField(cov, Spectral(), xpts, ypts)
+        v = grf.data.eigenval
         xi = Array{eltype(grf.cov)}(undef, size(v)..., nthreads())
-        w = Array{complex(float(eltype(v)))}(undef, size(v)..., nthreads())
+        # w = Array{complex(float(eltype(v)))}(undef, size(v)..., nthreads())
+        w = Array{complex(float(eltype(grf.cov)))}(undef, size(v)..., nthreads())
         z = Array{eltype(grf.cov)}(undef, length.(grf.pts)..., nthreads())
         RandomField(grf, xi, w, z)
     end
@@ -243,43 +243,48 @@ function init_gaussian_random_field_generator(lambda::Vector{T},
     return [_generate(l, n, s) for (l, n, s) in zip(lambda, nu, sigma)]
 end
 # Get a random sample from random_field_generator using random number generator rng
-function sample_gaussian_random_field!(field::AbstractArray{T,3},
+function sample_gaussian_random_field!(field::AbstractArray{T,2},
                                        random_field_generator::RandomField,
                                        rng::Random.AbstractRNG) where T
 
-    @. @view(random_field_generator.xi[:,:,:,threadid()]) = randn((rng,), T)
-    sample_gaussian_random_field!(field, random_field_generator, @view(random_field_generator.xi[:,:,:,threadid()]))
+    field .= GaussianRandomFields.sample(random_field_generator.grf)
+    # @. @view(random_field_generator.xi[:,:,threadid()]) = randn((rng,), T)
+    # sample_gaussian_random_field!(field, random_field_generator, @view(random_field_generator.xi[:,:,threadid()]))
 
 end
 
-# Get a random sample from random_field_generator using random_numbers
-function sample_gaussian_random_field!(field::AbstractArray{T,3},
-                                       random_field_generator::RandomField,
-                                       random_numbers::AbstractArray{T}) where T
+# # Get a random sample from random_field_generator using random_numbers
+# function sample_gaussian_random_field!(field::AbstractArray{T,2},
+#                                        random_field_generator::RandomField,
+#                                        random_numbers::AbstractArray{T}) where T
 
-    field .= GaussianRandomFields._sample!(@view(random_field_generator.w[:,:,:,threadid()]),
-                                           @view(random_field_generator.z[:,:,:,threadid()]),
-                                           random_field_generator.grf,
-                                           random_numbers)
+#     field .= GaussianRandomFields._sample!(@view(random_field_generator.w[:,:,threadid()]),
+#                                            @view(random_field_generator.z[:,:,threadid()]),
+#                                            random_field_generator.grf,
+#                                            random_numbers)
 
-end
+# end
 
 # Add a gaussian random field to the height in the state vector of all particles
 function add_random_field!(state::AbstractArray{T},
-                           field_buffer::AbstractArray{T,5},
+                           field_buffer::AbstractArray{T},
                            generators::Vector{<:RandomField},
                            rng::AbstractVector{<:Random.AbstractRNG},
-                           nvar::Int,
+                           n_3d::Int,
+                           nlev::Int,                       
                            nprt::Int) where T
 
     Threads.@threads for ip in 1:nprt
-        # for ivar in 1:nvar
-        sample_gaussian_random_field!(@view(field_buffer[:, :, :, 1, threadid()]), generators[1], rng[threadid()])
-        @view(state[:, :, :, 5, ip]) .+= @view(field_buffer[:, :, :, 1, threadid()])
-            # sample_gaussian_random_field!(@view(field_buffer[:, :, :, ivar, threadid()]), generators[1], rng[threadid()])
-            # @view(state[:, :, :, ivar, ip]) .+= @view(field_buffer[:, :, :, ivar, threadid()])
-        # end
-
+        for ivar in 1:n_3d
+            # Adding model noise to the 3D fields (U,V,T,q)
+            for lev in 1:nlev
+                sample_gaussian_random_field!(@view(field_buffer[:, :, lev, ivar, threadid()]), generators[ivar], rng[threadid()])
+            end
+        end
+        state[:, :, :, 1:n_3d, ip] .+= @view(field_buffer[:, :, :, 1:n_3d, threadid()])
+        # Adding model noise to the surface pressure field
+        sample_gaussian_random_field!(@view(field_buffer[:, :, 1, 5, threadid()]), generators[5], rng[threadid()])
+        state[:, :, 1, 5, ip] .+= @view(field_buffer[:, :, 1, 5, threadid()])
     end
 
 end
@@ -315,7 +320,7 @@ function init_arrays(ix::Int, iy::Int, iz::Int, n_state_var::Int, nobs::Int, npr
     state_var = zeros(T, ix, iy, iz, n_state_var) # variance of particle state vectors
 
     state_particles = zeros(T, ix, iy, iz, n_state_var, nprt_per_rank)
-    state_truth = zeros(T, ix, iy, 1) # model vector: true wavefield (observation)
+    state_truth = zeros(T, ix, iy, 1) # model vector: true surface pressure (observation)
     obs_truth = Vector{T}(undef, nobs)          # observed
     obs_model = Matrix{T}(undef, nobs, nprt_per_rank) # forecasted
 
@@ -324,34 +329,33 @@ function init_arrays(ix::Int, iy::Int, iz::Int, n_state_var::Int, nobs::Int, npr
     jst = zeros(Int64,0)
 
     # Buffer array to be used in the update
-    field_buffer = Array{T}(undef, ix, iy, iz, 1, nthreads())
-
+    field_buffer = Array{T}(undef, ix, iy, iz, 5, nthreads())
     return StateVectors(state_particles, state_truth), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), field_buffer
 end
 
-function maps1(data, Idate, path, i)
-    trace = contour(
-            x=LinRange(0, 360, 96), # horizontal axis
-            y=LinRange(-90,90, 48), # vertical axis
-            z=data,
-            contours_coloring="lines",
-            line_width=2,
-            colorbar=attr(title=string("Surface Pressure (hPa)"),
-            titleside="right",
-            titlefont=attr(
-                size=14,
-                family="Arial, sans-serif")))
-    layout=Layout(
-        title=attr(
-        text= string(Idate),
-        xanchor= "center",
-        yanchor= "top"),
-        xaxis_title="Lon (•)",
-        yaxis_title="Lat (•)",
-        )
-    ps = plot(trace, layout)
-    savefig(ps,string("/Users/dangiles/.julia/dev/ParticleDA/",string(i),".png"))
-end
+# function map_data(data, i)
+#     trace = contour(
+#             x=LinRange(0, 360, 96), # horizontal axis
+#             y=LinRange(0, 180, 48), # vertical axis
+#             z=data,
+#             contours_coloring="lines",
+#             line_width=2,
+#             colorbar=attr(title=string("Gaussian Random Field"),
+#             titleside="right",
+#             titlefont=attr(
+#                 size=14,
+#                 family="Arial, sans-serif")))
+#     layout=Layout(
+#         title=attr(
+#         text= string("Gaussian Random Field"),
+#         xanchor= "center",
+#         yanchor= "top"),
+#         xaxis_title="Lon (•)",
+#         yaxis_title="Lat (•)",
+#         )
+#     ps = plot(trace, layout)
+#     # savefig(ps,string("/Users/dangiles/.julia/dev/ParticleDA/",string(i),".png"))
+# end
 
 function set_initial_state!(states::StateVectors, model_matrices::SPEEDY.Matrices,
                             field_buffer::AbstractArray{T},
@@ -367,28 +371,19 @@ function set_initial_state!(states::StateVectors, model_matrices::SPEEDY.Matrice
     Threads.@threads for ip in 1:nprt_per_rank
         read_grd!(string(params.nature_dir,ens_date,".grd"), params.nlon, params.nlat, params.nlev, @view(states.particles[:,:,:,:,ip]))
         ens_date = step_ens(ens_date)
-        # read_grd!(string(params.nature_dir,"init.grd"), params.nlon, params.nlat, params.nlev, @view(states.particles[:,:,:,:,ip]))
     end
 
     # Create generator for the initial random field
-    x,y,z = get_axes(params)
-    initial_grf = init_gaussian_random_field_generator(params.lambda_initial_state,
-                                                       params.nu_initial_state,
-                                                       params.sigma_initial_state,
-                                                       x,
-                                                       y,
-                                                       z,
-                                                       params.padding,
-                                                       params.primes)
-
-    # # Since states.particles is initially created as `zeros` we don't need to set it to 0 here
-    # # to get the default behaviour
-    #
-    # if params.particle_initial_state == "true"
-    #     states.particles[:,:,1,5,1] .= states.truth
-    # end
+    # x,y,z = get_axes(params)
+    # initial_grf = init_gaussian_random_field_generator(params.lambda_initial_state,
+    #                                                    params.nu_initial_state,
+    #                                                    params.sigma_initial_state,
+    #                                                    x,
+    #                                                    y,
+    #                                                    params.padding,
+    #                                                    params.primes)
     # Add samples of the initial random field to all particles
-    add_random_field!(states.particles, field_buffer, initial_grf, rng, (params.n_2d + params.n_3d), nprt_per_rank)
+    # add_random_field!(states.particles, field_buffer, initial_grf, rng, (params.n_2d + params.n_3d), nprt_per_rank)
 
 
 end
@@ -397,18 +392,22 @@ end
 function set_stations!(stations::StationVectors, params::ModelParameters) where T
     set_stations!(stations.ist,
                   stations.jst,
-                  params.station_filename,
-                  params.nobs)
+                  params.station_filename)
+                #   params.nobs,
+                #   params.lon_max,
+                #   params.lon_min,
+                #   params.lat_max,
+                #   params.lat_min)
 
 end
 
-function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::String, nobs::Int) where T
+function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::String)#, nobs::Int, lon_max::Int, lon_min::Int, lat_max::Int, lat_min::Int) where T
     f = open(filename,"r")
     readline(f)
     readline(f)
     ind = 0
     for line in eachline(f)
-        if ind < nobs
+        if ind%10 == 0
             append!(ist, parse(Int64,split(line)[1]))
             append!(jst, parse(Int64,split(line)[2]))
         end
@@ -584,13 +583,9 @@ end
 function ParticleDA.update_truth!(d::ModelData, _)
     # Read in Nature run
     read_ps!(string(d.model_params.nature_dir,d.dates[1],".grd"), d.model_params.nlon, d.model_params.nlat, d.model_params.nlev, @view(d.states.truth[:,:,1]))
-    print(string(d.model_params.nature_dir,d.dates[1],".grd"), '\n')
-    @show maximum(d.states.truth[:,:,1]) minimum(d.states.truth[:,:,1])
     # Get observation from nature run
     get_obs!(d.observations.truth, d.states.truth[:,:,1], d.stations.ist, d.stations.jst, d.model_params)
-    @show maximum(d.observations.truth) minimum(d.observations.truth)
     add_noise!(d.observations.truth, d.rng[1], d.model_params)
-    @show maximum(d.observations.truth) minimum(d.observations.truth)
     return d.observations.truth
 end
 
@@ -632,7 +627,8 @@ function ParticleDA.update_particle_noise!(d::ModelData, nprt_per_rank)
                       d.field_buffer,
                       d.background_grf,
                       d.rng,
-                      d.model_params.n_state_var,
+                      d.model_params.n_3d,
+                      d.model_params.nlev,
                       nprt_per_rank)
 end
 
@@ -644,7 +640,6 @@ function ParticleDA.get_particle_observations!(d::ModelData, nprt_per_rank)
                  d.stations.ist,
                  d.stations.jst,
                  d.model_params)
-        @show d.observations.model[:,ip]
     end
     return d.observations.model
 end
@@ -716,7 +711,6 @@ function write_stations(output_filename, ist::AbstractVector, jst::AbstractVecto
             group = create_group(file, params.title_stations)
 
             for (dataset_name, val) in zip(("x", "y"), (x[ist], y[jst]))
-                @show val
                 ds, dtype = create_dataset(group, dataset_name, val)
                 ds[:] = val
                 attributes(ds)["Description"] = "Station "*dataset_name*" coordinate"
