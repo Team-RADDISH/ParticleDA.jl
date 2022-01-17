@@ -283,8 +283,8 @@ function add_random_field!(state::AbstractArray{T},
         end
         state[:, :, :, 1:n_3d, ip] .+= @view(field_buffer[:, :, :, 1:n_3d, threadid()])
         # Adding model noise to the surface pressure field
-        sample_gaussian_random_field!(@view(field_buffer[:, :, 1, 5, threadid()]), generators[5], rng[threadid()])
-        state[:, :, 1, 5, ip] .+= @view(field_buffer[:, :, 1, 5, threadid()])
+        # sample_gaussian_random_field!(@view(field_buffer[:, :, 1, 5, threadid()]), generators[5], rng[threadid()])
+        # state[:, :, 1, 5, ip] .+= @view(field_buffer[:, :, 1, 5, threadid()])
     end
 
 end
@@ -340,21 +340,21 @@ end
 #             z=data,
 #             contours_coloring="lines",
 #             line_width=2,
-#             colorbar=attr(title=string("Gaussian Random Field"),
+#             colorbar=attr(title=string("Model Noise for Surface Pressure"),
 #             titleside="right",
 #             titlefont=attr(
 #                 size=14,
 #                 family="Arial, sans-serif")))
 #     layout=Layout(
 #         title=attr(
-#         text= string("Gaussian Random Field"),
+#         text= string("Model Noise for Surface Pressure"),
 #         xanchor= "center",
 #         yanchor= "top"),
 #         xaxis_title="Lon (•)",
 #         yaxis_title="Lat (•)",
 #         )
 #     ps = plot(trace, layout)
-#     # savefig(ps,string("/Users/dangiles/.julia/dev/ParticleDA/",string(i),".png"))
+#     savefig(ps,string("/Users/dangiles/.julia/dev/ParticleDA/results/speedy/",string(i),".png"))
 # end
 
 function set_initial_state!(states::StateVectors, model_matrices::SPEEDY.Matrices,
