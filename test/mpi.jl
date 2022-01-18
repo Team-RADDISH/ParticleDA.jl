@@ -14,6 +14,7 @@ params = Dict(
     "filter" => Dict(
         "nprt" => my_size,
         "enable_timers" => true,
+        "verbose"=> true,
         "n_time_step" => 5,
     ),
     "model" => Dict(
