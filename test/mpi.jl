@@ -14,7 +14,6 @@ params = Dict(
     "filter" => Dict(
         "nprt" => my_size,
         "enable_timers" => true,
-        "verbose" => true,
         "n_time_step" => 5,
     ),
     "model" => Dict(
@@ -38,5 +37,11 @@ rm("particle_da.h5"; force = true)
 params["filter"]["nprt"] = 2 * my_size
 params["model"]["llw2d"]["nobs"] = 36
 run_particle_filter(Model.init, params, BootstrapFilter())
+# Flush a newline
+println()
+
+# Run the command
+rm("particle_da.h5"; force = true)
+run_particle_filter(Model.init, params, OptimalFilter())
 # Flush a newline
 println()
