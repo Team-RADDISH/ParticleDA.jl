@@ -14,8 +14,9 @@ params = Dict(
     "filter" => Dict(
         "nprt" => my_size,
         "enable_timers" => true,
-        "verbose" => true,
+        "verbose"=> false,
         "n_time_step" => 5,
+        "output_filename" => "warmup.h5",
     ),
     "model" => Dict(
         "llw2d" => Dict(
@@ -28,15 +29,21 @@ params = Dict(
 )
 
 # Warmup
-rm("particle_da.h5"; force = true)
 run_particle_filter(Model.init, params, BootstrapFilter())
 # Flush a newline
 println()
 
 # Run the command
-rm("particle_da.h5"; force = true)
+params["filter"]["output_filename"] = "bootstrap_filter.h5"
+params["filter"]["verbose"] = true
 params["filter"]["nprt"] = 2 * my_size
 params["model"]["llw2d"]["nobs"] = 36
 run_particle_filter(Model.init, params, BootstrapFilter())
+# Flush a newline
+println()
+
+# Run the command
+params["filter"]["output_filename"] = "optimal_filter.h5"
+run_particle_filter(Model.init, params, OptimalFilter())
 # Flush a newline
 println()

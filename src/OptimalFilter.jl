@@ -271,7 +271,7 @@ function init_offline_matrices(grid::Grid,
 end
 
 # Allocate memory for matrices that will be updated during the time stepping loop.
-function init_online_matrices(grid::Grid, grid_ext::Grid, stations::NamedTuple, filter_params, T::Type)
+function init_online_matrices(grid::Grid, grid_ext::Grid, stations::NamedTuple, nprt_per_rank::Int, T::Type)
 
     n1 = grid.nx * grid.ny # number of elements in original grid
     n1_bar = grid_ext.nx * grid_ext.ny # number of elements in extended grid
@@ -282,8 +282,8 @@ function init_online_matrices(grid::Grid, grid_ext::Grid, stations::NamedTuple, 
                               Vector{C}(undef, stations.nst),
                               Matrix{C}(undef, grid.nx, grid.ny),
                               Matrix{C}(undef, grid.nx, grid.ny),
-                              Array{T}(undef, grid.nx, grid.ny, filter_params.nprt),
-                              Array{T}(undef, grid.nx, grid.ny, filter_params.nprt)
+                              Array{T}(undef, grid.nx, grid.ny, nprt_per_rank),
+                              Array{T}(undef, grid.nx, grid.ny, nprt_per_rank)
                               )
 
     return matrices
@@ -301,7 +301,7 @@ function calculate_mean_height!(mean::AbstractArray{T,3},
                                 grid_ext::Grid,
                                 fft_plan::FFTW.FFTWPlan,
                                 fft_plan!::FFTW.FFTWPlan,
-                                filter_params,
+                                nprt_per_rank::Int,
                                 obs_noise_std::T,
                                 ) where T
 
@@ -325,7 +325,7 @@ function calculate_mean_height!(mean::AbstractArray{T,3},
     mu10 = Vector{T}(undef, stations.nst)
 
     # Loop over particles
-    for iprt = 1:filter_params.nprt
+    for iprt = 1:nprt_per_rank
 
         mul!(mu10, offline_matrices.R22_inv, get_values_at_stations(@view(height[:,:,iprt]), stations))
         mu10_sparse = sparse(stations.ist, stations.jst, mu10, grid.nx, grid.ny)
@@ -351,14 +351,14 @@ function sample_height_proposal!(height::AbstractArray{T,3},
                                  grid_ext::Grid,
                                  fft_plan::FFTW.FFTWPlan,
                                  fft_plan!::FFTW.FFTWPlan,
-                                 filter_params,
+                                 nprt_per_rank::Int,
                                  rng::Random.AbstractRNG,
                                  obs_noise_std::T,
                                  ) where T
 
-    @assert iseven(filter_params.nprt) "Number of particles must be even"
+    @assert iseven(nprt_per_rank) "Number of particles per rank must be even to use the Optimal Filter"
 
-    calculate_mean_height!(online_matrices.mean, height, offline_matrices, observations, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params, obs_noise_std)
+    calculate_mean_height!(online_matrices.mean, height, offline_matrices, observations, stations, grid, grid_ext, fft_plan, fft_plan!, nprt_per_rank, obs_noise_std)
 
     i_n1 = LinearIndices((grid.nx, grid.ny))
     i_n1_bar = LinearIndices((grid_ext.nx, grid_ext.ny))
@@ -366,7 +366,7 @@ function sample_height_proposal!(height::AbstractArray{T,3},
     e1 = Vector{ComplexF64}(undef, grid_ext.nx * grid_ext.ny)
     e2 = Vector{ComplexF64}(undef, stations.nst)
 
-    for iprt in 1:2:filter_params.nprt
+    for iprt in 1:2:nprt_per_rank
 
         @. e1 = complex(randn(rng), randn(rng))
         @. e2 = complex(randn(rng), randn(rng))

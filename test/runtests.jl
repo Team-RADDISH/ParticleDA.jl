@@ -262,7 +262,7 @@ end
 
 @testset "MPI -- $(file)" for file in ("mpi.jl", "copy_states.jl", "mean_and_var.jl")
     julia = joinpath(Sys.BINDIR, Base.julia_exename())
-    flags = ["--startup-file=no", "-q"]
+    flags = ["--startup-file=no", "-q", "-t$(Base.Threads.nthreads())"]
     script = joinpath(@__DIR__, file)
     mpiexec() do mpiexec
         mktempdir() do dir
@@ -327,13 +327,13 @@ end
     tmp_array = Matrix{ComplexF64}(undef, grid_ext.nx, grid_ext.ny)
     fft_plan, fft_plan! = FFTW.plan_fft(tmp_array), FFTW.plan_fft!(tmp_array)
     mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, noise_params, model_params.obs_noise_std, fft_plan, fft_plan!, Float64)
-    mat_on = ParticleDA.init_online_matrices(grid, grid_ext, stations, filter_params, Float64)
+    mat_on = ParticleDA.init_online_matrices(grid, grid_ext, stations, filter_params.nprt, Float64)
     @test minimum(mat_off.Lambda) > 0.0
-    ParticleDA.calculate_mean_height!(mat_on.mean, height, mat_off, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params, model_params.obs_noise_std)
+    ParticleDA.calculate_mean_height!(mat_on.mean, height, mat_off, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params.nprt, model_params.obs_noise_std)
     @test all(isfinite, mat_on.mean)
 
     rng = Random.MersenneTwister(seed)
-    ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params, rng, model_params.obs_noise_std)
+    ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params.nprt, rng, model_params.obs_noise_std)
     @test all(isfinite, mat_on.samples)
 
 end
@@ -383,9 +383,9 @@ end
     tmp_array = Matrix{ComplexF64}(undef, grid_ext.nx, grid_ext.ny)
     fft_plan, fft_plan! = FFTW.plan_fft(tmp_array), FFTW.plan_fft!(tmp_array)
     mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, noise_params, model_params.obs_noise_std, fft_plan, fft_plan!, Float64)
-    mat_on = ParticleDA.init_online_matrices(grid, grid_ext, stations, filter_params, Float64)
+    mat_on = ParticleDA.init_online_matrices(grid, grid_ext, stations, filter_params.nprt, Float64)
 
-    ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params, rng, model_params.obs_noise_std)
+    ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params.nprt, rng, model_params.obs_noise_std)
 
     Yobs_t = copy(obs)
     FH_t = copy(reshape(permutedims(height, [3 1 2]), filter_params.nprt, (model_params.nx)*(model_params.ny)))

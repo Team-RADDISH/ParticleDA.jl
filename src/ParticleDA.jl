@@ -371,18 +371,18 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
     fft_plan, fft_plan! = FFTW.plan_fft(tmp_array), FFTW.plan_fft!(tmp_array)
 
     offline_matrices = init_offline_matrices(grid, grid_ext, stations, model_noise_params, obs_noise_std, fft_plan, fft_plan!, T)
-    online_matrices = init_online_matrices(grid, grid_ext, stations, filter_params, T)
+    online_matrices = init_online_matrices(grid, grid_ext, stations, nprt_per_rank, T)
 
     return (; filter_data..., offline_matrices, online_matrices, stations, grid, grid_ext, rng, obs_noise_std, fft_plan, fft_plan!)
 end
 
-function update_particle_proposal!(model_data, filter_data, filter_params, truth_observations, nprt_per_rank, filter_type::BootstrapFilter)
+function update_particle_proposal!(model_data, filter_data, truth_observations, nprt_per_rank, filter_type::BootstrapFilter)
 
     update_particle_noise!(model_data, nprt_per_rank)
 
 end
 
-function update_particle_proposal!(model_data, filter_data, filter_params, truth_observations, nprt_per_rank, filter_type::OptimalFilter)
+function update_particle_proposal!(model_data, filter_data, truth_observations, nprt_per_rank, filter_type::OptimalFilter)
 
         # Optimal Filter: After updating the particle dynamics, we apply the "optimal proposal" in
         #                 sample_height_proposal!() to the first state variable (height). We apply
@@ -401,7 +401,7 @@ function update_particle_proposal!(model_data, filter_data, filter_params, truth
                                 filter_data.grid_ext,
                                 filter_data.fft_plan,
                                 filter_data.fft_plan!,
-                                filter_params,
+                                nprt_per_rank,
                                 filter_data.rng[threadid()],
                                 filter_data.obs_noise_std)
 
@@ -473,7 +473,7 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
         # Parallelised with threads.
 
         @timeit_debug timer "Particle Dynamics" update_particle_dynamics!(model_data, nprt_per_rank);
-        @timeit_debug timer "Particle Proposal" update_particle_proposal!(model_data, filter_data, filter_params, truth_observations, nprt_per_rank, filter_type)
+        @timeit_debug timer "Particle Proposal" update_particle_proposal!(model_data, filter_data, truth_observations, nprt_per_rank, filter_type)
         @timeit_debug timer "Particle Observations" model_observations = get_particle_observations!(model_data, nprt_per_rank)
 
         @timeit_debug timer "Particle Weights" get_log_weights!(@view(filter_data.weights[1:nprt_per_rank]),
