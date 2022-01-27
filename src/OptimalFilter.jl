@@ -48,7 +48,7 @@ end
 
 # Covariance function r(x,y), equation 1 in Dietrich & Newsam 1996
 function covariance(x::T, y::T, covariance_structure::IsotropicCovarianceStructure{T}) where T
-    return apply(covariance_structure, [x, y])
+    return covariance_structure.σ^2 * apply(covariance_structure, [x, y])
 end
 
 # Extended covariance function ̄r(x,y), equation 8 of Dietrich & Newsam 1996
