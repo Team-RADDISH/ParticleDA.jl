@@ -3,7 +3,7 @@ using LinearAlgebra, Test, HDF5, Random, YAML
 using MPI
 using StableRNGs
 using FFTW
-using GaussianRandomFields: Matern, apply
+using GaussianRandomFields: Matern
 
 using ParticleDA: FilterParameters
 
@@ -279,8 +279,10 @@ end
     seed = 123
     Random.seed!(seed)
 
-    # Use default parameters
-    model_params = ModelParameters()
+    # Use default parameters other than smoothness parameter ν for state noise Matern 
+    # covariance function  which is fixed to 0.5 so that covariance function reduces to 
+    # r(x, y) = σ^2 exp(-norm([x, y]) / λ)
+    model_params = ModelParameters(nu=[0.5, 0.5, 0.5])
     filter_params = FilterParameters()
     grid = ParticleDA.Grid(model_params.nx,
                            model_params.ny,
@@ -301,7 +303,7 @@ end
     jst = rand(1:model_params.ny, model_params.nobs)
     stations = (nst = model_params.nobs, ist = ist, jst = jst)
     cov_ext = ParticleDA.extended_covariance(0.0, 0.5 * grid.y_length, grid, noise_params)
-    @test cov_ext ≈ apply(noise_params, [0.0, 0.5 * model_params.y_length])
+    @test cov_ext ≈ noise_params.σ^2 * exp(-norm([0.0, 0.5 * model_params.y_length]) / noise_params.λ)
     @test cov_ext ≈ ParticleDA.extended_covariance(2.0 * grid.x_length, 0.5 * grid.y_length, grid, noise_params)
     @test cov_ext ≈ ParticleDA.extended_covariance(0.0, 1.5 * grid.y_length, grid, noise_params)
     arr = rand(ComplexF64,10,10)
@@ -391,6 +393,7 @@ end
     Yobs_t = copy(obs)
     FH_t = copy(reshape(permutedims(height, [3 1 2]), filter_params.nprt, (model_params.nx)*(model_params.ny)))
 
+    th = f_th(noise_params.σ[1], noise_params.λ[1])
     Mean_height = Calculate_Mean(FH_t, th, st, Yobs_t, Sobs, gr)
     Samples = Sample_Height_Proposal(FH_t, th, st, Yobs_t, Sobs, gr)
 

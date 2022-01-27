@@ -98,7 +98,7 @@ Sobs = 0.01
 #### Example Specification of Covariance Function
 function R(x::Float64, y::Float64, th)
 
-  Cov = (th.s^2)*exp(-(abs(x)+abs(y))/(2.0*th.l))
+  Cov = (th.s^2)*exp(-norm([x, y])/th.l)
 
   return(Cov)
 
