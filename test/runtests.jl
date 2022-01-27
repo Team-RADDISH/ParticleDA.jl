@@ -3,6 +3,7 @@ using LinearAlgebra, Test, HDF5, Random, YAML
 using MPI
 using StableRNGs
 using FFTW
+using GaussianRandomFields: Matern, apply
 
 using ParticleDA: FilterParameters
 
@@ -293,14 +294,14 @@ end
                                grid.dy,
                                (grid.x_length-grid.dx)*2,
                                (grid.y_length-grid.dy)*2)
-    noise_params = (sigma = model_params.sigma[1], lambda = model_params.lambda[1], nu = model_params.nu[1])
+    noise_params =  Matern(model_params.lambda[1], model_params.nu[1], σ = model_params.sigma[1])
 
     # Set station coordinates
     ist = rand(1:model_params.nx, model_params.nobs)
     jst = rand(1:model_params.ny, model_params.nobs)
     stations = (nst = model_params.nobs, ist = ist, jst = jst)
     cov_ext = ParticleDA.extended_covariance(0.0, 0.5 * grid.y_length, grid, noise_params)
-    @test cov_ext ≈ exp(-0.5 * model_params.y_length / (2 * noise_params.lambda))
+    @test cov_ext ≈ apply(noise_params, [0.0, 0.5 * model_params.y_length])
     @test cov_ext ≈ ParticleDA.extended_covariance(2.0 * grid.x_length, 0.5 * grid.y_length, grid, noise_params)
     @test cov_ext ≈ ParticleDA.extended_covariance(0.0, 1.5 * grid.y_length, grid, noise_params)
     arr = rand(ComplexF64,10,10)
@@ -363,7 +364,7 @@ end
                                (grid.x_length-grid.dx)*2,
                                (grid.y_length-grid.dy)*2)
 
-    noise_params = (sigma = model_params.sigma[1], lambda = model_params.lambda[1], nu = model_params.nu[1])
+    noise_params =  Matern(model_params.lambda[1], model_params.nu[1], σ = model_params.sigma[1])
 
     stations = (nst = model_params.nobs, ist = st.st_ij[:,1].+1, jst = st.st_ij[:,2].+1)
 
