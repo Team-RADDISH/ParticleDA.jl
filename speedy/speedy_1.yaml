@@ -1,16 +1,17 @@
 filter:
-  nprt: 50
+  nprt: 12
   weight_std: 1000.0
   verbose: true
   enable_timers: true
   output_filename: "speedy_opt.h5"
-  n_time_step: 237
+  n_time_step: 241
 model:
   speedy:
     nlon: 96
     nlat: 48
     IDate: "1982010100"
     dtDate: "1982010106"
-    ensDate: "1982020100"
+    ensDate: "1991120100"
     nobs: 50
+    obs_network: "uniform"
     obs_noise_std: 1000.0
