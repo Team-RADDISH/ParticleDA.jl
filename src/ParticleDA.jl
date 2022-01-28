@@ -50,7 +50,7 @@ Return standard deviation of observation noise. Required for optimal filter only
 function get_obs_noise_std end
 
 """
-    ParticleDa.get_model_noise(model_data) -> CovarianceStructure
+    ParticleDa.get_model_noise(model_data) -> GaussianRandomFields.IsotropicCovarianceStructure
 
 Return structure defining parameters of the covariance function of the state noise in
 the observed state variable. Required for optimal filter only.
