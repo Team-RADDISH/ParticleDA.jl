@@ -393,7 +393,7 @@ end
     Yobs_t = copy(obs)
     FH_t = copy(reshape(permutedims(height, [3 1 2]), filter_params.nprt, (model_params.nx)*(model_params.ny)))
 
-    th = f_th(noise_params.σ[1], noise_params.λ[1])
+    th = f_th(noise_params.σ[1], noise_params.λ[1], noise_params.ν[1])
     Mean_height = Calculate_Mean(FH_t, th, st, Yobs_t, Sobs, gr)
     Samples = Sample_Height_Proposal(FH_t, th, st, Yobs_t, Sobs, gr)
 

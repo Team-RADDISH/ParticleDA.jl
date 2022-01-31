@@ -11,4 +11,4 @@ model:
     obs_noise_std: 0.01
     sigma: 1.0
     lambda: 1.0
-    nu: 0.5
+    nu: 2.5
