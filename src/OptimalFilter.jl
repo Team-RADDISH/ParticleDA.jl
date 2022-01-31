@@ -3,6 +3,7 @@ using LinearAlgebra
 using SparseArrays
 using Random
 using Distributions
+using GaussianRandomFields
 
 struct OfflineMatrices{T<:AbstractArray, S<:AbstractArray, U<:AbstractArray}
 
@@ -45,15 +46,13 @@ struct Grid{T}
     y_length::T
 end
 
-# Covariance function r(x,y), equation 1 in Dietrich and Newsam 96
-function covariance(x::T, y::T, noise_params::NamedTuple) where T
-
-    return noise_params.sigma^2 * exp(-(abs(x) + abs(y))/(2 * noise_params.lambda))
-
+# Covariance function r(x,y), equation 1 in Dietrich & Newsam 1996
+function covariance(x::T, y::T, covariance_structure::IsotropicCovarianceStructure{T}) where T
+    return covariance_structure.σ^2 * apply(covariance_structure, [x, y])
 end
 
-# Extended covariance function /bar r(x,y), equation 8 of Dietrich and Newsam 96
-function extended_covariance(x::T, y::T, grid::Grid, noise_params::NamedTuple) where T
+# Extended covariance function ̄r(x,y), equation 8 of Dietrich & Newsam 1996
+function extended_covariance(x::T, y::T, grid::Grid, covariance_structure::IsotropicCovarianceStructure{T}) where T
 
     if 0 <= x <= grid.x_length
         x_ext = x
@@ -71,12 +70,18 @@ function extended_covariance(x::T, y::T, grid::Grid, noise_params::NamedTuple) w
         @error "value of y is out of bounds"
     end
 
-    return covariance(x_ext, y_ext, noise_params)
+    return covariance(x_ext, y_ext, covariance_structure)
 
 end
 
-# Covariance between observations and the extended grid /bar R_21, from equation 11 in Dietrich & Newsam 96
-function covariance_stations_extended_grid!(cov::AbstractMatrix{T}, grid::Grid, grid_ext::Grid, stations::NamedTuple, noise_params::NamedTuple) where T
+# Covariance between observations and the extended grid R̅₂₁, from equation 11 in Dietrich & Newsam 1996
+function covariance_stations_extended_grid!(
+    cov::AbstractMatrix{T},
+    grid::Grid,
+    grid_ext::Grid,
+    stations::NamedTuple,
+    covariance_structure::IsotropicCovarianceStructure{T}
+) where T
 
     xid = 1:grid_ext.nx
     yid = 1:grid_ext.ny
@@ -88,13 +93,13 @@ function covariance_stations_extended_grid!(cov::AbstractMatrix{T}, grid::Grid, 
     for (i,ist,jst) in zip(1:stations.nst, stations.ist, stations.jst)
         cov[i,:] .= extended_covariance.(abs.(getindex.(c, 1) .- ist) .* grid_ext.dx,
                                          abs.(getindex.(c, 2) .- jst) .* grid_ext.dy,
-                                         (grid,), (noise_params,))
+                                         (grid,), (covariance_structure,))
     end
 
 end
 
-# Covariance between stations and the original grid R_21, from equations 3-4 in Dietrich & Newsam 96
-function covariance_grid_stations!(cov::AbstractMatrix{T}, grid::Grid, stations::NamedTuple, noise_params::NamedTuple) where T
+# Covariance between stations and the original grid R₂₁, from equations 3 and 4 in Dietrich & Newsam 1996
+function covariance_grid_stations!(cov::AbstractMatrix{T}, grid::Grid, stations::NamedTuple, covariance_structure::IsotropicCovarianceStructure{T}) where T
 
     xid = 1:grid.nx
     yid = 1:grid.ny
@@ -106,24 +111,25 @@ function covariance_grid_stations!(cov::AbstractMatrix{T}, grid::Grid, stations:
     for (i,ist,jst) in zip(1:stations.nst, stations.ist, stations.jst)
         cov[:,i] .= extended_covariance.(abs.(getindex.(c, 1) .- ist) .* grid.dx,
                                          abs.(getindex.(c, 2) .- jst) .* grid.dy,
-                                         (grid,), (noise_params,))
+                                         (grid,), (covariance_structure,))
     end
 
 end
 
-# Covariance between observations R_22, from equationd 3-4 in in Dietrich & Newsam 96
-# TODO: Ask Alex why we add sigma^2 on the diagonal
-function covariance_stations!(cov::AbstractMatrix{T}, grid::Grid, stations::NamedTuple, noise_params::NamedTuple, std::T) where T
+# Covariance between observations R̅₂₂ = R₂₂ + Σ, where R₂₂ is as defined in equations 3 and 4 in
+# Dietrich & Newsam 96 and Σ is the observation noise covariance (see note at end of
+# Section 2 in Dietrich & Newsam 1996)
+function covariance_stations!(cov::AbstractMatrix{T}, grid::Grid, stations::NamedTuple, covariance_structure::IsotropicCovarianceStructure{T}, std::T) where T
 
     cov .= covariance.(abs.(stations.ist .- stations.ist') .* grid.dx,
                        abs.(stations.jst' .- stations.jst) .* grid.dy,
-                       (noise_params,)) .+ I(stations.nst) .* std.^2
+                       (covariance_structure,)) .+ I(stations.nst) .* std.^2
 
 end
 
-# First column vector rho_bar of covariance matrix among pairs of points of the extended grid R11_bar,
-# from Dietrich & Newsam 96 described in text between equations 11 and 12
-function first_column_covariance_grid!(rho::AbstractVector{T}, grid::Grid, grid_ext::Grid, noise_params::NamedTuple) where T
+# First column vector rho_bar of covariance matrix among pairs of points of the extended grid R̅₁₁,
+# from Dietrich & Newsam 1996 described in text between equations 11 and 12
+function first_column_covariance_grid!(rho::AbstractVector{T}, grid::Grid, grid_ext::Grid, covariance_structure::IsotropicCovarianceStructure{T}) where T
 
     xid = 1:grid_ext.nx
     yid = 1:grid_ext.ny
@@ -132,12 +138,12 @@ function first_column_covariance_grid!(rho::AbstractVector{T}, grid::Grid, grid_
 
     rho .= extended_covariance.((getindex.(c, 1) .- 1) .* grid_ext.dx,
                                 (getindex.(c, 2) .- 1) .* grid_ext.dy,
-                                (grid,), (noise_params,))
+                                (grid,), (covariance_structure,))
 
 
 end
 
-# Normalized two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
+# Normalized two-dimension discrete Fourier transofrm normalized by sqrt(̄n₁).
 # Operates on the 2d data stored as a matrix.
 # The argument `f` lets you switch between forward transform (`f=identity`) and
 # inverse transform (`f=inv`).
@@ -154,7 +160,7 @@ function normalized_2d_fft!(transformed_array::AbstractMatrix{<:Complex}, array:
 
 end
 
-# Normalized two-dimension discrete Fourier transofrm normalized by sqrt(n1_bar).
+# Normalized two-dimension discrete Fourier transofrm normalized by sqrt(̄n₁).
 # Operates on the 2d data stored as a vector.
 # The argument `f` lets you switch between forward transform (`f=identity`) and
 # inverse transform (`f=inv`).
@@ -168,7 +174,7 @@ function normalized_2d_fft!(transformed_vector::AbstractVector{<:Complex}, vecto
 
 end
 
-# Decomposition of R11, equation 12 of Deitrich and Newsam
+# Decomposition of R̅₁₁, equation 12 of Deitrich & Newsam 1996
 function WΛWH_decomposition!(transformed_array::AbstractMatrix{T},
                              array::AbstractMatrix{T},
                              offline_matrices::OfflineMatrices,
@@ -211,7 +217,7 @@ end
 function init_offline_matrices(grid::Grid,
                                grid_ext::Grid,
                                stations::NamedTuple,
-                               noise_params::NamedTuple,
+                               covariance_structure::IsotropicCovarianceStructure{T},
                                obs_noise_std::T,
                                fft_plan::FFTW.FFTWPlan,
                                fft_plan!::FFTW.FFTWPlan,
@@ -238,10 +244,10 @@ function init_offline_matrices(grid::Grid,
                                Matrix{F}(undef, grid.nx, grid.ny)  #buf2
                                )
 
-    first_column_covariance_grid!(matrices.rho_bar, grid, grid_ext, noise_params)
-    covariance_grid_stations!(matrices.R12, grid, stations, noise_params)
-    covariance_stations_extended_grid!(matrices.R21_bar, grid, grid_ext, stations, noise_params)
-    covariance_stations!(matrices.R22, grid, stations, noise_params, obs_noise_std)
+    first_column_covariance_grid!(matrices.rho_bar, grid, grid_ext, covariance_structure)
+    covariance_grid_stations!(matrices.R12, grid, stations, covariance_structure)
+    covariance_stations_extended_grid!(matrices.R21_bar, grid, grid_ext, stations, covariance_structure)
+    covariance_stations!(matrices.R22, grid, stations, covariance_structure, obs_noise_std)
     matrices.R22_inv .= inv(matrices.R22)
     matrices.R12_invR22 .= matrices.R12 * matrices.R22_inv
 

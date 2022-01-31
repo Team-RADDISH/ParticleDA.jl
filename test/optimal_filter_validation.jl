@@ -9,6 +9,7 @@ using Distributions
 using LinearAlgebra
 using FFTW
 using Random
+using SpecialFunctions
 
 ####################################################################
 ####################################################################
@@ -17,8 +18,9 @@ Random.seed!(123)
 
 #### Parameters for Covariance Function
 struct f_th
-    s::Float64
-    l::Float64
+    σ::Float64
+    λ::Float64
+    ν::Float64
 end
 
 #### Parameters for Grid
@@ -40,7 +42,7 @@ end
 ####################################################################
 #### Example #######################################################
 
-th = f_th(1.0, 1.0)
+th = f_th(1.0, 1.0, 0.5)
 
 gr = f_gr(20, 20, 40.0, 40.0)
 
@@ -95,12 +97,15 @@ Sobs = 0.01
 ###################################################
 ###################################################
 
-#### Example Specification of Covariance Function
-function R(x::Float64, y::Float64, th)
+#### Example Specification of (Matern) Covariance Function
+function R(x::Float64, y::Float64, th::f_th)
 
-  Cov = (th.s^2)*exp(-(abs(x)+abs(y))/(2.0*th.l))
-
-  return(Cov)
+  ρ = hypot(x, y)
+  if iszero(ρ)
+    float(one(x))
+  else
+    th.σ^2 * 2^(1 - th.ν) / gamma(th.ν) * (ρ / th.λ)^th.ν * besselk(th.ν, ρ / th.λ)
+  end
 
 end
 
