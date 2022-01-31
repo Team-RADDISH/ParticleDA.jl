@@ -439,9 +439,9 @@ ParticleDA.get_stations(d::ModelData) = (nst = d.model_params.nobs,
                                          ist = d.stations.ist,
                                          jst = d.stations.jst)
 ParticleDA.get_obs_noise_std(d::ModelData) = d.model_params.obs_noise_std
-ParticleDA.get_model_noise_params(d::ModelData) = (sigma = d.model_params.sigma[1],
-                                                   lambda = d.model_params.lambda[1],
-                                                   nu = d.model_params.nu[1])
+ParticleDA.get_model_noise_params(d::ModelData) = Matern(d.model_params.lambda[1],
+                                                         d.model_params.nu[1],
+                                                         σ=d.model_params.sigma[1])
 
 function ParticleDA.set_particles!(d::ModelData, particles::AbstractArray{T}) where T
 
