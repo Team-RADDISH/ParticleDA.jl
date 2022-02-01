@@ -113,6 +113,7 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
 
     particle_dump_file = "particle_dump.h5"
     particle_dump_time = [-1]
+    assimilate_indices::Vector{Int} = [1]
 end
 
 function ParticleDA.get_params(T::Type{ModelParameters}, user_input_dict::Dict)
@@ -443,6 +444,7 @@ ParticleDA.get_model_noise_params(d::ModelData) = Matern(d.model_params.lambda[1
                                                          d.model_params.nu[1],
                                                          σ=d.model_params.sigma[1])
 
+ParticleDA.get_indices(d::ModelData) = d.model_params.assimilate_indices  
 function ParticleDA.set_particles!(d::ModelData, particles::AbstractArray{T}) where T
 
     d.states.particles .= particles

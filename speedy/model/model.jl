@@ -95,7 +95,8 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     anal_folder::String = string(output_folder,"/DATA/ensemble/anal/")
     station_filename::String = string(SPEEDY,"/obs/networks/",obs_network,".txt")
     nature_dir::String = string(SPEEDY,"/DATA/nature/")
-
+    # Assimilated indices
+    assimilate_indices::Vector{Int} = [1,5]
     nlon::Int = 96
     nlat::Int = 48
     nlev::Int = 8
@@ -118,8 +119,11 @@ function step_datetime(idate::String,dtdate::String)
     return new_idate,new_dtdate
 end
 
-function step_ens(idate::String)
-    new_idate = Dates.format(DateTime(idate, "YYYYmmddHH") + Dates.Hour(24),"YYYYmmddHH")
+function step_ens(ensdate::String, Hinc::Int)
+    ens_end = Dates.format(DateTime(ensdate, "YYYYmmddHH") + Dates.Month(1),"YYYYmmddHH")
+    diff = length(DateTime(ensdate, "YYYYmmddHH"):Hour(Hinc):DateTime(ens_end, "YYYYmmddHH"))
+    rand_int = rand(0:diff-1)*Hinc
+    new_idate = Dates.format(DateTime(ensdate, "YYYYmmddHH") + Dates.Hour(rand_int),"YYYYmmddHH")
     return new_idate
 end
 
@@ -367,10 +371,9 @@ function set_initial_state!(states::StateVectors, model_matrices::SPEEDY.Matrice
     # Read in the initial nature run - just surface pressure
     read_ps!(string(params.nature_dir,params.IDate,".grd"), params.nlon, params.nlat, params.nlev, @view(states.truth[:,:,1]))
     ### Read in arbitrary nature run files for the initial conditions
-    ens_date = params.ensDate
     Threads.@threads for ip in 1:nprt_per_rank
-        read_grd!(string(params.nature_dir,ens_date,".grd"), params.nlon, params.nlat, params.nlev, @view(states.particles[:,:,:,:,ip]))
-        ens_date = step_ens(ens_date)
+        dummy_date = step_ens(params.ensDate, params.Hinc)
+        read_grd!(string(params.nature_dir,dummy_date,".grd"), params.nlon, params.nlat, params.nlev, @view(states.particles[:,:,:,:,ip]))
     end
 
     # Create generator for the initial random field
@@ -437,6 +440,7 @@ ParticleDA.get_obs_noise_std(d::ModelData) = d.model_params.obs_noise_std
 ParticleDA.get_model_noise_params(d::ModelData) = (sigma = d.model_params.sigma[1],
                                                    lambda = d.model_params.lambda[1],
                                                    nu = d.model_params.nu[1])
+ParticleDA.get_indices(d::ModelData) = d.model_params.assimilate_indices                                    
 
 function ParticleDA.set_particles!(d::ModelData, particles::AbstractArray{T}) where T
 

@@ -43,6 +43,13 @@ Return the number of state variables.
 function get_n_state_var end
 
 """
+    ParticleDA.get_indices(model_data) -> Vector{Int}
+
+Return the vector containing the indices of assimilated values in the state vector
+"""
+function get_indices end
+
+"""
     ParticleDa.get_obs_noise_std(model_data) -> Float
 
 Return standard deviation of observation noise. Required for optimal filter only.
@@ -391,9 +398,9 @@ function update_particle_proposal!(model_data, filter_data, truth_observations, 
         #                 state variables (velocity).
 
         particles = get_particles(model_data)
-
+        indices  = get_indices(model_data)
         # Apply optimal proposal, the result will be in offline_matrices.samples
-        sample_height_proposal!(@view(particles[:,:,1,5,:]),
+        sample_height_proposal!(@view(particles[:,:,indices...,:]),
                                 filter_data.offline_matrices,
                                 filter_data.online_matrices,
                                 truth_observations,
@@ -410,7 +417,7 @@ function update_particle_proposal!(model_data, filter_data, truth_observations, 
         update_particle_noise!(model_data, nprt_per_rank)
 
         # Overwrite the height state variable with the samples of the optimal proposal
-        particles[:,:,1,5,:] .= filter_data.online_matrices.samples
+        particles[:,:,indices...,:] .= filter_data.online_matrices.samples
         set_particles!(model_data, particles)
 
 end
