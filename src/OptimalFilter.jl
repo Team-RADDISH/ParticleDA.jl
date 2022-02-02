@@ -348,7 +348,7 @@ function calculate_mean_height!(mean::AbstractArray{T,3},
 
 end
 
-function sample_height_proposal!(height::AbstractArray{T,3},
+function sample_proposal!(height::AbstractArray{T,3},
                                  offline_matrices::OfflineMatrices,
                                  online_matrices::OnlineMatrices,
                                  observations::AbstractVector{T},

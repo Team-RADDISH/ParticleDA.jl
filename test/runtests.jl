@@ -336,7 +336,7 @@ end
     @test all(isfinite, mat_on.mean)
 
     rng = Random.MersenneTwister(seed)
-    ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params.nprt, rng, model_params.obs_noise_std)
+    ParticleDA.sample_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params.nprt, rng, model_params.obs_noise_std)
     @test all(isfinite, mat_on.samples)
 
 end
@@ -388,7 +388,7 @@ end
     mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, noise_params, model_params.obs_noise_std, fft_plan, fft_plan!, Float64)
     mat_on = ParticleDA.init_online_matrices(grid, grid_ext, stations, filter_params.nprt, Float64)
 
-    ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params.nprt, rng, model_params.obs_noise_std)
+    ParticleDA.sample_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params.nprt, rng, model_params.obs_noise_std)
 
     Yobs_t = copy(obs)
     FH_t = copy(reshape(permutedims(height, [3 1 2]), filter_params.nprt, (model_params.nx)*(model_params.ny)))
@@ -407,6 +407,6 @@ end
     # print("old sampling: ")
     # @btime Samples = Sample_Height_Proposal($FH_t, $th, $st, $Yobs_t, $Sobs, $gr)
     # print("new sampling: ")
-    # @btime sample_height_proposal!($height, $mat_off, $mat_on, $obs, $stations, $params, $rng)
+    # @btime sample_proposal!($height, $mat_off, $mat_on, $obs, $stations, $params, $rng)
 
 end

@@ -393,14 +393,14 @@ end
 function update_particle_proposal!(model_data, filter_data, truth_observations, nprt_per_rank, filter_type::OptimalFilter)
 
         # Optimal Filter: After updating the particle dynamics, we apply the "optimal proposal" in
-        #                 sample_height_proposal!() to the first state variable (height). We apply
+        #                 sample_proposal!() to the state variable of interest, as given by get_indices(). We apply
         #                 a sample from the gaussian random field in update_particle_noise!() to the other
-        #                 state variables (velocity).
+        #                 state variables.
 
         particles = get_particles(model_data)
         indices  = get_indices(model_data)
         # Apply optimal proposal, the result will be in offline_matrices.samples
-        sample_height_proposal!(@view(particles[:,:,indices...,:]),
+        sample_proposal!(@view(particles[:,:,indices...,:]),
                                 filter_data.offline_matrices,
                                 filter_data.online_matrices,
                                 truth_observations,
@@ -416,7 +416,7 @@ function update_particle_proposal!(model_data, filter_data, truth_observations, 
         # Add noise from the standard gaussian random field to all state variables in model_data
         update_particle_noise!(model_data, nprt_per_rank)
 
-        # Overwrite the height state variable with the samples of the optimal proposal
+        # Overwrite the assimilated state variable with the samples of the optimal proposal
         particles[:,:,indices...,:] .= filter_data.online_matrices.samples
         set_particles!(model_data, particles)
 

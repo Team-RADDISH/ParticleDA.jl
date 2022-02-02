@@ -90,13 +90,15 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     obs_noise_std::T = 1000.0
     #Path to the the local speedy directory
     SPEEDY::String = "/Users/dangiles/Documents/UCL/Raddish/speedy"
+    station_filename::String = string(SPEEDY,"/obs/networks/",obs_network,".txt")
+    nature_dir::String = string(SPEEDY,"/DATA/nature/")
+    # Output folders
     output_folder::String = string(pwd(),"/speedy")
     guess_folder::String = string(output_folder,"/DATA/ensemble/gues/")
     anal_folder::String = string(output_folder,"/DATA/ensemble/anal/")
-    station_filename::String = string(SPEEDY,"/obs/networks/",obs_network,".txt")
-    nature_dir::String = string(SPEEDY,"/DATA/nature/")
     # Assimilated indices
     assimilate_indices::Vector{Int} = [1,5]
+    # Grid dimensions
     nlon::Int = 96
     nlat::Int = 48
     nlev::Int = 8
@@ -437,9 +439,10 @@ ParticleDA.get_stations(d::ModelData) = (nst = d.model_params.nobs,
                                          ist = d.stations.ist,
                                          jst = d.stations.jst)
 ParticleDA.get_obs_noise_std(d::ModelData) = d.model_params.obs_noise_std
-ParticleDA.get_model_noise_params(d::ModelData) = (sigma = d.model_params.sigma[1],
-                                                   lambda = d.model_params.lambda[1],
-                                                   nu = d.model_params.nu[1])
+# Needs to be corrected
+ParticleDA.get_model_noise_params(d::ModelData) = Matern(d.model_params.lambda[1],
+                                                         d.model_params.nu[1],
+                                                         σ=d.model_params.sigma[1])
 ParticleDA.get_indices(d::ModelData) = d.model_params.assimilate_indices                                    
 
 function ParticleDA.set_particles!(d::ModelData, particles::AbstractArray{T}) where T
