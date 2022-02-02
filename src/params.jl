@@ -27,7 +27,7 @@ Base.@kwdef struct FilterParameters{T<:AbstractFloat}
 
     nprt::Int = 4
 
-    weight_std::T = 1000.0
+    weight_std::T = 1.0
 
     random_seed::Int = 12345
 
