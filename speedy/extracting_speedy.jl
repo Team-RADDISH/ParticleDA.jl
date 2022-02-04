@@ -102,21 +102,20 @@ function write_field(file::HDF5.File,
     end
 end
 
-SPEEDY= "/Users/dangiles/Documents/UCL/Raddish/speedy"
-nature_dir = string(SPEEDY,"/DATA/nature/")
+SPEEDY= ""
+nature_dir = joinpath(SPEEDY, "DATA", "nature")
 T = Float64
 nlon = 96
 nlat= 48
 nlev= 8
 n_state_var= 6
 truth = zeros(T, nlon, nlat, nlev, n_state_var);
-output_filename = "DATA/nature_runs.h5"
+output_filename = joinpath("DATA", "nature_runs.h5")
 
 iteration = 0
 for file in readdir(nature_dir)
     if iteration < 242
         if occursin(".grd", file)
-            @show joinpath(nature_dir,file)
             read_grd!(joinpath(nature_dir,file), nlon, nlat, nlev, @view(truth[:,:,:,:]))
             write_snapshot(output_filename, truth, iteration)
             # @show truth[:,:,1,5]

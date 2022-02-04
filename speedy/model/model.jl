@@ -75,7 +75,6 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     nu_initial_state::Vector{T} = [2.5, 2.5, 2.5, 2.5, 2.5]
     sigma_initial_state::Vector{T} = [0.1, 0.1, 0.1, 0.0001, 1000.0]
 
-    padding::Int = 100
     primes::Bool = true
 
     state_prefix::String = "data"
@@ -89,13 +88,13 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     particle_dump_time = [-1]
     obs_noise_std::T = 1000.0
     #Path to the the local speedy directory
-    SPEEDY::String = "/Users/dangiles/Documents/UCL/Raddish/speedy"
-    station_filename::String = string(SPEEDY,"/obs/networks/",obs_network,".txt")
-    nature_dir::String = string(SPEEDY,"/DATA/nature/")
+    SPEEDY::String = ""
+    station_filename::String = joinpath(SPEEDY, "obs", "networks", obs_network * ".txt")
+    nature_dir::String = joinpath(SPEEDY, "DATA", "nature")
     # Output folders
-    output_folder::String = string(pwd(),"/speedy")
-    guess_folder::String = string(output_folder,"/DATA/ensemble/gues/")
-    anal_folder::String = string(output_folder,"/DATA/ensemble/anal/")
+    output_folder::String = joinpath(pwd(), "speedy")
+    guess_folder::String = joinpath(output_folder, "DATA", "ensemble", "gues")
+    anal_folder::String = joinpath(output_folder, "DATA", "ensemble", "anal")
     # Assimilated indices
     assimilate_indices::Vector{Int} = [1,5]
     # Grid dimensions
@@ -371,11 +370,11 @@ function set_initial_state!(states::StateVectors, model_matrices::SPEEDY.Matrice
 
     # Set true initial state
     # Read in the initial nature run - just surface pressure
-    read_ps!(string(params.nature_dir,params.IDate,".grd"), params.nlon, params.nlat, params.nlev, @view(states.truth[:,:,1]))
+    read_ps!(@view(states.truth[:,:,1]), joinpath(params.nature_dir, params.IDate * ".grd"), params.nlon, params.nlat, params.nlev)
     ### Read in arbitrary nature run files for the initial conditions
     Threads.@threads for ip in 1:nprt_per_rank
         dummy_date = step_ens(params.ensDate, params.Hinc)
-        read_grd!(string(params.nature_dir,dummy_date,".grd"), params.nlon, params.nlat, params.nlev, @view(states.particles[:,:,:,:,ip]))
+        read_grd!(@view(states.particles[:,:,:,:,ip]), joinpath(params.nature_dir, dummy_date * ".grd"), params.nlon, params.nlat, params.nlev)
     end
 
     # Create generator for the initial random field
@@ -407,16 +406,17 @@ function set_stations!(stations::StationVectors, params::ModelParameters) where 
 end
 
 function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::String)#, nobs::Int, lon_max::Int, lon_min::Int, lat_max::Int, lat_min::Int) where T
-    f = open(filename,"r")
-    readline(f)
-    readline(f)
-    ind = 0
-    for line in eachline(f)
-        if ind%10 == 0
-            append!(ist, parse(Int64,split(line)[1]))
-            append!(jst, parse(Int64,split(line)[2]))
+    open(filename,"r") do f
+        readline(f)
+        readline(f)
+        ind = 0
+        for line in eachline(f)
+            if ind%10 == 0
+                append!(ist, parse(Int64,split(line)[1]))
+                append!(jst, parse(Int64,split(line)[2]))
+            end
+            ind = ind + 1
         end
-        ind = ind + 1
     end
 end
 
@@ -459,29 +459,29 @@ ParticleDA.get_n_state_var(d::ModelData) = d.model_params.n_state_var
 function create_folders(output_folder::String, anal_folder::String, gues_folder::String, nprt_per_rank::Int, my_rank::Integer)
     MPI.Init()
     comm = MPI.COMM_WORLD
-    ens = string(output_folder,"/DATA/ensemble/")
-    tmp = string(output_folder,"/DATA/tmp/ensfcst/")
+    ens = joinpath(output_folder, "DATA", "ensemble")
+    tmp = joinpath(output_folder, "DATA", "tmp", "ensfcst")
     if MPI.Comm_rank(comm) == 0
-        run(`rm -r $ens`)
-        run(`rm -r $tmp`)
-        run(`mkdir $ens`)
-        run(`mkdir $tmp`)
-        run(`mkdir $anal_folder`)
-        run(`mkdir $gues_folder`)
+        rm(ens; recursive=true)
+        rm(tmp; recursive=true)
+        mkdir(ens)
+        mkdir(tmp)
+        mkdir(anal_folder)
+        mkdir(guess_folder)
     end
     MPI.Barrier(comm)
 
-    rank_anal = string(anal_folder,my_rank)
-    rank_gues = string(gues_folder,my_rank)
-    rank_tmp = string(tmp,my_rank)
-    run(`mkdir $rank_tmp`)
-    run(`mkdir $rank_anal`)
-    run(`mkdir $rank_gues`)
+    rank_anal = joinpath(anal_folder,my_rank)
+    rank_gues = joinpath(gues_folder,my_rank)
+    rank_tmp = joinpath(tmp,my_rank)
+    mkdir(rank_tmp)
+    mkdir(rank_anal)
+    mkdir(rank_gues)
     Threads.@threads for ip in 1:nprt_per_rank
-        part_anal = string(rank_anal,"/",ip)
-        part_gues = string(rank_gues,"/",ip)
-        run(`mkdir $part_anal`)
-        run(`mkdir $part_gues`)
+        part_anal = joinpath(rank_anal, ip)
+        part_gues = joinpath(rank_gues, ip)
+        mkdir(part_anal)
+        mkdir(part_gues)
     end
 end
 
@@ -500,7 +500,7 @@ function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, rng
 
     return ModelData(model_params, states, observations, stations, field_buffer, background_grf, model_matrices, rng, model_dates)
 end
-function read_grd!(filename::String,nlon::Int, nlat::Int, nlev::Int,truth::AbstractArray{T}) where T
+function read_grd!(truth::AbstractArray{T}, filename::String,nlon::Int, nlat::Int, nlev::Int) where T
 
     nij0 = nlon*nlat
     iolen = 4
@@ -530,7 +530,7 @@ function read_grd!(filename::String,nlon::Int, nlat::Int, nlev::Int,truth::Abstr
 
 end
 
-function read_ps!(filename::String,nlon::Int, nlat::Int, nlev::Int,truth::AbstractMatrix{T}) where T
+function read_ps!(truth::AbstractMatrix{T}, filename::String, nlon::Int, nlat::Int, nlev::Int) where T
 
     nij0 = nlon*nlat
     iolen = 4
@@ -589,7 +589,7 @@ end
 
 function ParticleDA.update_truth!(d::ModelData, _)
     # Read in Nature run
-    read_ps!(string(d.model_params.nature_dir,d.dates[1],".grd"), d.model_params.nlon, d.model_params.nlat, d.model_params.nlev, @view(d.states.truth[:,:,1]))
+    read_ps!(@view(d.states.truth[:,:,1]), joinpath(d.model_params.nature_dir, d.dates[1] * ".grd"), d.model_params.nlon, d.model_params.nlat, d.model_params.nlev)
     # Get observation from nature run
     get_obs!(d.observations.truth, d.states.truth[:,:,1], d.stations.ist, d.stations.jst, d.model_params)
     add_noise!(d.observations.truth, d.rng[1], d.model_params)
@@ -613,13 +613,13 @@ function ParticleDA.update_particle_dynamics!(d::ModelData, nprt_per_rank)
 
     Threads.@threads for ip in 1:nprt_per_rank
         #Write to file
-        anal_file = string(d.model_params.anal_folder,my_rank,"/",ip,"/",d.dates[1],".grd")
+        anal_file = joinpath(d.model_params.anal_folder, my_rank, ip,d.dates[1] * ".grd")
         write_fortran(anal_file,d.model_params.nlon, d.model_params.nlat, d.model_params.nlev,d.states.particles[:, :, :, :, ip])
         # Update the dynamics
         speedy_update!(d.model_params.SPEEDY,d.model_params.output_folder,d.dates[1],d.dates[2],string(my_rank),string(ip))
         # Read back in the data and update the states
-        guess_file = string(d.model_params.guess_folder,my_rank,"/",ip,"/",d.dates[2],".grd")
-        read_grd!(guess_file, d.model_params.nlon, d.model_params.nlat, d.model_params.nlev,@view(d.states.particles[:, :, :, :, ip]))
+        guess_file = joinpath(d.model_params.guess_folder, my_rank, ip, d.dates[2] * ".grd")
+        read_grd!(@view(d.states.particles[:, :, :, :, ip]), guess_file, d.model_params.nlon, d.model_params.nlat, d.model_params.nlev)
         # Check by plotting output
     end
     @show maximum(abs.(d.states.particles[:, :, 1, 5, 1]-d.states.particles[:, :, 1, 5, 3]))
