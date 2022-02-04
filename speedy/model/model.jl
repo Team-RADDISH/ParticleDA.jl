@@ -338,29 +338,6 @@ function init_arrays(ix::Int, iy::Int, iz::Int, n_state_var::Int, nobs::Int, npr
     return StateVectors(state_particles, state_truth), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), field_buffer
 end
 
-# function map_data(data, i)
-#     trace = contour(
-#             x=LinRange(0, 360, 96), # horizontal axis
-#             y=LinRange(0, 180, 48), # vertical axis
-#             z=data,
-#             contours_coloring="lines",
-#             line_width=2,
-#             colorbar=attr(title=string("Model Noise for Surface Pressure"),
-#             titleside="right",
-#             titlefont=attr(
-#                 size=14,
-#                 family="Arial, sans-serif")))
-#     layout=Layout(
-#         title=attr(
-#         text= string("Model Noise for Surface Pressure"),
-#         xanchor= "center",
-#         yanchor= "top"),
-#         xaxis_title="Lon (•)",
-#         yaxis_title="Lat (•)",
-#         )
-#     ps = plot(trace, layout)
-#     savefig(ps,string("/Users/dangiles/.julia/dev/ParticleDA/results/speedy/",string(i),".png"))
-# end
 
 function set_initial_state!(states::StateVectors, model_matrices::SPEEDY.Matrices,
                             field_buffer::AbstractArray{T},
