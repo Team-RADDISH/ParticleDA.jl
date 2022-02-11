@@ -74,7 +74,8 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     lambda_initial_state::Vector{T} = [1.0e0, 1.0e0, 1.0e0, 1.0e0, 1.0e0]
     nu_initial_state::Vector{T} = [2.5, 2.5, 2.5, 2.5, 2.5]
     sigma_initial_state::Vector{T} = [0.1, 0.1, 0.1, 0.0001, 1000.0]
-
+    
+    padding::Int = 100
     primes::Bool = true
 
     state_prefix::String = "data"
@@ -232,14 +233,10 @@ function init_gaussian_random_field_generator(lambda::Vector{T},
     # Let's limit ourselves to two-dimensional fields
     dim = 2
     function _generate(l, n, s)
-        # cov = CovarianceFunction(dim, Matern(l, n, σ = s))#Spherical(l))#
-        # grf = GaussianRandomField(cov, CirculantEmbedding(), xpts, ypts, minpadding=pad, primes=primes)
-        # v  = grf.data[1]
-        cov = Periodic_Cov.CovarianceFunction(dim, Periodic_Cov.CustomDistanceCovarianceStructure(Periodic_Cov.SphericalDistance(), Matern(l, n, σ = s)))#SquaredExponential(λ)))
+        cov = Periodic_Cov.CovarianceFunction(dim, Periodic_Cov.CustomDistanceCovarianceStructure(Periodic_Cov.SphericalDistance(), Matern(l, n, σ = s)))
         grf = GaussianRandomField(cov, Spectral(), xpts, ypts)
         v = grf.data.eigenval
         xi = Array{eltype(grf.cov)}(undef, size(v)..., nthreads())
-        # w = Array{complex(float(eltype(v)))}(undef, size(v)..., nthreads())
         w = Array{complex(float(eltype(grf.cov)))}(undef, size(v)..., nthreads())
         z = Array{eltype(grf.cov)}(undef, length.(grf.pts)..., nthreads())
         RandomField(grf, xi, w, z)
@@ -374,15 +371,9 @@ function set_stations!(stations::StationVectors, params::ModelParameters) where 
     set_stations!(stations.ist,
                   stations.jst,
                   params.station_filename)
-                #   params.nobs,
-                #   params.lon_max,
-                #   params.lon_min,
-                #   params.lat_max,
-                #   params.lat_min)
-
 end
 
-function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::String)#, nobs::Int, lon_max::Int, lon_min::Int, lat_max::Int, lat_min::Int) where T
+function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::String)
     open(filename,"r") do f
         readline(f)
         readline(f)
@@ -444,19 +435,19 @@ function create_folders(output_folder::String, anal_folder::String, gues_folder:
         mkdir(ens)
         mkdir(tmp)
         mkdir(anal_folder)
-        mkdir(guess_folder)
+        mkdir(gues_folder)
     end
     MPI.Barrier(comm)
 
-    rank_anal = joinpath(anal_folder,my_rank)
-    rank_gues = joinpath(gues_folder,my_rank)
-    rank_tmp = joinpath(tmp,my_rank)
+    rank_anal = joinpath(anal_folder,string(my_rank))
+    rank_gues = joinpath(gues_folder,string(my_rank))
+    rank_tmp = joinpath(tmp,string(my_rank))
     mkdir(rank_tmp)
     mkdir(rank_anal)
     mkdir(rank_gues)
     Threads.@threads for ip in 1:nprt_per_rank
-        part_anal = joinpath(rank_anal, ip)
-        part_gues = joinpath(rank_gues, ip)
+        part_anal = joinpath(rank_anal, string(ip))
+        part_gues = joinpath(rank_gues, string(ip))
         mkdir(part_anal)
         mkdir(part_gues)
     end
@@ -483,9 +474,6 @@ function read_grd!(truth::AbstractArray{T}, filename::String,nlon::Int, nlat::In
     iolen = 4
     nv3d = 4
     nv2d = 2
-
-    # v3d = Array{Float32, 4}(undef, nlon, nlat, nlev, nv3d)
-    # v2d = Array{Float32, 3}(undef, nlon, nlat, nv2d)
 
     f = FortranFile(filename, access="direct", recl=nij0*iolen)
 
@@ -580,7 +568,7 @@ function speedy_update!(SPEEDY::String,
                         rank::String,
                         particle::String)
     # Path to the bash script which carries out the forecast
-    forecast = "./speedy/model/dafcst.sh"
+    forecast = joinpath(pwd(), "speedy", "model", "dafcst.sh")
     # Bash script call to speedy
     run(`$forecast $SPEEDY $output $YMDH $TYMDH $rank $particle`)
 end
@@ -590,12 +578,12 @@ function ParticleDA.update_particle_dynamics!(d::ModelData, nprt_per_rank)
 
     Threads.@threads for ip in 1:nprt_per_rank
         #Write to file
-        anal_file = joinpath(d.model_params.anal_folder, my_rank, ip,d.dates[1] * ".grd")
+        anal_file = joinpath(d.model_params.anal_folder, string(my_rank), string(ip), d.dates[1] * ".grd")
         write_fortran(anal_file,d.model_params.nlon, d.model_params.nlat, d.model_params.nlev,d.states.particles[:, :, :, :, ip])
         # Update the dynamics
         speedy_update!(d.model_params.SPEEDY,d.model_params.output_folder,d.dates[1],d.dates[2],string(my_rank),string(ip))
         # Read back in the data and update the states
-        guess_file = joinpath(d.model_params.guess_folder, my_rank, ip, d.dates[2] * ".grd")
+        guess_file = joinpath(d.model_params.guess_folder, string(my_rank), string(ip), d.dates[2] * ".grd")
         read_grd!(@view(d.states.particles[:, :, :, :, ip]), guess_file, d.model_params.nlon, d.model_params.nlat, d.model_params.nlev)
         # Check by plotting output
     end
@@ -709,7 +697,7 @@ end
 function write_weights(file::HDF5.File, weights::AbstractVector, unit::String, it::Int, d::ModelData)
 
     group_name = "weights"
-    dataset_name = "t" * string(it)
+    dataset_name = "t" * lpad(string(it),4,'0')
 
     group, subgroup = ParticleDA.create_or_open_group(file, group_name)
 
@@ -807,7 +795,7 @@ function write_field(file::HDF5.File,
                      d::ModelData) where T
 
     group_name = d.model_params.state_prefix * "_" * group
-    subgroup_name = "t" * string(it)
+    subgroup_name = "t" * lpad(string(it),4,'0')
     dataset_name = dataset
 
     group, subgroup = ParticleDA.create_or_open_group(file, group_name, subgroup_name)
