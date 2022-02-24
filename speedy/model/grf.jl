@@ -55,9 +55,7 @@ struct SphericalDistance <: Distance end
 
 shortname(::SphericalDistance) = "spherical distance"
 
-function apply(::SphericalDistance, x::Tuple{Float64, Float64}, y::Tuple{Float64, Float64})
-    @inbounds λ₁, φ₁ = x
-    @inbounds λ₂, φ₂ = y
+function apply(::SphericalDistance, (λ₁, φ₁)::Tuple{Float64, Float64}, (λ₂, φ₂)::Tuple{Float64, Float64})
     Δλ = λ₂ - λ₁  # longitude difference
     Δφ = φ₂ - φ₁  # latitude difference
     # haversine formula

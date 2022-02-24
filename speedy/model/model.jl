@@ -9,7 +9,6 @@ using FieldMetadata
 using FortranFiles
 using Setfield
 using Dates
-using PlotlyJS
 using MPI
 
 # using .Default_params
@@ -115,17 +114,20 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     n_3d::Int = 4
 
 end
+
+const SPEEDY_DATE_FORMAT = "YYYYmmddHH"
+
 function step_datetime(idate::String,dtdate::String)
-    new_idate = Dates.format(DateTime(idate, "YYYYmmddHH") + Dates.Hour(6),"YYYYmmddHH")
-    new_dtdate = Dates.format(DateTime(dtdate, "YYYYmmddHH") + Dates.Hour(6),"YYYYmmddHH")
+    new_idate = Dates.format(DateTime(idate, SPEEDY_DATE_FORMAT) + Dates.Hour(6), SPEEDY_DATE_FORMAT)
+    new_dtdate = Dates.format(DateTime(dtdate, SPEEDY_DATE_FORMAT) + Dates.Hour(6), SPEEDY_DATE_FORMAT)
     return new_idate,new_dtdate
 end
 
 function step_ens(ensdate::String, Hinc::Int)
-    ens_end = Dates.format(DateTime(ensdate, "YYYYmmddHH") + Dates.Month(1),"YYYYmmddHH")
-    diff = length(DateTime(ensdate, "YYYYmmddHH"):Hour(Hinc):DateTime(ens_end, "YYYYmmddHH"))
+    ens_end = Dates.format(DateTime(ensdate, SPEEDY_DATE_FORMAT) + Dates.Month(1), SPEEDY_DATE_FORMAT)
+    diff = length(DateTime(ensdate, SPEEDY_DATE_FORMAT):Hour(Hinc):DateTime(ens_end, SPEEDY_DATE_FORMAT))
     rand_int = rand(0:diff-1)*Hinc
-    new_idate = Dates.format(DateTime(ensdate, "YYYYmmddHH") + Dates.Hour(rand_int),"YYYYmmddHH")
+    new_idate = Dates.format(DateTime(ensdate, SPEEDY_DATE_FORMAT) + Dates.Hour(rand_int), SPEEDY_DATE_FORMAT)
     return new_idate
 end
 
@@ -250,22 +252,8 @@ function sample_gaussian_random_field!(field::AbstractArray{T,2},
                                        rng::Random.AbstractRNG) where T
 
     field .= GaussianRandomFields.sample(random_field_generator.grf)
-    # @. @view(random_field_generator.xi[:,:,threadid()]) = randn((rng,), T)
-    # sample_gaussian_random_field!(field, random_field_generator, @view(random_field_generator.xi[:,:,threadid()]))
 
 end
-
-# # Get a random sample from random_field_generator using random_numbers
-# function sample_gaussian_random_field!(field::AbstractArray{T,2},
-#                                        random_field_generator::RandomField,
-#                                        random_numbers::AbstractArray{T}) where T
-
-#     field .= GaussianRandomFields._sample!(@view(random_field_generator.w[:,:,threadid()]),
-#                                            @view(random_field_generator.z[:,:,threadid()]),
-#                                            random_field_generator.grf,
-#                                            random_numbers)
-
-# end
 
 # Add a gaussian random field to the height in the state vector of all particles
 function add_random_field!(state::AbstractArray{T},
@@ -568,7 +556,7 @@ function speedy_update!(SPEEDY::String,
                         rank::String,
                         particle::String)
     # Path to the bash script which carries out the forecast
-    forecast = joinpath(pwd(), "speedy", "model", "dafcst.sh")
+    forecast = joinpath(@__DIR__, "dafcst.sh")
     # Bash script call to speedy
     run(`$forecast $SPEEDY $output $YMDH $TYMDH $rank $particle`)
 end
