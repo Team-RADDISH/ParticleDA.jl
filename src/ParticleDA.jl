@@ -43,6 +43,12 @@ Return the number of state variables.
 function get_n_state_var end
 
 """
+    ParticleDA.get_indices(model_data) -> Vector{Int}
+
+Return the vector containing the indices of assimilated values in the state vector
+"""
+function get_indices end
+"""
     ParticleDa.get_obs_noise_std(model_data) -> Float
 
 Return standard deviation of observation noise. Required for optimal filter only.
@@ -121,6 +127,15 @@ method is intended to be extended by the user with the above signature,
 specifying the type of `model_data`.
 """
 function update_particle_noise! end
+
+"""
+    ParticleDA.sample_observations_given_particles!(model_data, nprt_per_rank::Int)
+
+Observe the particles at the observation locations and update using the noise of the model.
+Return the vector of the resulting particles observations.  `nprt_per_rank` is the number
+of particles per each MPI rank.
+"""
+function sample_observations_given_particles end
 
 """
     ParticleDA.get_particle_observations!(model_data, nprt_per_rank::Int) -> particles_observations
@@ -384,35 +399,9 @@ function update_particle_proposal!(model_data, filter_data, truth_observations, 
 end
 
 function update_particle_proposal!(model_data, filter_data, truth_observations, nprt_per_rank, filter_type::OptimalFilter)
-
-        # Optimal Filter: After updating the particle dynamics, we apply the "optimal proposal" in
-        #                 sample_height_proposal!() to the first state variable (height). We apply
-        #                 a sample from the gaussian random field in update_particle_noise!() to the other
-        #                 state variables (velocity).
-
-        particles = get_particles(model_data)
-
-        # Apply optimal proposal, the result will be in offline_matrices.samples
-        sample_height_proposal!(@view(particles[:,:,1,:]),
-                                filter_data.offline_matrices,
-                                filter_data.online_matrices,
-                                truth_observations,
-                                filter_data.stations,
-                                filter_data.grid,
-                                filter_data.grid_ext,
-                                filter_data.fft_plan,
-                                filter_data.fft_plan!,
-                                nprt_per_rank,
-                                filter_data.rng[threadid()],
-                                filter_data.obs_noise_std)
-
-        # Add noise from the standard gaussian random field to all state variables in model_data
-        update_particle_noise!(model_data, nprt_per_rank)
-
-        # Overwrite the height state variable with the samples of the optimal proposal
-        particles[:,:,1,:] .= filter_data.online_matrices.samples
-        set_particles!(model_data, particles)
-
+    update_particle_noise!(model_data, nprt_per_rank)
+    indices = get_indices(model_data)
+    update_particles_given_observations!(model_data, filter_data, truth_observations, nprt_per_rank)
 end
 
 function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict, filter_type; rng::Union{Random.AbstractRNG,Nothing}=nothing)

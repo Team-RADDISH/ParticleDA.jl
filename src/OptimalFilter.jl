@@ -396,6 +396,20 @@ function sample_height_proposal!(height::AbstractArray{T,3},
 
 end
 
+function update_particles_given_observations!(model_data, filter_data, observations, nprt_per_rank)
+    # Compute Y ~ Normal(HX, R) for each particle X
+    simulated_observations = sample_observations_given_particles(model_data, nprt_per_rank)
+    @show size(simulated_observations)
+    particles = get_particles(model_data)
+    # # Cholesky factorization of observation covariance HQHᵀ + R
+    # L = filter_data.offline_matrices.chol_covariance_observations
+    # # Linear operator implementing multiplication by (state covariance Q * transposed observation operator Hᵀ)
+    # QHᵀ = filter_data.offline_matrices.covariance_state_observations
+    # # Update particles to account for conditioning on observations, X =  X + QHᵀ(HQHᵀ + R)⁻¹(y − Y)
+    # particles .+= reshape(QHᵀ * (L \ (observations .- simulated_observations)), size(particles))
+    set_particles!(model_data, particles)
+end
+
 function get_log_weights!(log_weights::AbstractVector{T},
                           obs::AbstractVector{T},
                           obs_model::AbstractMatrix{T},
