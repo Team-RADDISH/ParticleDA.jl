@@ -215,7 +215,7 @@ end
     model_params_dict = get(ParticleDA.read_input_file(input_file), "model", Dict())
     nprt_per_rank = 1
     my_rank = 0
-    model_data = Model.init(model_params_dict, nprt_per_rank, my_rank, Random.default_rng())
+    model_data = Model.init(model_params_dict, nprt_per_rank, my_rank, Random.TaskLocalRNG())
     # Make sure `get_particles` always returns the same array
     @test pointer(ParticleDA.get_particles(model_data)) == pointer(ParticleDA.get_particles(model_data))
 end

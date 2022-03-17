@@ -200,7 +200,7 @@ function normalized_exp!(weight::AbstractVector)
 end
 
 # Resample particles from given weights using Stochastic Universal Sampling
-function resample!(resampled_indices::AbstractVector{Int}, weight::AbstractVector{T}, rng::Random.AbstractRNG=Random.default_rng()) where T
+function resample!(resampled_indices::AbstractVector{Int}, weight::AbstractVector{T}, rng::Random.AbstractRNG=Random.TaskLocalRNG()) where T
 
     nprt = length(weight)
     nprt_inv = 1.0 / nprt
@@ -414,7 +414,7 @@ function update_particle_proposal!(model_data, filter_data, truth_observations, 
 
 end
 
-function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict, filter_type; rng::Random.AbstractRNG=Random.default_rng())
+function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict, filter_type; rng::Random.AbstractRNG=Random.TaskLocalRNG())
 
     MPI.Init()
 
@@ -578,7 +578,7 @@ Run the particle filter.  `init` is the function which initialise the model,
 `filter_type` is the particle filter to use.  See [`ParticleFilter`](@ref) for
 the possible values.
 """
-function run_particle_filter(init, path_to_input_file::String, filter_type::ParticleFilter; rng::Random.AbstractRNG=Random.default_rng())
+function run_particle_filter(init, path_to_input_file::String, filter_type::ParticleFilter; rng::Random.AbstractRNG=Random.TaskLocalRNG())
 
     MPI.Init()
 
@@ -607,7 +607,7 @@ Run the particle filter.  `init` is the function which initialise the model,
 is the particle filter to use.  See [`ParticleFilter`](@ref) for the possible
 values.
 """
-function run_particle_filter(init, user_input_dict::Dict, filter_type::ParticleFilter; rng::Random.AbstractRNG=Random.default_rng())
+function run_particle_filter(init, user_input_dict::Dict, filter_type::ParticleFilter; rng::Random.AbstractRNG=Random.TaskLocalRNG())
 
     filter_params = get_params(FilterParameters, get(user_input_dict, "filter", Dict()))
     model_params_dict = get(user_input_dict, "model", Dict())
