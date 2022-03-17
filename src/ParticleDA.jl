@@ -43,11 +43,11 @@ Return the number of state variables.
 function get_n_state_var end
 
 """
-    ParticleDA.get_indices(model_data) -> Vector{Int}
+    ParticleDA.get_observed_state_indices(model_data) -> Vector{Int}
 
 Return the vector containing the indices of assimilated values in the state vector
 """
-function get_indices end
+function get_observed_state_indices end
 """
     ParticleDa.get_obs_noise_std(model_data) -> Float
 
@@ -400,7 +400,6 @@ end
 
 function update_particle_proposal!(model_data, filter_data, truth_observations, nprt_per_rank, filter_type::OptimalFilter)
     update_particle_noise!(model_data, nprt_per_rank)
-    indices = get_indices(model_data)
     update_particles_given_observations!(model_data, filter_data, truth_observations, nprt_per_rank)
 end
 

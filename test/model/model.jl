@@ -55,7 +55,7 @@ Parameters for the model. Keyword arguments:
 * `boundary_damping::Float` : damping for boundaries
 * `cutoff_depth::Float` : Shallowest water depth
 * `obs_noise_std::Float`: Standard deviation of noise added to observations of the true state
-* `assimilate_indices::Vector`: Vector containing the indices of the assimilated values in the state vector
+* `observed_indices::Vector`: Vector containing the indices of the observed values in the state vector
 * `particle_dump_file::String`: file name for dump of particle state vectors
 * `particle_dump_time::Int`: list of (one more more) time steps to dump particle states
 """
@@ -111,8 +111,8 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     title_params::String = "params"
 
     obs_noise_std::T = 1.0
-    # Assimilated indices
-    assimilate_indices::Vector{Int} = [1]
+    # Observed indices
+    observed_indices::Vector{Int} = [1]
 
     particle_dump_file = "particle_dump.h5"
     particle_dump_time = [-1]
@@ -445,7 +445,7 @@ ParticleDA.get_obs_noise_std(d::ModelData) = d.model_params.obs_noise_std
 ParticleDA.get_model_noise_params(d::ModelData) = Matern(d.model_params.lambda[1],
                                                          d.model_params.nu[1],
                                                          σ=d.model_params.sigma[1])
-ParticleDA.get_indices(d::ModelData) = d.model_params.assimilate_indices
+ParticleDA.get_observed_state_indices(d::ModelData) = d.model_params.observed_indices
 function ParticleDA.set_particles!(d::ModelData, particles::AbstractArray{T}) where T
 
     d.states.particles .= particles
@@ -489,14 +489,14 @@ function ParticleDA.update_truth!(d::ModelData, _)
 end
 
 function ParticleDA.sample_observations_given_particles(d::ModelData, nprt_per_rank)
-    
+
     for ip in 1:nprt_per_rank
         get_obs!(@view(d.observations.model[:,ip]),
                  @view(d.states.particles[:, :, :, ip]),
                  d.stations.ist,
                  d.stations.jst,
                  d.model_params)
-        add_noise!(d.observations.model[:,ip], d.rng[1], d.model_params)
+        add_noise!(@view(d.observations.model[:,ip]), d.rng[threadid()], d.model_params)
     end
     return d.observations.model
 end
@@ -520,6 +520,7 @@ function ParticleDA.update_particle_noise!(d::ModelData, nprt_per_rank)
 end
 
 function ParticleDA.get_particle_observations!(d::ModelData, nprt_per_rank)
+
     # get observations
     for ip in 1:nprt_per_rank
         get_obs!(@view(d.observations.model[:,ip]),

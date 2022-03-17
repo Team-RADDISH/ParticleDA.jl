@@ -12,6 +12,7 @@ struct OfflineMatrices{T<:AbstractArray, S<:AbstractArray, U<:AbstractArray}
     R21_bar::T
     R22::T # Covariance between observation stations
     R22_inv::T # Inverse of R22
+    chol_covariance_observations::T
     R12_invR22::T
     Lambda::S
     K::U
@@ -234,12 +235,12 @@ function init_offline_matrices(grid::Grid,
                                Matrix{F}(undef, stations.nst, n1_bar),      #R21_bar
                                Matrix{F}(undef, stations.nst, stations.nst), #R22
                                Matrix{F}(undef, stations.nst, stations.nst), #R22_inv
+                               Matrix{F}(undef, stations.nst, stations.nst), #chol_covariance_observations
                                Matrix{F}(undef, n1, stations.nst),          #R12_invR22
                                Vector{F}(undef, n1_bar),                   #Lambda (diagonal elements)
                                Matrix{C}(undef, stations.nst, n1_bar),      #K
                                Matrix{F}(undef, stations.nst, stations.nst), #L
                                Matrix{F}(undef, stations.nst, stations.nst), #mu20
-
                                Matrix{F}(undef, grid.nx, grid.ny), #buf1
                                Matrix{F}(undef, grid.nx, grid.ny)  #buf2
                                )
@@ -250,7 +251,7 @@ function init_offline_matrices(grid::Grid,
     covariance_stations!(matrices.R22, grid, stations, covariance_structure, obs_noise_std)
     matrices.R22_inv .= inv(matrices.R22)
     matrices.R12_invR22 .= matrices.R12 * matrices.R22_inv
-
+    matrices.chol_covariance_observations .= cholesky(matrices.R22).L
     fourier_coeffs = Vector{C}(undef, n1_bar)
     normalized_2d_fft!(fourier_coeffs, matrices.rho_bar, fft_plan, fft_plan!, grid_ext, inv)
     matrices.Lambda .= sqrt(n1_bar) .* real.(fourier_coeffs)
@@ -399,14 +400,14 @@ end
 function update_particles_given_observations!(model_data, filter_data, observations, nprt_per_rank)
     # Compute Y ~ Normal(HX, R) for each particle X
     simulated_observations = sample_observations_given_particles(model_data, nprt_per_rank)
-    @show size(simulated_observations)
     particles = get_particles(model_data)
-    # # Cholesky factorization of observation covariance HQHᵀ + R
-    # L = filter_data.offline_matrices.chol_covariance_observations
+    # Cholesky factorization of observation covariance HQHᵀ + R
+    L = filter_data.offline_matrices.chol_covariance_observations
     # # Linear operator implementing multiplication by (state covariance Q * transposed observation operator Hᵀ)
-    # QHᵀ = filter_data.offline_matrices.covariance_state_observations
+    QHᵀ = filter_data.offline_matrices.R12
+    indices = get_observed_state_indices(model_data)
     # # Update particles to account for conditioning on observations, X =  X + QHᵀ(HQHᵀ + R)⁻¹(y − Y)
-    # particles .+= reshape(QHᵀ * (L \ (observations .- simulated_observations)), size(particles))
+    @view(particles[:,:,indices...,:]) .+= reshape(QHᵀ * (L*L' \ (observations .- simulated_observations)), size(particles[:,:,indices...,:]))
     set_particles!(model_data, particles)
 end
 
