@@ -215,8 +215,7 @@ end
     model_params_dict = get(ParticleDA.read_input_file(input_file), "model", Dict())
     nprt_per_rank = 1
     my_rank = 0
-    _rng = [Random.MersenneTwister()]
-    model_data = Model.init(model_params_dict, nprt_per_rank, my_rank, _rng)
+    model_data = Model.init(model_params_dict, nprt_per_rank, my_rank, Random.TaskLocalRNG())
     # Make sure `get_particles` always returns the same array
     @test pointer(ParticleDA.get_particles(model_data)) == pointer(ParticleDA.get_particles(model_data))
 end
@@ -335,17 +334,13 @@ end
     ParticleDA.calculate_mean_height!(mat_on.mean, height, mat_off, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params.nprt, model_params.obs_noise_std)
     @test all(isfinite, mat_on.mean)
 
-    rng = Random.MersenneTwister(seed)
+    rng = Random.seed!(seed)
     ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params.nprt, rng, model_params.obs_noise_std)
     @test all(isfinite, mat_on.samples)
 
 end
 
 @testset "Optimal Filter validation" begin
-
-    seed = 123
-    Random.seed!(seed)
-    rng = Random.MersenneTwister(seed)
 
     include(joinpath(@__DIR__,"optimal_filter_validation.jl"));
 
@@ -388,6 +383,7 @@ end
     mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, noise_params, model_params.obs_noise_std, fft_plan, fft_plan!, Float64)
     mat_on = ParticleDA.init_online_matrices(grid, grid_ext, stations, filter_params.nprt, Float64)
 
+    rng = Random.seed!(123)
     ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params.nprt, rng, model_params.obs_noise_std)
 
     Yobs_t = copy(obs)

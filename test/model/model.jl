@@ -297,7 +297,7 @@ end
 function add_random_field!(state::AbstractArray{T,4},
                            field_buffer::AbstractArray{T,4},
                            generators::Vector{<:RandomField},
-                           rng::AbstractVector{<:Random.AbstractRNG},
+                           rng::Random.AbstractRNG,
                            nvar::Int,
                            nprt::Int) where T
 
@@ -305,7 +305,7 @@ function add_random_field!(state::AbstractArray{T,4},
 
         for ivar in 1:nvar
 
-            sample_gaussian_random_field!(@view(field_buffer[:, :, 1, threadid()]), generators[ivar], rng[threadid()])
+            sample_gaussian_random_field!(@view(field_buffer[:, :, 1, threadid()]), generators[ivar], rng)
             @view(state[:, :, ivar, ip]) .+= @view(field_buffer[:, :, 1, threadid()])
 
         end
@@ -365,7 +365,7 @@ end
 
 function set_initial_state!(states::StateVectors, model_matrices::LLW2d.Matrices{T},
                             field_buffer::AbstractArray{T, 4},
-                            rng::AbstractVector{<:Random.AbstractRNG},
+                            rng::Random.AbstractRNG,
                             nprt_per_rank::Int,
                             params::ModelParameters) where T
 
@@ -453,7 +453,7 @@ ParticleDA.get_grid_domain_size(d::ModelData) = d.model_params.x_length,d.model_
 ParticleDA.get_grid_cell_size(d::ModelData) = d.model_params.dx,d.model_params.dy
 ParticleDA.get_n_state_var(d::ModelData) = d.model_params.n_state_var
 
-function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, rng::Vector{<:Random.AbstractRNG})
+function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, rng::Random.AbstractRNG)
 
     model_params = ParticleDA.get_params(ModelParameters, get(model_params_dict, "llw2d", Dict()))
     states, observations, stations, field_buffer = init_arrays(model_params, nprt_per_rank)
