@@ -129,13 +129,17 @@ specifying the type of `model_data`.
 function update_particle_noise! end
 
 """
-    ParticleDA.sample_observations_given_particles!(model_data, nprt_per_rank::Int)
+    ParticleDA.sample_observations_given_particles!(
+        simulated_observations, model_data, nprt_per_rank::Int
+    )
 
-Observe the particles at the observation locations and update using the noise of the model.
-Return the vector of the resulting particles observations.  `nprt_per_rank` is the number
-of particles per each MPI rank.
+Simulate noisy observations of the state for each of the state particles in `model_data`
+associated with the current MPI rank and write to the `simulated_observation` array
+which should be of size `(dim_observation, nprt_per_rank)` where `dim_observation` is
+the dimension of each observation vector and `nprt_per_rank` is the number of particles
+per each MPI rank.
 """
-function sample_observations_given_particles end
+function sample_observations_given_particles! end
 
 """
     ParticleDA.get_particle_observations!(model_data, nprt_per_rank::Int) -> particles_observations
@@ -375,21 +379,14 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
     size = get_grid_size(model_data)
     domain_size = get_grid_domain_size(model_data)
     cell_size = get_grid_cell_size(model_data)
-
     grid = Grid(size...,cell_size...,domain_size...)
-    grid_ext = Grid((grid.nx-1)*2, (grid.ny-1)*2, grid.dx, grid.dy, (grid.x_length-grid.dx)*2, (grid.y_length-grid.dy)*2)
 
     model_noise_params = get_model_noise_params(model_data)
     obs_noise_std = get_obs_noise_std(model_data)
-    # Precompute two FFT plans, one in-place and the other out-of-place
-    C = complex(T)
-    tmp_array = Matrix{C}(undef, grid_ext.nx, grid_ext.ny)
-    fft_plan, fft_plan! = FFTW.plan_fft(tmp_array), FFTW.plan_fft!(tmp_array)
+    offline_matrices = init_offline_matrices(grid, stations, model_noise_params, obs_noise_std)
+    online_matrices = init_online_matrices(grid, stations, nprt_per_rank, T)
 
-    offline_matrices = init_offline_matrices(grid, grid_ext, stations, model_noise_params, obs_noise_std, fft_plan, fft_plan!, T)
-    online_matrices = init_online_matrices(grid, grid_ext, stations, nprt_per_rank, T)
-
-    return (; filter_data..., offline_matrices, online_matrices, stations, grid, grid_ext, rng, obs_noise_std, fft_plan, fft_plan!)
+    return (; filter_data..., offline_matrices, online_matrices, stations, grid, rng, obs_noise_std)
 end
 
 function update_particle_proposal!(model_data, filter_data, truth_observations, nprt_per_rank, filter_type::BootstrapFilter)

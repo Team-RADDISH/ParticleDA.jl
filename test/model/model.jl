@@ -488,17 +488,23 @@ function ParticleDA.update_truth!(d::ModelData, _)
     return d.observations.truth
 end
 
-function ParticleDA.sample_observations_given_particles(d::ModelData, nprt_per_rank)
-
+function ParticleDA.sample_observations_given_particles!(
+    simulated_observations::AbstractMatrix, d::ModelData, nprt_per_rank
+)
+    @assert size(simulated_observations) == (d.model_params.nobs, nprt_per_rank)
     for ip in 1:nprt_per_rank
-        get_obs!(@view(d.observations.model[:,ip]),
-                 @view(d.states.particles[:, :, :, ip]),
-                 d.stations.ist,
-                 d.stations.jst,
-                 d.model_params)
-        add_noise!(@view(d.observations.model[:,ip]), d.rng[threadid()], d.model_params)
+        get_obs!(
+            @view(simulated_observations[:, ip]),
+            @view(d.states.particles[:, :, :, ip]),
+            d.stations.ist,
+            d.stations.jst,
+            d.model_params
+        )
+        add_noise!(
+            @view(simulated_observations[:, ip]), d.rng[threadid()], d.model_params
+        )
     end
-    return d.observations.model
+    return simulated_observations
 end
 
 function ParticleDA.update_particle_dynamics!(d::ModelData, nprt_per_rank)
