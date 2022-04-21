@@ -2,11 +2,11 @@ using LinearAlgebra
 using GaussianRandomFields
 
 
-struct OfflineMatrices{R<:Real, M<:AbstractMatrix{R}, C<:LinearAlgebra.Cholesky{R, M}}
+struct OfflineMatrices{R<:Real, M<:AbstractMatrix{R}, F<:Factorization{R}}
     # Covariance between state X and observations Y given previous state x
     cov_X_Y::M  
-    # Cholesky factorization of covariance between observations Y given previous state x
-    chol_cov_Y_Y::C  
+    # Factorization of covariance between observations Y given previous state x
+    fact_cov_Y_Y::F  
 end
 
 struct OnlineMatrices{T<:AbstractMatrix}
@@ -59,11 +59,11 @@ function covariance_observations_state_given_previous_state(
     return cov
 end
 
-# Covariance Cov(Y, Y) between observations Y = H(F(x) + U) + V given previous state x
-# where U ~ Normal(0, Q) is the state noise, V ~ Normal(R) the observation noise,
-# F the forward operator of the (deterministic) state dynamics and H a linear
-# observation operator
-function covariance_observations_observations_given_previous_state(
+# Cholesky factorization of covariance Cov(Y, Y) between observations Y = H(F(x)+U) + V 
+# given previous state x where U ~ Normal(0, Q) is the state noise, V ~ Normal(R) the 
+# observation noise, F the forward operator of the (deterministic) state dynamics and H 
+# a linear observation operator
+function factorized_covariance_observations_observations_given_previous_state(
     grid::Grid, 
     stations::NamedTuple, 
     covariance_structure::IsotropicCovarianceStructure{T}, 
@@ -75,9 +75,8 @@ function covariance_observations_observations_given_previous_state(
         (covariance_structure,),
     )
     view(cov, diagind(cov)) .+= observation_noise_std.^2
-    return cov
+    return cholesky!(cov)
 end
-
 
 # Allocate and compute matrices that do not depend on time-dependent variables
 function init_offline_matrices(
@@ -89,11 +88,10 @@ function init_offline_matrices(
     cov_X_Y = covariance_observations_state_given_previous_state(
         grid, stations, covariance_structure
     )
-    cov_Y_Y = covariance_observations_observations_given_previous_state(
+    fact_cov_Y_Y = factorized_covariance_observations_observations_given_previous_state(
         grid, stations, covariance_structure, observation_noise_std
     )
-    chol_cov_Y_Y = cholesky!(cov_Y_Y)
-    matrices = OfflineMatrices(cov_X_Y, chol_cov_Y_Y)
+    matrices = OfflineMatrices(cov_X_Y, fact_cov_Y_Y)
     return matrices
 end
 
@@ -115,7 +113,7 @@ function update_particles_given_observations!(
     observations_buffer = filter_data.online_matrices.observations_buffer
     states_buffer = filter_data.online_matrices.states_buffer
     cov_X_Y = filter_data.offline_matrices.cov_X_Y
-    chol_cov_Y_Y = filter_data.offline_matrices.chol_cov_Y_Y
+    fact_cov_Y_Y = filter_data.offline_matrices.fact_cov_Y_Y
     # Compute Y ~ Normal(HX, R) for each particle X
     sample_observations_given_particles!(observations_buffer, model_data, nprt_per_rank)
     particles = get_particles(model_data)
@@ -123,13 +121,13 @@ function update_particles_given_observations!(
     # Update particles to account for observations, X = X - QHᵀ(HQHᵀ + R)⁻¹(Y − y)
     # The following lines are equivalent to the single statement version
     #     @view(particles[:, :, indices..., :]) .-= reshape(
-    #         cov_X_Y * (chol_cov_Y_Y  \ (observations_buffer .- observations)), 
+    #         cov_X_Y * (fact_cov_Y_Y  \ (observations_buffer .- observations)), 
     #         size(particles[:, :, indices..., :])
     #     )
     # but we stage across multiple statements to allow using in-place operations to
     # avoid unnecessary allocations.
     observations_buffer .-= observations
-    ldiv!(chol_cov_Y_Y, observations_buffer)
+    ldiv!(fact_cov_Y_Y, observations_buffer)
     mul!(states_buffer, cov_X_Y, observations_buffer)
     @view(particles[:, :, indices..., :]) .-= reshape(
         states_buffer, size(particles[:, :, indices..., :])
@@ -147,7 +145,7 @@ function get_log_weights!(
     for p in 1:nprt
         observation_differences = observations - observation_means_given_particles[:, p]
         log_weights[p] = -0.5 *  (
-            observation_differences' * matrices.chol_cov_Y_Y \ observation_differences
+            observation_differences' * matrices.fact_cov_Y_Y \ observation_differences
         )
     end
     # Normalization is done in a separate function due to parallelism optimisation
