@@ -143,7 +143,7 @@ function get_log_weights!(
     observation_means_given_particles::AbstractMatrix{T},
     matrices::OfflineMatrices
 ) where T
-    nprt = size(obs_model, 2)
+    nprt = length(log_weights)
     for p in 1:nprt
         observation_differences = observations - observation_means_given_particles[:, p]
         log_weights[p] = -0.5 *  (
