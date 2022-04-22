@@ -134,19 +134,3 @@ function update_particles_given_observations!(
     )
     set_particles!(model_data, particles)
 end
-
-function get_log_weights!(
-    log_weights::AbstractVector{T},
-    observations::AbstractVector{T},
-    observation_means_given_particles::AbstractMatrix{T},
-    matrices::OfflineMatrices
-) where T
-    nprt = length(log_weights)
-    for p in 1:nprt
-        observation_differences = observations - observation_means_given_particles[:, p]
-        log_weights[p] = -0.5 *  (
-            observation_differences' * matrices.fact_cov_Y_Y \ observation_differences
-        )
-    end
-    # Normalization is done in a separate function due to parallelism optimisation
-end
