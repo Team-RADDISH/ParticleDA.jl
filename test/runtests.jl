@@ -85,21 +85,15 @@ end
     weights = Vector{Float64}(undef, 3)
     # model observations with equal distance from true observation return equal weights
     hx = [0.5 0.9 1.5; 2.1 2.5 1.9]
-    ParticleDA.get_log_weights!(weights, y, hx, cov_obs)
-    @test weights ≈ [-1.9678770664093457, -1.9678770664093457, -1.9678770664093457]
+    ParticleDA.get_log_weights!(weights, y, hx, (obs_noise_std=1.,), BootstrapFilter())
+    @test diff(weights) ≈ zeros(2)
     ParticleDA.normalized_exp!(weights)
     @test weights ≈ ones(3) / 3
     # model observations with decreasing distance from true observation return decreasing weights
     hx = [0.9 0.5 1.5; 2.1 2.5 3.5]
-    ParticleDA.get_log_weights!(weights, y, hx, cov_obs)
+    ParticleDA.get_log_weights!(weights, y, hx, (obs_noise_std=1.,), BootstrapFilter())
     ParticleDA.normalized_exp!(weights)
     @test weights[1] > weights[2] > weights[3]
-
-    # multivariate and independent methods give same weights when covariance matrix is diagonal
-    weights2 = Vector{Float64}(undef, 3)
-    ParticleDA.get_log_weights!(weights2, y, hx, 1.0)
-    ParticleDA.normalized_exp!(weights2)
-    @test weights2 ≈ weights
 
     id = zeros(Int, 5)
     # equal weights return the same particles
