@@ -15,7 +15,7 @@ Parameters for ParticleDA run. Keyword arguments:
 * `random_seed::Int` : Seed number for the pseudorandom number generator
 * `enable_timers::Bool` : Flag to control run time measurements
 """
-Base.@kwdef struct FilterParameters{T<:AbstractFloat}
+Base.@kwdef struct FilterParameters
 
     master_rank::Int = 0
 
