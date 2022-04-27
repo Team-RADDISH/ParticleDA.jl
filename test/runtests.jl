@@ -284,54 +284,76 @@ end
                            model_params.dy,
                            model_params.x_length,
                            model_params.y_length)
-    grid_ext = ParticleDA.Grid((grid.nx-1)*2,
-                               (grid.ny-1)*2,
-                               grid.dx,
-                               grid.dy,
-                               (grid.x_length-grid.dx)*2,
-                               (grid.y_length-grid.dy)*2)
     noise_params =  Matern(model_params.lambda[1], model_params.nu[1], σ = model_params.sigma[1])
+    
+    for s in ([1., 2.], [0.5, 3.2])
+        @test ParticleDA.state_noise_covariance(s..., noise_params) ≈ (
+            noise_params.σ^2 * exp(-norm(s) / noise_params.λ)
+        )
+    end
 
     # Set station coordinates
     ist = rand(1:model_params.nx, model_params.nobs)
     jst = rand(1:model_params.ny, model_params.nobs)
     stations = (nst = model_params.nobs, ist = ist, jst = jst)
-    cov_ext = ParticleDA.extended_covariance(0.0, 0.5 * grid.y_length, grid, noise_params)
-    @test cov_ext ≈ noise_params.σ^2 * exp(-norm([0.0, 0.5 * model_params.y_length]) / noise_params.λ)
-    @test cov_ext ≈ ParticleDA.extended_covariance(2.0 * grid.x_length, 0.5 * grid.y_length, grid, noise_params)
-    @test cov_ext ≈ ParticleDA.extended_covariance(0.0, 1.5 * grid.y_length, grid, noise_params)
-    arr = rand(ComplexF64,10,10)
-    arr2 = zeros(ComplexF64,10,10)
-    arr3 = zeros(ComplexF64,10,10)
-    fft_plan, fft_plan! = FFTW.plan_fft(arr), FFTW.plan_fft!(arr)
-    ParticleDA.normalized_2d_fft!(arr2, arr, fft_plan, fft_plan!, grid_ext)
-    ParticleDA.normalized_2d_fft!(arr3, arr2, fft_plan, fft_plan!, grid_ext, inv)
-    @test arr ≈ arr3
-
-    cov_1 = zeros(stations.nst, grid_ext.nx * grid_ext.ny)
-    cov_2 = zeros(grid.nx * grid.ny, stations.nst)
-    cov_3 = zeros(stations.nst,stations.nst)
-    ParticleDA.covariance_stations_extended_grid!(cov_1,grid,grid_ext,stations,noise_params)
-    ParticleDA.covariance_grid_stations!(cov_2,grid,stations,noise_params)
-    ParticleDA.covariance_stations!(cov_3,grid,stations,noise_params,model_params.obs_noise_std)
-    @test all(isfinite, cov_1)
-    @test all(isfinite, cov_2)
-    @test all(isfinite, cov_3)
-    @test cov_3 == Symmetric(cov_3)
-
-    height = rand(grid.nx, grid.ny, filter_params.nprt)
-    obs = randn(stations.nst)
-    tmp_array = Matrix{ComplexF64}(undef, grid_ext.nx, grid_ext.ny)
-    fft_plan, fft_plan! = FFTW.plan_fft(tmp_array), FFTW.plan_fft!(tmp_array)
-    mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, noise_params, model_params.obs_noise_std, fft_plan, fft_plan!, Float64)
-    mat_on = ParticleDA.init_online_matrices(grid, grid_ext, stations, filter_params.nprt, Float64)
-    @test minimum(mat_off.Lambda) > 0.0
-    ParticleDA.calculate_mean_height!(mat_on.mean, height, mat_off, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params.nprt, model_params.obs_noise_std)
-    @test all(isfinite, mat_on.mean)
-
-    rng = Random.MersenneTwister(seed)
-    ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params.nprt, rng, model_params.obs_noise_std)
-    @test all(isfinite, mat_on.samples)
+    
+    cov_X_Y = ParticleDA.covariance_observations_state_given_previous_state(
+        grid, stations, noise_params
+    )
+    @test all(isfinite, cov_X_Y)
+    fact_cov_Y_Y = ParticleDA.factorized_covariance_observations_observations_given_previous_state(
+        grid, stations, noise_params, model_params.obs_noise_std
+    )
+    # cov(Y, Y) and so its inverse should be positive definite, therefore inner-products
+    # v' * inv(cov(Y, Y)) * v should always be positive
+    vectors = randn(Float64, (model_params.nobs, 10))
+    inner_products = sum(vectors .* (fact_cov_Y_Y \ vectors); dims=1)
+    @test all(isfinite, inner_products)
+    @test all(inner_products .> 0)
+    
+    # offline_matrices struct fields should all be matrix-like objects (either subtypes
+    # of AbstractMatrix or Factorization) and should all be initialised to finite values
+    # by init_offline_matrices
+    offline_matrices = ParticleDA.init_offline_matrices(
+        grid, stations, noise_params, model_params.obs_noise_std
+    )
+    for f in nfields(offline_matrices)
+        matrix = getfield(offline_matrices, f)
+        @test isa(matrix, AbstractMatrix) || isa(matrix, Factorization)
+        @test !isa(matrix, AbstractMatrix) || all(isfinite, matrix)
+    end
+    
+    # online_matrices struct fields should all be AbstractMatrix subtypes but may be
+    # unintialised so cannot say anything about values
+    online_matrices = ParticleDA.init_online_matrices(
+        grid, stations, filter_params.nprt, Float64
+    )
+    for f in nfields(online_matrices)
+        matrix = getfield(online_matrices, f)
+        @test isa(matrix, AbstractMatrix) 
+    end    
+    
+    # update_particles_given_observations should change at least some elements in
+    # particle state arrays
+    input_file = joinpath(
+        dirname(pathof(ParticleDA)), "..", "test", "optimal_filter_test_1.yaml"
+    )
+    model_params_dict = get(ParticleDA.read_input_file(input_file), "model", Dict())
+    nprt_per_rank = 1
+    my_rank = 0
+    _rng = [Random.MersenneTwister(seed)]
+    model_data = Model.init(model_params_dict, nprt_per_rank, my_rank, _rng)
+    filter_data = ParticleDA.init_filter(
+        filter_params, model_data, nprt_per_rank, _rng, Float64, OptimalFilter()
+    )
+    observations = ParticleDA.update_truth!(model_data, nprt_per_rank)
+    old_particles = copy(ParticleDA.get_particles(model_data))
+    ParticleDA.update_particles_given_observations!(
+        model_data, filter_data, observations, nprt_per_rank
+    )
+    new_particles = ParticleDA.get_particles(model_data)
+    @test all(isfinite, new_particles)
+    @test any(old_particles .!= new_particles)
 
 end
 
