@@ -326,7 +326,7 @@ end
 # Add a (mean, std) normal distributed random number to each element of vec
 function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, mean::T, std::T) where T
 
-    d = truncated(Normal(mean, std), 0.0, Inf)
+    d = Normal(mean, std)
     @. vec += rand((rng,), d)
 
 end
