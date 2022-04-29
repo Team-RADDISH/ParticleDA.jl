@@ -2,8 +2,8 @@ using ParticleDA
 using LinearAlgebra, Test, HDF5, Random, YAML
 using MPI
 using StableRNGs
-using FFTW
 using GaussianRandomFields: Matern
+using Statistics
 
 using ParticleDA: FilterParameters
 
@@ -358,71 +358,76 @@ end
 end
 
 @testset "Optimal Filter validation" begin
-
-    seed = 123
-    Random.seed!(seed)
-    rng = Random.MersenneTwister(seed)
-
-    include(joinpath(@__DIR__,"optimal_filter_validation.jl"));
-
-    params_dict = YAML.load_file(joinpath(@__DIR__, "optimal_filter_validation.yaml"))
-    filter_params = ParticleDA.get_params(FilterParameters, params_dict["filter"])
-    model_params = ParticleDA.get_params(ModelParameters, params_dict["model"]["llw2d"])
-
-    grid = ParticleDA.Grid(model_params.nx,
-                           model_params.ny,
-                           model_params.dx,
-                           model_params.dy,
-                           model_params.x_length,
-                           model_params.y_length)
-    grid_ext = ParticleDA.Grid((grid.nx-1)*2,
-                               (grid.ny-1)*2,
-                               grid.dx,
-                               grid.dy,
-                               (grid.x_length-grid.dx)*2,
-                               (grid.y_length-grid.dy)*2)
-
-    noise_params =  Matern(model_params.lambda[1], model_params.nu[1], σ = model_params.sigma[1])
-
-    stations = (nst = model_params.nobs, ist = st.st_ij[:,1].+1, jst = st.st_ij[:,2].+1)
-
-    h(x,y) = sin(x)^2 + cos(y)^2
-    height = zeros(model_params.nx, model_params.ny, filter_params.nprt)
-    x = (1:model_params.nx) .* 2 * pi / model_params.nx
-    y = (1:model_params.ny) .* 4 * pi / model_params.ny
-    for i = 1:filter_params.nprt
-        height[:,:,i] .= h.(x',y)
+    seed = 1689017430981346891
+    MPI.Init()
+    my_rank = 0
+    input_file = joinpath(
+        dirname(pathof(ParticleDA)), "..", "test", "optimal_filter_test_2.yaml"
+    )
+    filter_type = OptimalFilter()
+    _rng = [Random.MersenneTwister(seed)]
+    user_input_dict = ParticleDA.read_input_file(input_file)
+    model_params_dict = get(user_input_dict, "model", Dict())
+    filter_params_dict = get(user_input_dict, "filter", Dict())
+    for nprt in [25, 100, 400, 2500]
+        filter_params_dict["nprt"] = nprt
+        filter_params = ParticleDA.get_params(FilterParameters, filter_params_dict)
+        nprt_per_rank = nprt
+        model_data = Model.init(model_params_dict, nprt_per_rank, my_rank, _rng)
+        filter_data = ParticleDA.init_filter(
+            filter_params, model_data, nprt_per_rank, _rng, Float64, filter_type
+        )
+        observations = ParticleDA.update_truth!(model_data, nprt_per_rank)
+        initial_particles = copy(ParticleDA.get_particles(model_data))
+        firstonlastaxis(array) = selectdim(array, ndims(array), 1)
+        # force all particles equal to first
+        initial_particles .= firstonlastaxis(initial_particles)
+        ParticleDA.set_particles!(model_data, initial_particles)
+        ParticleDA.update_particle_dynamics!(model_data, nprt_per_rank)
+        particles = copy(ParticleDA.get_particles(model_data))
+        # update_particle_dynamics should at least some change particle components
+        @test any(particles .!= initial_particles)
+        # update_particle_dynamics should be deterministic so all particles remain equal 
+        # to each other
+        @test all(firstonlastaxis(particles) .== particles)
+        observations_mean_given_particle = copy(firstonlastaxis(
+            ParticleDA.get_particle_observations!(model_data, nprt_per_rank)
+        ))
+        ParticleDA.update_particle_noise!(model_data, nprt_per_rank)
+        noised_particles = copy(ParticleDA.get_particles(model_data))
+        # update_particle_noise! should add noise to all particle components
+        @test all(particles .!= noised_particles)
+        # noise added by update_particle_noise! should be zero mean and so mean of
+        # noised particles should be within Monte Carlo 1/√N error of particles
+        @test maximum(
+            abs.(
+                mean(noised_particles, dims=ndims(noised_particles)) 
+                .- firstonlastaxis(particles)
+            )
+        ) < (4. / sqrt(filter_params.nprt))
+        ParticleDA.update_particles_given_observations!(
+            model_data, filter_data, observations, nprt_per_rank
+        )
+        updated_particles = ParticleDA.get_particles(model_data)
+        # update_particles_given_observations! should at change some particle components
+        @test any(noised_particles .!= updated_particles)
+        updated_particles_mean = mean(updated_particles, dims=ndims(updated_particles))
+        updated_particles_std = std(updated_particles, dims=ndims(updated_particles))
+        @test all(updated_particles_std .> 0)
+        cov_X_Y = filter_data.offline_matrices.cov_X_Y
+        fact_cov_Y_Y = filter_data.offline_matrices.fact_cov_Y_Y
+        analytic_mean = copy(firstonlastaxis(particles))
+        indices = ParticleDA.get_observed_state_indices(model_data)
+        @view(analytic_mean[:, :, indices...]) .+= reshape(
+            cov_X_Y * (
+                fact_cov_Y_Y \ (observations .- observations_mean_given_particle)
+            ),
+            size(analytic_mean[:, :, indices...])
+        )
+        # mean of updated particles should be within Monte Carlo 1/√N error of analytic
+        # value for mean
+        @test maximum(
+            abs.(updated_particles_mean .- analytic_mean)
+        ) < (4. / sqrt(filter_params.nprt))
     end
-
-    obs = zeros(model_params.nobs)
-    for i = 1:model_params.nobs
-        obs[i] = height[stations.ist[i], stations.jst[i],1] + rand()
-    end
-
-    tmp_array = Matrix{ComplexF64}(undef, grid_ext.nx, grid_ext.ny)
-    fft_plan, fft_plan! = FFTW.plan_fft(tmp_array), FFTW.plan_fft!(tmp_array)
-    mat_off = ParticleDA.init_offline_matrices(grid, grid_ext, stations, noise_params, model_params.obs_noise_std, fft_plan, fft_plan!, Float64)
-    mat_on = ParticleDA.init_online_matrices(grid, grid_ext, stations, filter_params.nprt, Float64)
-
-    ParticleDA.sample_height_proposal!(height, mat_off, mat_on, obs, stations, grid, grid_ext, fft_plan, fft_plan!, filter_params.nprt, rng, model_params.obs_noise_std)
-
-    Yobs_t = copy(obs)
-    FH_t = copy(reshape(permutedims(height, [3 1 2]), filter_params.nprt, (model_params.nx)*(model_params.ny)))
-
-    th = f_th(noise_params.σ[1], noise_params.λ[1], noise_params.ν[1])
-    Mean_height = Calculate_Mean(FH_t, th, st, Yobs_t, Sobs, gr)
-    Samples = Sample_Height_Proposal(FH_t, th, st, Yobs_t, Sobs, gr)
-
-    @test mat_on.mean ≈ permutedims(reshape(Mean_height, filter_params.nprt, model_params.nx, model_params.ny), [2 3 1])
-    @test mat_on.samples ≈ permutedims(reshape(Samples, filter_params.nprt, model_params.nx, model_params.ny), [2 3 1])
-
-    # print("old mean height: ")
-    # @btime Mean_height = Calculate_Mean($FH_t, $th, $st, $Yobs_t, $Sobs, $gr)
-    # print("new mean height: ")
-    # @btime calculate_mean_height!($mat_on.mean, $height, $mat_off, $obs, $stations, $params)
-    # print("old sampling: ")
-    # @btime Samples = Sample_Height_Proposal($FH_t, $th, $st, $Yobs_t, $Sobs, $gr)
-    # print("new sampling: ")
-    # @btime sample_height_proposal!($height, $mat_off, $mat_on, $obs, $stations, $params, $rng)
-
 end
