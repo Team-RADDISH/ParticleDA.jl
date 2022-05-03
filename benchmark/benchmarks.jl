@@ -53,7 +53,7 @@ SUITE["base"]["get_log_weights!"] = @benchmarkable ParticleDA.get_log_weights!(
     weights = Vector{Float64}(undef, nprt_per_rank); 
     truth_observations=ParticleDA.update_truth!(model_data, nprt_per_rank); 
     model_observations = ParticleDA.get_particle_observations!(model_data, nprt_per_rank);
-    filter_data = (obs_noise_std=bootstrap_filter_data.obs_noise_std);
+    filter_data = (obs_noise_std=bootstrap_filter_data.obs_noise_std,);
     filter_type = BootstrapFilter();
 )
 SUITE["base"]["normalized_exp!"] = @benchmarkable ParticleDA.normalized_exp!(weights) setup=(weights = rand(filter_params.nprt))
