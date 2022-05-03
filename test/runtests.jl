@@ -369,6 +369,20 @@ end
     user_input_dict = ParticleDA.read_input_file(input_file)
     model_params_dict = get(user_input_dict, "model", Dict())
     filter_params_dict = get(user_input_dict, "filter", Dict())
+    # Compute state noise covariance matrix once only as potentially large and invariant
+    # to number of particles
+    model_data = Model.init(model_params_dict, 1, my_rank, _rng)
+    grid_size = ParticleDA.get_grid_size(model_data)
+    cell_size = ParticleDA.get_grid_cell_size(model_data)
+    indices = ParticleDA.get_observed_state_indices(model_data)
+    state_noise_covariance_structure = ParticleDA.get_model_noise_params(model_data)
+    grid_coord_1 = repeat((1:grid_size[1]) .* cell_size[1], outer=grid_size[2])
+    grid_coord_2 = repeat((1:grid_size[2]) .* cell_size[2], inner=grid_size[1])
+    cov_X_X = ParticleDA.state_noise_covariance.(
+        abs.(grid_coord_1 .- grid_coord_1'),
+        abs.(grid_coord_2 .- grid_coord_2'),
+        (state_noise_covariance_structure,),
+    )
     for nprt in [25, 100, 400, 2500]
         filter_params_dict["nprt"] = nprt
         filter_params = ParticleDA.get_params(FilterParameters, filter_params_dict)
@@ -398,13 +412,15 @@ end
         # update_particle_noise! should add noise to all particle components
         @test all(particles .!= noised_particles)
         # noise added by update_particle_noise! should be zero mean and so mean of
-        # noised particles should be within Monte Carlo 1/√N error of particles
+        # noised particles should be within O(1/√N) Monte Carlo error of particles
         @test maximum(
             abs.(
                 mean(noised_particles, dims=ndims(noised_particles)) 
                 .- firstonlastaxis(particles)
             )
-        ) < (4. / sqrt(filter_params.nprt))
+        # 4 constant in here has been based on looking at scale of typical deviations -
+        # main point of check is that errors scale at expected O(1/√N) rate
+        ) < (4. / sqrt(nprt)) 
         ParticleDA.update_particles_given_observations!(
             model_data, filter_data, observations, nprt_per_rank
         )
@@ -412,22 +428,39 @@ end
         # update_particles_given_observations! should at change some particle components
         @test any(noised_particles .!= updated_particles)
         updated_particles_mean = mean(updated_particles, dims=ndims(updated_particles))
-        updated_particles_std = std(updated_particles, dims=ndims(updated_particles))
-        @test all(updated_particles_std .> 0)
+        updated_particles_cov = cov(
+            reshape(updated_particles[:, :, indices..., :], (:, nprt)),
+            dims=2
+        )
         cov_X_Y = filter_data.offline_matrices.cov_X_Y
         fact_cov_Y_Y = filter_data.offline_matrices.fact_cov_Y_Y
+        # Optimal proposal for conditionally Gaussian state-space model with updates
+        # X = F(x) + U and Y = HX + V where x is the previous state value, F the forward
+        # operator for the deterministic state dynamics, U ~ Normal(0, Q) the additive
+        # state noise, X the state at the next time step, H the linear observation
+        # operator, V ~ Normal(0, R) the additive observation noise and Y the modelled 
+        # observations, is Normal(m, C) where 
+        # m = F(x) + QHᵀ(HQHᵀ + R)⁻¹(y − HF(x))
+        #   = F(x) + cov(X, Y) @ cov(Y, Y)⁻¹ (y − HF(x)) 
+        # and C = Q − QHᵀ(HQHᵀ + R)⁻¹HQ = cov(X, X) - cov(X, Y) cov(Y, Y)⁻¹ cov(X, Y)ᵀ
         analytic_mean = copy(firstonlastaxis(particles))
-        indices = ParticleDA.get_observed_state_indices(model_data)
         @view(analytic_mean[:, :, indices...]) .+= reshape(
             cov_X_Y * (
                 fact_cov_Y_Y \ (observations .- observations_mean_given_particle)
             ),
             size(analytic_mean[:, :, indices...])
         )
-        # mean of updated particles should be within Monte Carlo 1/√N error of analytic
-        # value for mean
+        analytic_cov = cov_X_X .- cov_X_Y * (fact_cov_Y_Y \ cov_X_Y')
+        analytic_std = sqrt.(view(analytic_cov, diagind(analytic_cov)))
+        # mean and standard deviation of updated particles should be within O(1/√N) 
+        # Monte Carlo error of analytic values
         @test maximum(
             abs.(updated_particles_mean .- analytic_mean)
-        ) < (4. / sqrt(filter_params.nprt))
+        ) < (4. / sqrt(nprt))
+        @test maximum(
+            abs.(updated_particles_cov .- analytic_cov)
+        ) < (5. / sqrt(nprt))
+        # 4 and 5 constants here have been based on looking at scale of typical
+        # deviations - main point of check is that errors scale at expected O(1/√N) rate
     end
 end
