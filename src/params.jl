@@ -12,7 +12,6 @@ Parameters for ParticleDA run. Keyword arguments:
 * `verbose::Bool` : Flag to control whether to write output
 * `output_filename::String` : Name of output file
 * `nprt::Int` : Number of particles for particle filter
-* `random_seed::Int` : Seed number for the pseudorandom number generator
 * `enable_timers::Bool` : Flag to control run time measurements
 """
 Base.@kwdef struct FilterParameters
@@ -25,8 +24,6 @@ Base.@kwdef struct FilterParameters
     output_filename::String = "particle_da.h5"
 
     nprt::Int = 4
-
-    random_seed::Int = 12345
 
     enable_timers::Bool = false
 

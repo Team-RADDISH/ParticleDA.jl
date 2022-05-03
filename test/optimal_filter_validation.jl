@@ -816,7 +816,7 @@ function Sample_Height_Proposal(FH_t, th, st, Yobs_t, Sobs, gr)
   ######### here we need info from the data at time t, or/and a separate ##########
   ######### calculation for each particle. ##########
   means = Calculate_Mean(FH_t, th, st, Yobs_t, Sobs, gr)
-  rng = Random.MersenneTwister(123)
+  rng = Random.seed!(123)
 
   e1 = Vector{ComplexF64}(undef, bar_n1)
   e2 = Vector{ComplexF64}(undef, n2)

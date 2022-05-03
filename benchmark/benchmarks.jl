@@ -2,7 +2,6 @@ using BenchmarkTools
 using ParticleDA
 using MPI
 using Random
-using Future
 using Base.Threads
 
 include(joinpath(joinpath(@__DIR__, "..", "test"), "model", "model.jl"))
@@ -38,10 +37,7 @@ const params = Dict(
 )
 
 const nprt_per_rank = Int(params["filter"]["nprt"] / my_size)
-const rng = let
-    m = Random.default_rng()
-    [m; accumulate(Future.randjump, fill(big(10)^20, nthreads()-1), init=m)]
-end
+const rng = Random.TaskLocalRNG()
 const model_data = Model.init(params["model"]["llw2d"], nprt_per_rank, my_rank, rng)
 const bootstrap_filter_data = ParticleDA.init_filter(ParticleDA.get_params(ParticleDA.FilterParameters, params["filter"]), model_data, nprt_per_rank, rng, Float64, BootstrapFilter())
 const filter_params = ParticleDA.get_params(ParticleDA.FilterParameters, params["filter"])

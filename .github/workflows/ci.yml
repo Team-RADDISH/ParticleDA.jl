@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - "1.5"
+          - "1.7"
           - "1"
           - "nightly"
         os:
@@ -30,16 +30,10 @@ jobs:
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      - name: Cache artifacts
-        uses: actions/cache@v1
-        env:
-          cache-name: cache-artifacts
+      - uses: julia-actions/cache@v1
         with:
-          path: ~/.julia/artifacts
-          key: ${{ runner.os }}-test-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-test-${{ env.cache-name }}-
-            ${{ runner.os }}-test-
-            ${{ runner.os }}-
+          cache-name: "tests"
       - uses: julia-actions/julia-buildpkg@latest
       - uses: julia-actions/julia-runtest@latest
+      - uses: julia-actions/julia-uploadcodecov@v0.1
+        continue-on-error: true

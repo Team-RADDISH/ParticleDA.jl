@@ -209,8 +209,7 @@ end
     model_params_dict = get(ParticleDA.read_input_file(input_file), "model", Dict())
     nprt_per_rank = 1
     my_rank = 0
-    _rng = [Random.MersenneTwister()]
-    model_data = Model.init(model_params_dict, nprt_per_rank, my_rank, _rng)
+    model_data = Model.init(model_params_dict, nprt_per_rank, my_rank, Random.TaskLocalRNG())
     # Make sure `get_particles` always returns the same array
     @test pointer(ParticleDA.get_particles(model_data)) == pointer(ParticleDA.get_particles(model_data))
 end
@@ -341,10 +340,10 @@ end
     model_params_dict = get(ParticleDA.read_input_file(input_file), "model", Dict())
     nprt_per_rank = 1
     my_rank = 0
-    _rng = [Random.MersenneTwister(seed)]
-    model_data = Model.init(model_params_dict, nprt_per_rank, my_rank, _rng)
+    rng = Random.seed!(seed)
+    model_data = Model.init(model_params_dict, nprt_per_rank, my_rank, rng)
     filter_data = ParticleDA.init_filter(
-        filter_params, model_data, nprt_per_rank, _rng, Float64, OptimalFilter()
+        filter_params, model_data, nprt_per_rank, rng, Float64, OptimalFilter()
     )
     observations = ParticleDA.update_truth!(model_data, nprt_per_rank)
     old_particles = copy(ParticleDA.get_particles(model_data))
@@ -365,13 +364,13 @@ end
         dirname(pathof(ParticleDA)), "..", "test", "optimal_filter_test_2.yaml"
     )
     filter_type = OptimalFilter()
-    _rng = [Random.MersenneTwister(seed)]
+    rng = Random.seed!(seed)
     user_input_dict = ParticleDA.read_input_file(input_file)
     model_params_dict = get(user_input_dict, "model", Dict())
     filter_params_dict = get(user_input_dict, "filter", Dict())
     # Compute state noise covariance matrix once only as potentially large and invariant
     # to number of particles
-    model_data = Model.init(model_params_dict, 1, my_rank, _rng)
+    model_data = Model.init(model_params_dict, 1, my_rank, rng)
     grid_size = ParticleDA.get_grid_size(model_data)
     cell_size = ParticleDA.get_grid_cell_size(model_data)
     indices = ParticleDA.get_observed_state_indices(model_data)
@@ -387,9 +386,9 @@ end
         filter_params_dict["nprt"] = nprt
         filter_params = ParticleDA.get_params(FilterParameters, filter_params_dict)
         nprt_per_rank = nprt
-        model_data = Model.init(model_params_dict, nprt_per_rank, my_rank, _rng)
+        model_data = Model.init(model_params_dict, nprt_per_rank, my_rank, rng)
         filter_data = ParticleDA.init_filter(
-            filter_params, model_data, nprt_per_rank, _rng, Float64, filter_type
+            filter_params, model_data, nprt_per_rank, rng, Float64, filter_type
         )
         observations = ParticleDA.update_truth!(model_data, nprt_per_rank)
         initial_particles = copy(ParticleDA.get_particles(model_data))
