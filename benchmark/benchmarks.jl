@@ -47,7 +47,15 @@ SUITE["base"]["get_mean_and_var!"] = @benchmarkable ParticleDA.get_mean_and_var!
 SUITE["base"]["update_truth!"] = @benchmarkable ParticleDA.update_truth!($(model_data), $(nprt_per_rank))
 SUITE["base"]["update_particle_dynamics!"] = @benchmarkable ParticleDA.update_particle_dynamics!($(model_data), $(nprt_per_rank))
 SUITE["base"]["update_particle_noise!"] = @benchmarkable ParticleDA.update_particle_noise!($(model_data), $(nprt_per_rank))
-SUITE["base"]["get_log_weights!"] = @benchmarkable ParticleDA.get_log_weights!(weights, truth_observations, model_observations, $(bootstrap_filter_data.obs_noise_std), $(BootstrapFilter())) setup=(weights = Vector{Float64}(undef, nprt_per_rank); truth_observations=ParticleDA.update_truth!(model_data, nprt_per_rank); model_observations = ParticleDA.get_particle_observations!(model_data, nprt_per_rank))
+SUITE["base"]["get_log_weights!"] = @benchmarkable ParticleDA.get_log_weights!(
+    weights, truth_observations,  model_observations, filter_data, filter_type
+) setup=(
+    weights = Vector{Float64}(undef, nprt_per_rank); 
+    truth_observations=ParticleDA.update_truth!(model_data, nprt_per_rank); 
+    model_observations = ParticleDA.get_particle_observations!(model_data, nprt_per_rank);
+    filter_data = (obs_noise_std=bootstrap_filter_data.obs_noise_std);
+    filter_type = BootstrapFilter();
+)
 SUITE["base"]["normalized_exp!"] = @benchmarkable ParticleDA.normalized_exp!(weights) setup=(weights = rand(filter_params.nprt))
 SUITE["base"]["resample!"] = @benchmarkable ParticleDA.resample!(resampling_indices, weights) setup=(resampling_indices = Vector{Int}(undef, filter_params.nprt); weights = rand(filter_params.nprt))
 # SUITE["base"]["copy_states!"] = @benchmarkable ParticleDA.copy_states!($(ParticleDA.get_particles(model_data)), $(bootstrap_filter_data.copy_buffer), $(bootstrap_filter_data.resampling_indices), $(my_rank), $(nprt_per_rank))
