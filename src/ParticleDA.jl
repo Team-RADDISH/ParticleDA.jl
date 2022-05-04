@@ -206,7 +206,7 @@ function compute_individual_particle_log_weight(
     ::BootstrapFilter,
 ) where T
     difference = observations - observations_mean
-    return -0.5 * sum(difference.^2) / filter_data.obs_noise_std^2
+    return -0.5 * sum(abs2, difference) / filter_data.obs_noise_std^2
 end
 
 function compute_individual_particle_log_weight(
