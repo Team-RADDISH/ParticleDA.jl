@@ -48,6 +48,12 @@ Return the vector containing the indices of assimilated values in the state vect
 """
 function get_observed_state_indices end
 """
+    ParticleDa.get_number_assimilated_var(model_data) -> Int
+
+Return number of variables from the state space which are being assimilated. Required for optimal filter only.
+"""
+function get_number_assimilated_var end
+"""
     ParticleDa.get_obs_noise_std(model_data) -> Float
 
 Return standard deviation of observation noise. Required for optimal filter only.
@@ -184,15 +190,15 @@ struct OptimalFilter <: ParticleFilter end
 # proposal distribution
 function get_log_weights!(
     log_weights::AbstractVector{T},  
-    observations::AbstractVector{T}, 
-    observation_means_given_particles::AbstractMatrix{T}, 
+    observations::AbstractArray{T}, 
+    observation_means_given_particles::AbstractArray{T}, 
     filter_data::NamedTuple,
     filter_type::ParticleFilter,
 ) where T
     for p in 1:size(log_weights, 1)
         log_weights[p] = compute_individual_particle_log_weight(
-            observations, 
-            observation_means_given_particles[:, p], 
+            observations[:,:], 
+            observation_means_given_particles[:, :, p], 
             filter_data, 
             filter_type
        )
@@ -200,23 +206,28 @@ function get_log_weights!(
 end
 
 function compute_individual_particle_log_weight(
-    observations::AbstractVector{T},
-    observations_mean::AbstractVector{T},
+    observations::AbstractArray{T},
+    observations_mean::AbstractArray{T},
     filter_data::NamedTuple,
     ::BootstrapFilter,
 ) where T
-    difference = observations - observations_mean
+    difference = observations .- observations_mean
     return -0.5 * sum(abs2, difference) / filter_data.obs_noise_std^2
 end
 
 function compute_individual_particle_log_weight(
-    observations::AbstractVector{T},
-    observations_mean::AbstractVector{T},
+    observations::AbstractArray{T},
+    observations_mean::AbstractArray{T},
     filter_data::NamedTuple,
     ::OptimalFilter,
 ) where T
-    difference = observations - observations_mean
-    return -0.5 * difference' * (filter_data.offline_matrices.fact_cov_Y_Y \ difference)
+    # difference = sum(((observations .- observations_mean)./observations), dims=2)
+    # Testing a weighted sum approach for calculating the difference
+    difference = (observations .- observations_mean)
+    relative_weights = [1, 0.001, 0.001]
+    difference *= relative_weights
+    # Different fact_cov_Y_Y for each varaibale? 
+    return -0.5 * difference[:]' * (filter_data.offline_matrices.fact_cov_Y_Y \ difference[:])
 end
 
 #
@@ -390,11 +401,12 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
     domain_size = get_grid_domain_size(model_data)
     cell_size = get_grid_cell_size(model_data)
     grid = Grid(size...,cell_size...,domain_size...)
+    n_assimilated_var = get_number_assimilated_var(model_data)
 
     model_noise_params = get_model_noise_params(model_data)
     
     offline_matrices = init_offline_matrices(grid, stations, model_noise_params, filter_data.obs_noise_std)
-    online_matrices = init_online_matrices(grid, stations, nprt_per_rank, T)
+    online_matrices = init_online_matrices(grid, stations, n_assimilated_var, nprt_per_rank, T)
 
     return (; filter_data..., offline_matrices, online_matrices, stations, grid, rng)
 end

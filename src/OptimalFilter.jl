@@ -9,7 +9,7 @@ struct OfflineMatrices{R<:Real, M<:AbstractMatrix{R}, F<:Factorization{R}}
     fact_cov_Y_Y::F  
 end
 
-struct OnlineMatrices{T<:AbstractMatrix}
+struct OnlineMatrices{T<:AbstractArray}
     # Buffer of size (observation dimension, number of particles per rank) for holding
     # intermediate values in computation of optimal proposal update
     observations_buffer::T
@@ -97,12 +97,12 @@ end
 
 # Allocate memory for matrices that will be updated during the time stepping loop.
 function init_online_matrices(
-    grid::Grid, stations::NamedTuple, nprt_per_rank::Int, T::Type
+    grid::Grid, stations::NamedTuple, n_assimilated_var::Int, nprt_per_rank::Int, T::Type
 )
     n_grid = grid.nx * grid.ny  # number of elements in grid
     matrices = OnlineMatrices(
-        Matrix{T}(undef, stations.nst, nprt_per_rank),
-        Matrix{T}(undef, n_grid, nprt_per_rank)
+        Array{T}(undef, stations.nst, n_assimilated_var, nprt_per_rank),
+        Array{T}(undef, n_grid, n_assimilated_var, nprt_per_rank)
     )
     return matrices
 end
@@ -118,6 +118,7 @@ function update_particles_given_observations!(
     sample_observations_given_particles!(observations_buffer, model_data, nprt_per_rank)
     particles = get_particles(model_data)
     indices = get_observed_state_indices(model_data)
+    n_assimilated_var = get_number_assimilated_var(model_data)
     # Update particles to account for observations, X = X - QHᵀ(HQHᵀ + R)⁻¹(Y − y)
     # The following lines are equivalent to the single statement version
     #     @view(particles[:, :, indices..., :]) .-= reshape(
@@ -127,10 +128,13 @@ function update_particles_given_observations!(
     # but we stage across multiple statements to allow using in-place operations to
     # avoid unnecessary allocations.
     observations_buffer .-= observations
-    ldiv!(fact_cov_Y_Y, observations_buffer)
-    mul!(states_buffer, cov_X_Y, observations_buffer)
-    @view(particles[:, :, indices..., :]) .-= reshape(
-        states_buffer, size(particles[:, :, indices..., :])
+    for var in 1:n_assimilated_var
+        ldiv!(fact_cov_Y_Y, observations_buffer[:, var, :])
+        mul!(states_buffer[:, var ,:], cov_X_Y, observations_buffer[:, var, :])
+    end
+    # @view(particles[:, :, indices..., :]) .-= states_buffer[:, :, indices..., :]
+    @view(particles[:, :, indices, :]) .-= reshape(
+        states_buffer, size(particles[:, :, indices, :])
     )
     set_particles!(model_data, particles)
 end

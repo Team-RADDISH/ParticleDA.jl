@@ -113,7 +113,9 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     obs_noise_std::T = 1.0
     # Observed indices
     observed_indices::Vector{Int} = [1]
-
+    # Number of state space variables which are assimilated 
+    # Tied to the length of the oberserved_indices vector 
+    n_assimilated_var::Int = length(observed_indices)
     particle_dump_file = "particle_dump.h5"
     particle_dump_time = [-1]
 end
@@ -131,29 +133,31 @@ function ParticleDA.get_params(T::Type{ModelParameters}, user_input_dict::Dict)
 
 end
 
-function get_obs!(obs::AbstractVector{T},
+function get_obs!(obs::AbstractArray{T},
                   state::AbstractArray{T,3},
                   ist::AbstractVector{Int},
                   jst::AbstractVector{Int},
                   params::ModelParameters) where T
 
-    get_obs!(obs,state,params.nx,ist,jst)
+    get_obs!(obs,state,params.nx,ist,jst, params.n_assimilated_var)
 
 end
 
 # Return observation data at stations from given model state
-function get_obs!(obs::AbstractVector{T},
+function get_obs!(obs::AbstractArray{T},
                   state::AbstractArray{T,3},
                   nx::Integer,
                   ist::AbstractVector{Int},
-                  jst::AbstractVector{Int}) where T
-    @assert length(obs) == length(ist) == length(jst)
-
-    for i in eachindex(obs)
-        ii = ist[i]
-        jj = jst[i]
-        iptr = (jj - 1) * nx + ii
-        obs[i] = state[iptr]
+                  jst::AbstractVector{Int},
+                  n_assimilated_var::Integer) where T
+    # @assert length(obs) == length(ist) == length(jst)
+    for var in 1:n_assimilated_var
+        # for i in eachindex(obs)
+        for i in 1:length(obs[:,1])
+            ii = ist[i]
+            jj = jst[i]
+            obs[i, var] = state[ii, jj, var]
+        end
     end
 end
 
@@ -317,9 +321,11 @@ function add_random_field!(state::AbstractArray{T,4},
 
 end
 
-function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, params::ModelParameters) where T
-
-    add_noise!(vec, rng, 0.0, params.obs_noise_std)
+function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, var::Int, params::ModelParameters) where T
+    # A test on should we include individual noise components for each variable
+    noise = [0.1, 10.0, 10.0]
+    add_noise!(vec, rng, 0.0, noise[var])
+    # add_noise!(vec, rng, 0.0, params.obs_noise_std)
 
 end
 
@@ -334,11 +340,11 @@ end
 
 function init_arrays(params::ModelParameters, nprt_per_rank)
 
-    return init_arrays(params.nx, params.ny, params.n_state_var, params.nobs, nprt_per_rank)
+    return init_arrays(params.nx, params.ny, params.n_state_var, params.nobs, params.n_assimilated_var, nprt_per_rank)
 
 end
 
-function init_arrays(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_per_rank::Int)
+function init_arrays(nx::Int, ny::Int, n_state_var::Int, nobs::Int, n_assimilated_var::Int, nprt_per_rank::Int)
 
     # TODO: ideally this will be an argument of the function, to choose a
     # different datatype.
@@ -353,8 +359,8 @@ function init_arrays(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_per_ran
     #   state[:, :, 3, :]: vertically integrated velocity Mx(nx,ny)
     state_particles = zeros(T, nx, ny, n_state_var, nprt_per_rank)
     state_truth = zeros(T, nx, ny, n_state_var) # model vector: true wavefield (observation)
-    obs_truth = Vector{T}(undef, nobs)          # observed tsunami height
-    obs_model = Matrix{T}(undef, nobs, nprt_per_rank) # forecasted tsunami height
+    obs_truth = Array{T}(undef, nobs, n_assimilated_var)          # observed tsunami height
+    obs_model = Array{T}(undef, nobs, n_assimilated_var, nprt_per_rank) # forecasted tsunami height
 
     # station location in digital grids
     ist = Vector{Int}(undef, nobs)
@@ -446,6 +452,8 @@ ParticleDA.get_model_noise_params(d::ModelData) = Matern(d.model_params.lambda[1
                                                          d.model_params.nu[1],
                                                          σ=d.model_params.sigma[1])
 ParticleDA.get_observed_state_indices(d::ModelData) = d.model_params.observed_indices
+ParticleDA.get_number_assimilated_var(d::ModelData) = d.model_params.n_assimilated_var
+
 function ParticleDA.set_particles!(d::ModelData, particles::AbstractArray{T}) where T
 
     d.states.particles .= particles
@@ -489,20 +497,20 @@ function ParticleDA.update_truth!(d::ModelData, _)
 end
 
 function ParticleDA.sample_observations_given_particles!(
-    simulated_observations::AbstractMatrix, d::ModelData, nprt_per_rank
+    simulated_observations::AbstractArray, d::ModelData, nprt_per_rank
 )
-    @assert size(simulated_observations) == (d.model_params.nobs, nprt_per_rank)
+    @assert size(simulated_observations) == (d.model_params.nobs, d.model_params.n_assimilated_var, nprt_per_rank)
     for ip in 1:nprt_per_rank
         get_obs!(
-            @view(simulated_observations[:, ip]),
+            @view(simulated_observations[:, :, ip]),
             @view(d.states.particles[:, :, :, ip]),
             d.stations.ist,
             d.stations.jst,
             d.model_params
         )
-        add_noise!(
-            @view(simulated_observations[:, ip]), d.rng, d.model_params
-        )
+        for var in 1:d.model_params.n_assimilated_var
+            add_noise!(@view(simulated_observations[:, var, ip]), d.rng, var, d.model_params)
+        end
     end
     return simulated_observations
 end
@@ -529,7 +537,7 @@ function ParticleDA.get_particle_observations!(d::ModelData, nprt_per_rank)
 
     # get observations
     for ip in 1:nprt_per_rank
-        get_obs!(@view(d.observations.model[:,ip]),
+        get_obs!(@view(d.observations.model[:, :, ip]),
                  @view(d.states.particles[:, :, :, ip]),
                  d.stations.ist,
                  d.stations.jst,
