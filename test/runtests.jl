@@ -393,7 +393,7 @@ end
         observations = ParticleDA.update_truth!(model_data, nprt_per_rank)
         initial_particles = copy(ParticleDA.get_particles(model_data))
         firstonlastaxis(array) = selectdim(array, ndims(array), 1)
-        # force all particles equal to first
+        # Force all particles equal to first
         initial_particles .= firstonlastaxis(initial_particles)
         ParticleDA.set_particles!(model_data, initial_particles)
         ParticleDA.update_particle_dynamics!(model_data, nprt_per_rank)
@@ -408,24 +408,23 @@ end
         ))
         ParticleDA.update_particle_noise!(model_data, nprt_per_rank)
         noised_particles = copy(ParticleDA.get_particles(model_data))
-        # update_particle_noise! should add noise to all particle components
-        @test all(particles .!= noised_particles)
-        # noise added by update_particle_noise! should be zero mean and so mean of
-        # noised particles should be within O(1/√N) Monte Carlo error of particles
-        @test maximum(
-            abs.(
-                mean(noised_particles, dims=ndims(noised_particles)) 
-                .- firstonlastaxis(particles)
-            )
-        # 4 constant in here has been based on looking at scale of typical deviations -
-        # main point of check is that errors scale at expected O(1/√N) rate
-        ) < (4. / sqrt(nprt)) 
+        noise = noised_particles .- particles
+        # Mean of noise added by update_particle_noise! should be zero in all components
+        # and empirical mean should therefore be zero to within Monte Carlo error. The
+        # constant in the tolerance below was set by looking at scale of typical
+        # deviation, the point of check is that errors scale at expected O(1/√N) rate.     
+        @test maximum(abs.(mean(noise, dims=ndims(noise)))) < (4. / sqrt(nprt))  
+        # Covariance of noise added by update_particle_noise! to observed state
+        # components should be cov_X_X as computed above and empirical covariance of
+        # these components should therefore be within Monte Carlo error of cov_X_X. The
+        # constant in tolerance below was set by looking at scale of typical deviations,
+        # the point of check is that errors scale at expected O(1/√N) rate.     
+        noise_cov = cov(reshape(noise[:, :, indices..., :], (:, nprt)), dims=2)
+        @test maximum(abs.(noise_cov .- cov_X_X)) < (5. / sqrt(nprt))         
         ParticleDA.update_particles_given_observations!(
             model_data, filter_data, observations, nprt_per_rank
         )
         updated_particles = ParticleDA.get_particles(model_data)
-        # update_particles_given_observations! should at change some particle components
-        @test any(noised_particles .!= updated_particles)
         updated_particles_mean = mean(updated_particles, dims=ndims(updated_particles))
         updated_particles_cov = cov(
             reshape(updated_particles[:, :, indices..., :], (:, nprt)),
@@ -451,15 +450,15 @@ end
         )
         analytic_cov = cov_X_X .- cov_X_Y * (fact_cov_Y_Y \ cov_X_Y')
         analytic_std = sqrt.(view(analytic_cov, diagind(analytic_cov)))
-        # mean and standard deviation of updated particles should be within O(1/√N) 
-        # Monte Carlo error of analytic values
+        # Mean and covariance of updated particles should be within O(1/√N) Monte Carlo 
+        # error of analytic values - constants in tolerances were set by looking at
+        # scale of typical deviations, main point of checks are that errors scale at
+        # expected O(1/√N) rate.
         @test maximum(
             abs.(updated_particles_mean .- analytic_mean)
         ) < (4. / sqrt(nprt))
         @test maximum(
             abs.(updated_particles_cov .- analytic_cov)
         ) < (5. / sqrt(nprt))
-        # 4 and 5 constants here have been based on looking at scale of typical
-        # deviations - main point of check is that errors scale at expected O(1/√N) rate
     end
 end
