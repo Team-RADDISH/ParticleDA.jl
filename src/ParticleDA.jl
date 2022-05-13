@@ -42,6 +42,12 @@ Return the number of state variables.
 function get_n_state_var end
 
 """
+    ParticleDA.get_observed_state_indices(model_data) -> Vector{Int}
+
+Return the vector containing the indices of assimilated values in the state vector
+"""
+function get_observed_state_indices end
+"""
     ParticleDa.get_obs_noise_std(model_data) -> Float
 
 Return standard deviation of observation noise. Required for optimal filter only.
@@ -122,6 +128,19 @@ specifying the type of `model_data`.
 function update_particle_noise! end
 
 """
+    ParticleDA.sample_observations_given_particles!(
+        simulated_observations, model_data, nprt_per_rank::Int
+    )
+
+Simulate noisy observations of the state for each of the state particles in `model_data`
+associated with the current MPI rank and write to the `simulated_observation` array
+which should be of size `(dim_observation, nprt_per_rank)` where `dim_observation` is
+the dimension of each observation vector and `nprt_per_rank` is the number of particles
+per each MPI rank.
+"""
+function sample_observations_given_particles! end
+
+"""
     ParticleDA.get_particle_observations!(model_data, nprt_per_rank::Int) -> particles_observations
 
 Return the vector of the particles observations.  `nprt_per_rank` is the number
@@ -160,35 +179,45 @@ of [`run_particle_filter`](@ref) to select the bootstrap filter.
 struct BootstrapFilter <: ParticleFilter end
 struct OptimalFilter <: ParticleFilter end
 
-# Get weights for particles by evaluating the probability of the observations predicted by the model
-# from independent normal pdfs for each observation.
-function get_log_weights!(weight::AbstractVector{T},
-                          obs::AbstractVector{T},
-                          obs_model::AbstractMatrix{T},
-                          weight_std::T) where T
 
-    nobs = size(obs_model,1)
-    @assert size(obs,1) == nobs
-
-    weight .= 1.0
-
-    for iobs = 1:nobs
-        weight .+= logpdf.(Normal(obs[iobs], weight_std), @view(obs_model[iobs,:]))
+# Get logarithm of unnormalized importance weights for particles for filter specific
+# proposal distribution
+function get_log_weights!(
+    log_weights::AbstractVector{T},  
+    observations::AbstractVector{T}, 
+    observation_means_given_particles::AbstractMatrix{T}, 
+    filter_data::NamedTuple,
+    filter_type::ParticleFilter,
+) where T
+    for p in 1:size(log_weights, 1)
+        log_weights[p] = compute_individual_particle_log_weight(
+            observations, 
+            observation_means_given_particles[:, p], 
+            filter_data, 
+            filter_type
+       )
     end
-
 end
 
-# Get weights for particles by evaluating the probability of the observations predicted by the model
-# from a multivariate normal pdf with mean equal to real observations and covariance equal to cov_obs
-function get_log_weights!(weight::AbstractVector{T},
-                          obs::AbstractVector{T},
-                          obs_model::AbstractMatrix{T},
-                          cov_obs::AbstractMatrix{T}) where T
-
-    weight .= Distributions.logpdf(Distributions.MvNormal(obs, cov_obs), obs_model)
-
+function compute_individual_particle_log_weight(
+    observations::AbstractVector{T},
+    observations_mean::AbstractVector{T},
+    filter_data::NamedTuple,
+    ::BootstrapFilter,
+) where T
+    difference = observations - observations_mean
+    return -0.5 * sum(abs2, difference) / filter_data.obs_noise_std^2
 end
 
+function compute_individual_particle_log_weight(
+    observations::AbstractVector{T},
+    observations_mean::AbstractVector{T},
+    filter_data::NamedTuple,
+    ::OptimalFilter,
+) where T
+    difference = observations - observations_mean
+    return -0.5 * difference' * (filter_data.offline_matrices.fact_cov_Y_Y \ difference)
+end
 
 #
 function normalized_exp!(weight::AbstractVector)
@@ -339,6 +368,7 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
 
     size = get_grid_size(model_data)
     n_state_var = get_n_state_var(model_data)
+    obs_noise_std = get_obs_noise_std(model_data)
 
     statistics = Array{SummaryStat{T}, length(size) + 1}(undef, size..., n_state_var)
     avg_arr = Array{T, length(size) + 1}(undef, size..., n_state_var)
@@ -347,7 +377,7 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
     # Memory buffer used during copy of the states
     copy_buffer = Array{T, length(size) + 2}(undef, size..., n_state_var, nprt_per_rank)
 
-    return (;weights, resampling_indices, statistics, avg_arr, var_arr, copy_buffer)
+    return (; weights, resampling_indices, statistics, avg_arr, var_arr, copy_buffer, obs_noise_std)
 end
 
 # Initialize arrays used by the filter
@@ -359,21 +389,14 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
     size = get_grid_size(model_data)
     domain_size = get_grid_domain_size(model_data)
     cell_size = get_grid_cell_size(model_data)
-
     grid = Grid(size...,cell_size...,domain_size...)
-    grid_ext = Grid((grid.nx-1)*2, (grid.ny-1)*2, grid.dx, grid.dy, (grid.x_length-grid.dx)*2, (grid.y_length-grid.dy)*2)
 
     model_noise_params = get_model_noise_params(model_data)
-    obs_noise_std = get_obs_noise_std(model_data)
-    # Precompute two FFT plans, one in-place and the other out-of-place
-    C = complex(T)
-    tmp_array = Matrix{C}(undef, grid_ext.nx, grid_ext.ny)
-    fft_plan, fft_plan! = FFTW.plan_fft(tmp_array), FFTW.plan_fft!(tmp_array)
+    
+    offline_matrices = init_offline_matrices(grid, stations, model_noise_params, filter_data.obs_noise_std)
+    online_matrices = init_online_matrices(grid, stations, nprt_per_rank, T)
 
-    offline_matrices = init_offline_matrices(grid, grid_ext, stations, model_noise_params, obs_noise_std, fft_plan, fft_plan!, T)
-    online_matrices = init_online_matrices(grid, grid_ext, stations, nprt_per_rank, T)
-
-    return (; filter_data..., offline_matrices, online_matrices, stations, grid, grid_ext, rng, obs_noise_std, fft_plan, fft_plan!)
+    return (; filter_data..., offline_matrices, online_matrices, stations, grid, rng)
 end
 
 function update_particle_proposal!(model_data, filter_data, truth_observations, nprt_per_rank, filter_type::BootstrapFilter)
@@ -383,35 +406,8 @@ function update_particle_proposal!(model_data, filter_data, truth_observations, 
 end
 
 function update_particle_proposal!(model_data, filter_data, truth_observations, nprt_per_rank, filter_type::OptimalFilter)
-
-        # Optimal Filter: After updating the particle dynamics, we apply the "optimal proposal" in
-        #                 sample_height_proposal!() to the first state variable (height). We apply
-        #                 a sample from the gaussian random field in update_particle_noise!() to the other
-        #                 state variables (velocity).
-
-        particles = get_particles(model_data)
-
-        # Apply optimal proposal, the result will be in offline_matrices.samples
-        sample_height_proposal!(@view(particles[:,:,1,:]),
-                                filter_data.offline_matrices,
-                                filter_data.online_matrices,
-                                truth_observations,
-                                filter_data.stations,
-                                filter_data.grid,
-                                filter_data.grid_ext,
-                                filter_data.fft_plan,
-                                filter_data.fft_plan!,
-                                nprt_per_rank,
-                                filter_data.rng,
-                                filter_data.obs_noise_std)
-
-        # Add noise from the standard gaussian random field to all state variables in model_data
-        update_particle_noise!(model_data, nprt_per_rank)
-
-        # Overwrite the height state variable with the samples of the optimal proposal
-        particles[:,:,1,:] .= filter_data.online_matrices.samples
-        set_particles!(model_data, particles)
-
+    update_particle_noise!(model_data, nprt_per_rank)
+    update_particles_given_observations!(model_data, filter_data, truth_observations, nprt_per_rank)
 end
 
 function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict, filter_type; rng::Random.AbstractRNG=Random.TaskLocalRNG())
@@ -465,12 +461,15 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
 
         @timeit_debug timer "Particle Dynamics" update_particle_dynamics!(model_data, nprt_per_rank);
         @timeit_debug timer "Particle Proposal" update_particle_proposal!(model_data, filter_data, truth_observations, nprt_per_rank, filter_type)
-        @timeit_debug timer "Particle Observations" model_observations = get_particle_observations!(model_data, nprt_per_rank)
+        @timeit_debug timer "Particle Observations" observation_means_given_particles = get_particle_observations!(model_data, nprt_per_rank)
 
-        @timeit_debug timer "Particle Weights" get_log_weights!(@view(filter_data.weights[1:nprt_per_rank]),
-                                                       truth_observations,
-                                                       model_observations,
-                                                       filter_params.weight_std)
+        @timeit_debug timer "Particle Weights" get_log_weights!(
+            @view(filter_data.weights[1:nprt_per_rank]),
+            truth_observations,
+            observation_means_given_particles,
+            filter_data,
+            filter_type,
+        )
 
         # Gather weights to master rank and resample particles.
         # Doing MPI collectives in place to save memory allocations.

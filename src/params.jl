@@ -12,10 +12,9 @@ Parameters for ParticleDA run. Keyword arguments:
 * `verbose::Bool` : Flag to control whether to write output
 * `output_filename::String` : Name of output file
 * `nprt::Int` : Number of particles for particle filter
-* `weight_std`: Standard deviation of the distribution of the weights
 * `enable_timers::Bool` : Flag to control run time measurements
 """
-Base.@kwdef struct FilterParameters{T<:AbstractFloat}
+Base.@kwdef struct FilterParameters
 
     master_rank::Int = 0
 
@@ -25,8 +24,6 @@ Base.@kwdef struct FilterParameters{T<:AbstractFloat}
     output_filename::String = "particle_da.h5"
 
     nprt::Int = 4
-
-    weight_std::T = 1.0
 
     enable_timers::Bool = false
 

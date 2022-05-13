@@ -1,7 +1,6 @@
 filter:
   nprt: 4
   n_time_step: 5
-  weight_std: 1.0e-16
 
 model:
   llw2d:
