@@ -485,7 +485,6 @@ function ParticleDA.update_truth!(d::ModelData, _)
 
     # Get observation from true synthetic wavefield
     get_obs!(d.observations.truth, d.states.truth, d.stations.ist, d.stations.jst, d.model_params)
-    add_noise!(@view(d.observations.truth[:]), d.rng, d.model_params)
     return d.observations.truth
 end
 
