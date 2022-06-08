@@ -107,13 +107,10 @@ function init_online_matrices(
     return matrices
 end
 
-function update_particles_given_observations!(
-    model_data, filter_data, observations, nprt_per_rank
-)
+function update_particles_given_observations!(model_data, filter_data, observations, nprt_per_rank)
+
     observations_buffer = filter_data.online_matrices.observations_buffer
     states_buffer = filter_data.online_matrices.states_buffer
-    cov_X_Y = filter_data.offline_matrices.cov_X_Y
-    fact_cov_Y_Y = filter_data.offline_matrices.fact_cov_Y_Y
     # Compute Y ~ Normal(HX, R) for each particle X
     sample_observations_given_particles!(observations_buffer, model_data, nprt_per_rank)
     particles = get_particles(model_data)
@@ -129,10 +126,10 @@ function update_particles_given_observations!(
     # avoid unnecessary allocations.
     observations_buffer .-= observations
     for var in 1:n_assimilated_var
-        ldiv!(fact_cov_Y_Y, observations_buffer[:, var, :])
-        mul!(states_buffer[:, var ,:], cov_X_Y, observations_buffer[:, var, :])
+        ldiv!(filter_data.offline_matrices[var].fact_cov_Y_Y, observations_buffer[:, var, :])
+        mul!(states_buffer[:, var ,:], filter_data.offline_matrices[var].cov_X_Y, observations_buffer[:, var, :])
     end
-    # @view(particles[:, :, indices..., :]) .-= states_buffer[:, :, indices..., :]
+
     @view(particles[:, :, indices, :]) .-= reshape(
         states_buffer, size(particles[:, :, indices, :])
     )

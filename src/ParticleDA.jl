@@ -211,6 +211,7 @@ function compute_individual_particle_log_weight(
     filter_data::NamedTuple,
     ::BootstrapFilter,
 ) where T
+    # Fix this for mulit dimensional case
     difference = observations .- observations_mean
     return -0.5 * sum(abs2, difference) / filter_data.obs_noise_std^2
 end
@@ -221,13 +222,12 @@ function compute_individual_particle_log_weight(
     filter_data::NamedTuple,
     ::OptimalFilter,
 ) where T
-    # difference = sum(((observations .- observations_mean)./observations), dims=2)
-    # Testing a weighted sum approach for calculating the difference
-    difference = (observations .- observations_mean)
-    relative_weights = [1, 0.001, 0.001]
-    difference *= relative_weights
-    # Different fact_cov_Y_Y for each varaibale? 
-    return -0.5 * difference[:]' * (filter_data.offline_matrices.fact_cov_Y_Y \ difference[:])
+    difference = observations .- observations_mean
+    output = 0.0
+    for i in 1:length(filter_data.offline_matrices[:])
+        output += -0.5 * difference[:,i]' * (filter_data.offline_matrices[i].fact_cov_Y_Y \ difference[:,i])
+    end
+    return output
 end
 
 #
@@ -402,10 +402,12 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
     cell_size = get_grid_cell_size(model_data)
     grid = Grid(size...,cell_size...,domain_size...)
     n_assimilated_var = get_number_assimilated_var(model_data)
-
     model_noise_params = get_model_noise_params(model_data)
-    
-    offline_matrices = init_offline_matrices(grid, stations, model_noise_params, filter_data.obs_noise_std)
+    # This could be cleaner?
+    offline_matrices = []
+    for var in 1:n_assimilated_var
+        push!(offline_matrices, init_offline_matrices(grid, stations, model_noise_params[var], filter_data.obs_noise_std[var]))
+    end
     online_matrices = init_online_matrices(grid, stations, n_assimilated_var, nprt_per_rank, T)
 
     return (; filter_data..., offline_matrices, online_matrices, stations, grid, rng)

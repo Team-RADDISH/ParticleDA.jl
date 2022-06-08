@@ -54,7 +54,7 @@ Parameters for the model. Keyword arguments:
 * `absorber_thickness_fraction::Float` : Thickness of absorber for sponge absorbing boundary conditions, fraction of grid size
 * `boundary_damping::Float` : damping for boundaries
 * `cutoff_depth::Float` : Shallowest water depth
-* `obs_noise_std::Float`: Standard deviation of noise added to observations of the true state
+* `obs_noise_std::Vector`: Standard deviation of noise added to observations of the true state
 * `observed_indices::Vector`: Vector containing the indices of the observed values in the state vector
 * `particle_dump_file::String`: file name for dump of particle state vectors
 * `particle_dump_time::Int`: list of (one more more) time steps to dump particle states
@@ -110,7 +110,7 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     title_stations::String = "stations"
     title_params::String = "params"
 
-    obs_noise_std::T = 1.0
+    obs_noise_std::Vector{T} = [1.0]
     # Observed indices
     observed_indices::Vector{Int} = [1]
     # Number of state space variables which are assimilated 
@@ -322,11 +322,7 @@ function add_random_field!(state::AbstractArray{T,4},
 end
 
 function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, var::Int, params::ModelParameters) where T
-    # A test on should we include individual noise components for each variable
-    noise = [0.1, 10.0, 10.0]
-    add_noise!(vec, rng, 0.0, noise[var])
-    # add_noise!(vec, rng, 0.0, params.obs_noise_std)
-
+    add_noise!(vec, rng, 0.0, params.obs_noise_std[var])
 end
 
 # Add a (mean, std) normal distributed random number to each element of vec
@@ -448,11 +444,17 @@ ParticleDA.get_stations(d::ModelData) = (nst = d.model_params.nobs,
                                          ist = d.stations.ist,
                                          jst = d.stations.jst)
 ParticleDA.get_obs_noise_std(d::ModelData) = d.model_params.obs_noise_std
-ParticleDA.get_model_noise_params(d::ModelData) = Matern(d.model_params.lambda[1],
-                                                         d.model_params.nu[1],
-                                                         σ=d.model_params.sigma[1])
 ParticleDA.get_observed_state_indices(d::ModelData) = d.model_params.observed_indices
 ParticleDA.get_number_assimilated_var(d::ModelData) = d.model_params.n_assimilated_var
+
+function ParticleDA.get_model_noise_params(d::ModelData)
+    covariances = []
+    for i in 1:length(d.model_params.lambda[:])
+        push!(covariances, Matern(d.model_params.lambda[i],d.model_params.nu[i],
+        σ = d.model_params.sigma[i]))
+    end
+    return covariances
+end
 
 function ParticleDA.set_particles!(d::ModelData, particles::AbstractArray{T}) where T
 
@@ -493,6 +495,9 @@ function ParticleDA.update_truth!(d::ModelData, _)
 
     # Get observation from true synthetic wavefield
     get_obs!(d.observations.truth, d.states.truth, d.stations.ist, d.stations.jst, d.model_params)
+    # for var in 1:d.model_params.n_assimilated_var
+    #     add_noise!(@view(d.observations.truth[:, var]), d.rng, var, d.model_params)
+    # end
     return d.observations.truth
 end
 
