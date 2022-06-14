@@ -17,4 +17,4 @@ model:
     sigma: 1.0e-5
     sigma_initial_state: 1.0e-5
 
-    obs_noise_std: 1.0e-16
+    obs_noise_std: [1.0e-16]

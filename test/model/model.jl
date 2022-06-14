@@ -139,14 +139,13 @@ function get_obs!(obs::AbstractArray{T},
                   jst::AbstractVector{Int},
                   params::ModelParameters) where T
 
-    get_obs!(obs,state,params.nx,ist,jst, params.n_assimilated_var)
+    get_obs!(obs, state, ist, jst, params.n_assimilated_var)
 
 end
 
 # Return observation data at stations from given model state
 function get_obs!(obs::AbstractArray{T},
                   state::AbstractArray{T,3},
-                  nx::Integer,
                   ist::AbstractVector{Int},
                   jst::AbstractVector{Int},
                   n_assimilated_var::Integer) where T

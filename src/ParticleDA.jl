@@ -213,7 +213,11 @@ function compute_individual_particle_log_weight(
 ) where T
     # Fix this for mulit dimensional case
     difference = observations .- observations_mean
-    return -0.5 * sum(abs2, difference) / filter_data.obs_noise_std^2
+    output = 0.0
+    for i in 1:length(filter_data.obs_noise_std[:])
+        output += -0.5 * sum(abs2, difference[:,i]) / filter_data.obs_noise_std[i]^2
+    end
+    return output
 end
 
 function compute_individual_particle_log_weight(
