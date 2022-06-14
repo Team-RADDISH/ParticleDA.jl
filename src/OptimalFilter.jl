@@ -125,9 +125,10 @@ function update_particles_given_observations!(model_data, filter_data, observati
     # but we stage across multiple statements to allow using in-place operations to
     # avoid unnecessary allocations.
     observations_buffer .-= observations
+    test = zeros(size(observations_buffer))
     for var in 1:n_assimilated_var
-        ldiv!(filter_data.offline_matrices[var].fact_cov_Y_Y, observations_buffer[:, var, :])
-        mul!(states_buffer[:, var ,:], filter_data.offline_matrices[var].cov_X_Y, observations_buffer[:, var, :])
+        test[:, var, :] .= ldiv!(filter_data.offline_matrices[var].fact_cov_Y_Y, observations_buffer[:, var, :])
+        states_buffer[:, var ,:] .= mul!(states_buffer[:, var ,:], filter_data.offline_matrices[var].cov_X_Y, test[:, var, :])
     end
 
     @view(particles[:, :, indices, :]) .-= reshape(
