@@ -501,10 +501,11 @@ function ParticleDA.sample_observations_given_particles!(
     simulated_observations::AbstractArray, d::ModelData, nprt_per_rank
 )
     @assert size(simulated_observations) == (d.model_params.nobs, d.model_params.n_assimilated_var, nprt_per_rank)
+    indices = d.model_params.observed_indices
     for ip in 1:nprt_per_rank
         get_obs!(
             @view(simulated_observations[:, :, ip]),
-            @view(d.states.particles[:, :, :, ip]),
+            @view(d.states.particles[:, :, indices, ip]),
             d.stations.ist,
             d.stations.jst,
             d.model_params
