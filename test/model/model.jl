@@ -399,7 +399,7 @@ function set_initial_state!(states::StateVectors, model_matrices::LLW2d.Matrices
 end
 
 function set_stations!(stations::StationVectors, params::ModelParameters) where T
-
+    
     set_stations!(stations.ist,
                   stations.jst,
                   params.station_filename,
