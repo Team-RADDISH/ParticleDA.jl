@@ -13,7 +13,7 @@ model:
     ny: 51
     station_filename: "inputs/stationsW1.txt"
     nobs: 15
-    obs_noise_std: 10.0
+    obs_noise_std: [0.1, 10.0, 10.0]
     particle_dump_time: [200]
     particle_dump_file: "particles.h5"
     nu: [2.5, 2.5, 2.5]
