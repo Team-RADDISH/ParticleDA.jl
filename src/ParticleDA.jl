@@ -4,6 +4,7 @@ using Random
 using Distributions, Statistics, MPI, Base.Threads, YAML, HDF5
 using TimerOutputs
 using EllipsisNotation
+using PDMats
 
 export run_particle_filter, BootstrapFilter, OptimalFilter
 
@@ -16,58 +17,87 @@ using .Default_params
 # Functions to extend in the model
 
 """
-    ParticleDA.get_grid_size(model_data) -> NTuple{N, Int} where N
-
-Return a tuple with the dimensions (number of nodes) of the grid.
+    ParticleDA.get_state_dimension(model_data) -> Integer
+    
+Return the positive integer dimension of the state vector `X` which is assumed to be
+fixed for all time steps.
 """
-function get_grid_size end
-"""
-    ParticleDA.get_grid_domain_size(model_data) -> NTuple{N, float} where N
-
-Return a tuple with the dimensions (metres) of the grid domain.
-"""
-function get_grid_domain_size end
-"""
-    ParticleDA.get_grid_cell_size(model_data) -> NTuple{N, float} where N
-
-Return a tuple with the dimensions (metres) of a grid cell.
-"""
-function get_grid_cell_size end
+function get_state_dimension end
 
 """
-    ParticleDA.get_n_state_var(model_data) -> Int
-
-Return the number of state variables.
+    ParticleDA.get_observation_dimension(model_data) -> Integer
+    
+Return the positive integer dimension of the observation vector `Y` which is assumed to 
+be fixed for all time steps.
 """
-function get_n_state_var end
-
-"""
-    ParticleDA.get_observed_state_indices(model_data) -> Vector{Int}
-
-Return the vector containing the indices of assimilated values in the state vector
-"""
-function get_observed_state_indices end
-"""
-    ParticleDa.get_obs_noise_std(model_data) -> Float
-
-Return standard deviation of observation noise. Required for optimal filter only.
-"""
-function get_obs_noise_std end
+function get_observation_dimension end
 
 """
-    ParticleDa.get_model_noise_params(model_data) -> GaussianRandomFields.IsotropicCovarianceStructure
+    ParticleDA.get_state_eltype(model_data) -> Type
 
-Return structure defining parameters of the covariance function of the state noise in
-the observed state variable. Required for optimal filter only.
+Return the element type of the state vector `X` which is assumed to be fixed for all 
+  time steps.
 """
-function get_model_noise_params end
+function get_state_eltype end
 
 """
-    ParticleDA.get_particle(model_data) -> particles
+    ParticleDA.get_observation_eltype(model_data) -> Type
 
-Return the vector of particles.  This method is intended to be extended by the
-user with the above signature, specifying the type of `model_data`.  Note: this
-function should return the vector of particles itself and not a copy, because it
+Return the element type of the observation vector `Y` which is assumed to be fixed for 
+all time steps.
+"""
+function get_observation_eltype end
+
+"""
+    ParticleDA.get_covariance_state_noise(model_data, i, j) -> Real
+
+Return covariance `cov(U[i], U[j])` between components of the zero-mean Gaussian state 
+noise vector `U`.
+"""
+function get_covariance_state_noise end
+
+"""
+    ParticleDA.get_covariance_observation_noise(model_data, i, j) -> Real
+
+Return covariance `cov(V[i], V[j])` between components of the zero-mean Gaussian 
+observation noise vector `V`.
+"""
+function get_covariance_observation_noise end
+
+"""
+    ParticleDA.get_covariance_state_observation_given_previous_state(
+        model_data, i, j
+    ) -> Real
+    
+Return the covariance `cov(X[i], Y[j])` between components of the state vector 
+`X = F(x) + U` and observation vector `Y = H * X + V` where `H` is the linear 
+observation operator, `F` the (potentially non-linear) forward operator describing the 
+deterministic state dynamics, `U` is a zero-mean Gaussian state noise vector, `V` is a 
+zero-mean Gaussian observation noise vector and `x` is the state at the previous 
+observation time.
+"""
+function get_covariance_state_observation_given_previous_state end
+
+"""
+    ParticleDA.get_covariance_observation_observation_given_previous_state(
+        model_data, i, j
+    ) -> Real
+    
+Return covariance `cov(Y[i], Y[j])` between components of the observation vector 
+`Y = H * (F(x) + U) + V` where `H` is the linear observation operator, `F` the 
+(potentially non-linear) forward operator describing the deterministic state dynamics,
+`U` is a zero-mean Gaussian state noise vector, `V` is a zero-mean Gaussian observation
+noise vector and `x` is the state at the previous observation time.
+"""
+function get_covariance_observation_observation_given_previous_state end
+
+"""
+    ParticleDA.get_particles(model_data) -> AbstractMatrix
+
+Return the two-dimensional array of state particles, with first dimension corresponding
+to the state index and second the particle index.  This method is intended to be 
+extended by the user with the above signature, specifying the type of `model_data`. 
+Note: this function should return the particle data itself and not a copy, because it 
 will be modified in-place.
 """
 function get_particles end
@@ -75,13 +105,14 @@ function get_particles end
 """
    ParticleDA.set_particles!(model_data, particles)
 
-Overwrite particle state in model_data with the vector particles. This method is intended to be extended by the
-user with the above signature, specifying the type of `model_data`.
+Overwrite state particles in `model_data`` with the data in the two-dimensional array 
+`particles`.  This method is intended to be extended by the user with the above 
+signature, specifying the type of `model_data`.
 """
 function set_particles! end
 
 """
-    ParticleDA.get_truth(model_data) -> truth_observations
+    ParticleDA.get_truth(model_data) -> AbstractVector
 
 Return the vector of true observations.  This method is intended to be extended
 by the user with the above signature, specifying the type of `model_data`.
@@ -89,17 +120,7 @@ by the user with the above signature, specifying the type of `model_data`.
 function get_truth end
 
 """
-    ParticleDA.get_stations(model_data) -> NamedTuple({:nst,:ist,:jst},Tuple{Int, Array{Float,1}, Array{Float,1}})
-
-Return a named tuple with number of stations and their coordinates (nst,ist,jst) of the
-points of observation. This method is intended to be extended by the user with the above signature,
-specifying the type of `model_data`.
-Required for optimal filter only.
-"""
-function get_stations end
-
-"""
-    ParticleDA.update_truth!(model_data, nprt_per_rank::Int) -> truth_observations
+    ParticleDA.update_truth!(model_data) -> truth_observations
 
 Update the true observations using the dynamic of the model and return the
 vector of the true observations.  `nprt_per_rank` is the number of particles per
@@ -141,13 +162,21 @@ per each MPI rank.
 function sample_observations_given_particles! end
 
 """
-    ParticleDA.get_particle_observations!(model_data, nprt_per_rank::Int) -> particles_observations
-
-Return the vector of the particles observations.  `nprt_per_rank` is the number
-of particles per each MPI rank.  This method is intended to be extended by the
-user with the above signature, specifying the type of `model_data`.
+    ParticleDA.get_log_density_observation_given_state(observation, state, model_data)
+    
+Return the logarithm of the probability density of an observation vector given a
+state vector. Any additive terms that are constant with respect to the state may be
+neglected.
 """
-function get_particle_observations! end
+function get_log_density_observation_given_state end
+
+"""
+    ParticleDA.get_observation_mean_given_state!(observation_mean, state, model_data)
+    
+Compute the mean of the multivariate normal distribution on the observations given
+the current state and write to the first argument.
+"""
+function get_observation_mean_given_state! end
 
 """
     ParticleDA.write_snapshot(output_filename, model_data, avg_arr, var_arr, weights, it)
@@ -162,6 +191,129 @@ signature, specifying the type of `model_data`.
 """
 function write_snapshot end
 
+# Additional methods for models. These may be optionally extended by the user for a 
+# specific `model_data` type, for example to provide more efficient implementations, 
+# however the versions below will work providing methods for the generic functions
+# described above are implemented by the model.
+
+"""
+    ParticleDA.get_state_indices_correlated_to_observations(
+        model_data
+    ) -> AbstractVector{Int}
+
+Return the vector containing the indices of the state vector `X` which at least one of 
+the observations `Y`` are correlated to, that is `i ∈ 1:get_state_dimension(model_data)`
+such that `cov(X[i], Y[j]) > 0` for at least one 
+`j ∈ 1:get_observation_dimension(model_data)`. This is used to avoid needing to compute
+and store zero covariance terms. Defaults to returning all state indices which will
+always give correct results but will be inefficient if there are zero blocks in 
+`cov(X, Y)`.
+"""
+function get_state_indices_correlated_to_observations(model_data)
+    return 1:get_state_dimension(model_data)
+end
+
+"""
+    ParticleDA.get_covariance_observation_noise(model_data) -> AbstractPDMat
+
+Return covariance matrix `cov(U, U)` of zero-mean Gaussian state noise vector `U`. 
+Defaults to computing dense matrix using index-based 
+`ParticleDA.get_covariance_state_noise` method. Models may extend to exploit any 
+sparsity structure in covariance matrix.
+"""
+function ParticleDA.get_covariance_state_noise(model_data)
+    state_dimension = get_state_dimension(model_data)
+    cov = Matrix{get_state_eltype(model_data)}(
+        undef, state_dimension, state_dimension
+    )
+    for i in 1:state_dimension
+        for j in 1:i
+            cov[i, j] = get_covariance_state_noise(model_data, i, j) 
+        end
+    end
+    return PDMat(Symmetric(cov, :L))
+end
+
+"""
+    ParticleDA.get_covariance_observation_noise(model_data) -> AbstractMatrix
+
+Return covariance matrix `cov(V, V)` of zero-mean Gaussian observation noise vector `V`. 
+Defaults to computing dense matrix using index-based 
+`ParticleDA.get_covariance_observation_noise` method. Models may extend to exploit any 
+sparsity structure in covariance matrix.
+"""
+function get_covariance_observation_noise(model_data)
+    observation_dimension = get_observation_dimension(model_data)
+    cov = Matrix{get_observation_eltype(model_data)}(
+        undef, observation_dimension, observation_dimension
+    )
+    for i in 1:observation_dimension
+        for j in 1:i
+            cov[i, j] = get_covariance_observation_noise(model_data, i, j)
+        end
+    end
+    return PDMat(Symmetric(cov, :L))
+end
+
+"""
+    ParticleDA.get_covariance_observation_state_given_previous_state(
+        model_data
+    ) -> AbstractMatrix
+    
+Return the covariance matrix `cov(X[i], Y)` between the state vector `X = F(x) + U` and 
+observation vector `Y = H * X + V` where `H` is the linear  observation operator, `F` 
+the (potentially non-linear) forward operator describing the  deterministic 
+state dynamics, `U` is a zero-mean Gaussian state noise vector, `V` is a 
+zero-mean Gaussian observation noise vector and `x` is the state at the previous 
+observation time. The indices `i` here are those returned by 
+[`get_state_indices_correlated_to_observations`](@ref) which can be used to avoid
+computing and storing blocks of `cov(X, Y)` which will always be zero. 
+"""
+function get_covariance_observation_state_given_previous_state(model_data)
+    state_indices = get_state_indices_correlated_to_observations(model_data)
+    observation_dimension = get_observation_dimension(model_data)
+    cov = Matrix{get_state_eltype(model_data)}(
+        undef, length(state_indices), observation_dimension
+    )
+    for i in state_indices
+        for j in 1:observation_dimension
+            cov[i, j] = get_covariance_state_observation_given_previous_state(
+                model_data, i, j
+            )
+        end
+    end
+    return cov
+end
+
+"""
+    ParticleDA.get_covariance_observation_observation_given_previous_state(
+        model_data
+    ) -> AbstractPDMat
+    
+Return covariance matrix `cov(Y, Y)` of the observation vector `Y = H * (F(x) + U) + V` 
+where `H` is the linear observation operator, `F` the (potentially non-linear) forward 
+operator describing the deterministic state dynamics, `U` is a zero-mean Gaussian state
+noise vector, `V` is a zero-mean Gaussian observation noise vector and `x` is the state
+at the previous observation time. Defaults to computing a dense matrix. Models may 
+extend to exploit any sparsity structure in covariance matrix.
+"""
+function get_covariance_observation_observation_given_previous_state(
+    model_data
+)
+    observation_dimension = get_observation_dimension(model_data)
+    cov = Matrix{get_observation_eltype(model_data)}(
+        undef, observation_dimension, observation_dimension
+    )
+    for i in 1:observation_dimension
+        for j in 1:i
+            cov[i, j] = get_covariance_observation_observation_given_previous_state(
+                model_data, i, j
+            )
+        end
+    end
+    return PDMat(Symmetric(cov, :L))
+end
+
 """
     ParticleFilter
 
@@ -170,6 +322,7 @@ Abstract type for the particle filter to use.  Currently used subtypes are:
 * [`OptimalFilter`](@ref)
 """
 abstract type ParticleFilter end
+
 """
     BootstrapFilter()
 
@@ -184,15 +337,17 @@ struct OptimalFilter <: ParticleFilter end
 # proposal distribution
 function get_log_weights!(
     log_weights::AbstractVector{T},  
-    observations::AbstractVector{T}, 
-    observation_means_given_particles::AbstractMatrix{T}, 
+    observation::AbstractVector{T}, 
+    model_data, 
     filter_data::NamedTuple,
     filter_type::ParticleFilter,
 ) where T
+    particles = get_particles(model_data)
     for p in 1:size(log_weights, 1)
         log_weights[p] = compute_individual_particle_log_weight(
-            observations, 
-            observation_means_given_particles[:, p], 
+            observation, 
+            particles[:, p],
+            model_data,
             filter_data, 
             filter_type
        )
@@ -200,23 +355,28 @@ function get_log_weights!(
 end
 
 function compute_individual_particle_log_weight(
-    observations::AbstractVector{T},
-    observations_mean::AbstractVector{T},
+    observation::AbstractVector{T},
+    state::AbstractVector{T},
+    model_data,
     filter_data::NamedTuple,
     ::BootstrapFilter,
 ) where T
-    difference = observations - observations_mean
-    return -0.5 * sum(abs2, difference) / filter_data.obs_noise_std^2
+    return ParticleDA.get_log_density_observation_given_state(
+        observation, state, model_data
+    )
 end
 
 function compute_individual_particle_log_weight(
-    observations::AbstractVector{T},
-    observations_mean::AbstractVector{T},
+    observation::AbstractVector{T},
+    state::AbstractVector{T},
+    model_data,
     filter_data::NamedTuple,
     ::OptimalFilter,
 ) where T
-    difference = observations - observations_mean
-    return -0.5 * difference' * (filter_data.offline_matrices.fact_cov_Y_Y \ difference)
+    observation_mean = ParticleDA.get_observation_mean_given_state!(
+        buffer, state, model_data
+    )
+    return -invquad(filter_data.offline_matrices.cov_Y_Y, observation - observation_mean) / 2
 end
 
 #
@@ -356,58 +516,47 @@ function copy_states!(particles::AbstractArray{T},
 end
 
 # Initialize arrays used by the filter
-function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank::Int, ::Random.AbstractRNG, T::Type, ::BootstrapFilter)
+function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank::Int, ::Random.AbstractRNG, ::BootstrapFilter)
+
+    state_dimension = get_state_dimension(model_data)
+    cov_observation_noise = get_covariance_observation_noise(model_data)
+    state_eltype = get_state_eltype(model_data)
 
     if MPI.Comm_rank(MPI.COMM_WORLD) == filter_params.master_rank
-        weights = Vector{T}(undef, filter_params.nprt)
+        weights = Vector{state_eltype}(undef, filter_params.nprt)
     else
-        weights = Vector{T}(undef, nprt_per_rank)
+        weights = Vector{state_eltype}(undef, nprt_per_rank)
     end
 
     resampling_indices = Vector{Int}(undef, filter_params.nprt)
-
-    size = get_grid_size(model_data)
-    n_state_var = get_n_state_var(model_data)
-    obs_noise_std = get_obs_noise_std(model_data)
-
-    statistics = Array{SummaryStat{T}, length(size) + 1}(undef, size..., n_state_var)
-    avg_arr = Array{T, length(size) + 1}(undef, size..., n_state_var)
-    var_arr = Array{T, length(size) + 1}(undef, size..., n_state_var)
+    
+    statistics = Array{SummaryStat{state_eltype}, 1}(undef, state_dimension)
+    avg_arr = Array{state_eltype, 1}(undef, state_dimension)
+    var_arr = Array{state_eltype, 1}(undef, state_dimension)
 
     # Memory buffer used during copy of the states
-    copy_buffer = Array{T, length(size) + 2}(undef, size..., n_state_var, nprt_per_rank)
+    copy_buffer = Array{state_eltype, 2}(undef, state_dimension, nprt_per_rank)
 
-    return (; weights, resampling_indices, statistics, avg_arr, var_arr, copy_buffer, obs_noise_std)
+    return (; weights, resampling_indices, statistics, avg_arr, var_arr, copy_buffer, cov_observation_noise)
 end
 
 # Initialize arrays used by the filter
-function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank::Int, rng::Random.AbstractRNG, T::Type, ::OptimalFilter)
+function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank::Int, rng::Random.AbstractRNG, ::OptimalFilter)
+    filter_data = init_filter(filter_params, model_data, nprt_per_rank, rng, BootstrapFilter())
 
-    filter_data = init_filter(filter_params, model_data, nprt_per_rank, rng, T, BootstrapFilter())
+    offline_matrices = init_offline_matrices(model_data)
+    online_matrices = init_online_matrices(model_data, nprt_per_rank)
 
-    stations = get_stations(model_data)
-    size = get_grid_size(model_data)
-    domain_size = get_grid_domain_size(model_data)
-    cell_size = get_grid_cell_size(model_data)
-    grid = Grid(size...,cell_size...,domain_size...)
-
-    model_noise_params = get_model_noise_params(model_data)
-    
-    offline_matrices = init_offline_matrices(grid, stations, model_noise_params, filter_data.obs_noise_std)
-    online_matrices = init_online_matrices(grid, stations, nprt_per_rank, T)
-
-    return (; filter_data..., offline_matrices, online_matrices, stations, grid, rng)
+    return (; filter_data..., offline_matrices, online_matrices, rng)
 end
 
-function update_particle_proposal!(model_data, filter_data, truth_observations, nprt_per_rank, filter_type::BootstrapFilter)
-
+function update_particle_proposal!(model_data, filter_data, observations, nprt_per_rank, filter_type::BootstrapFilter)
     update_particle_noise!(model_data, nprt_per_rank)
-
 end
 
-function update_particle_proposal!(model_data, filter_data, truth_observations, nprt_per_rank, filter_type::OptimalFilter)
+function update_particle_proposal!(model_data, filter_data, observations, nprt_per_rank, filter_type::OptimalFilter)
     update_particle_noise!(model_data, nprt_per_rank)
-    update_particles_given_observations!(model_data, filter_data, truth_observations, nprt_per_rank)
+    update_particles_given_observations!(model_data, filter_data, observations, nprt_per_rank)
 end
 
 function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict, filter_type; rng::Random.AbstractRNG=Random.TaskLocalRNG())
@@ -433,7 +582,7 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
     @timeit_debug timer "Model initialization" model_data = init(model_params_dict, nprt_per_rank, my_rank, rng)
 
     # TODO: put the body of this block in a function
-    @timeit_debug timer "Filter initialization" filter_data = init_filter(filter_params, model_data, nprt_per_rank, rng, Float64, filter_type)
+    @timeit_debug timer "Filter initialization" filter_data = init_filter(filter_params, model_data, nprt_per_rank, rng, filter_type)
 
     @timeit_debug timer "get_particles" particles = get_particles(model_data)
     @timeit_debug timer "Mean and Var" get_mean_and_var!(filter_data.statistics, particles, filter_params.master_rank)
@@ -454,19 +603,20 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
     for it in 1:filter_params.n_time_step
 
         # integrate true synthetic wavefield
-        @timeit_debug timer "True State Update and Process Noise" truth_observations = update_truth!(model_data, nprt_per_rank)
+        @timeit_debug timer "True State Update and Process Noise" observations = update_truth!(model_data)
 
         # Forecast: Update tsunami forecast and get observations from it
         # Parallelised with threads.
 
         @timeit_debug timer "Particle Dynamics" update_particle_dynamics!(model_data, nprt_per_rank);
-        @timeit_debug timer "Particle Proposal" update_particle_proposal!(model_data, filter_data, truth_observations, nprt_per_rank, filter_type)
-        @timeit_debug timer "Particle Observations" observation_means_given_particles = get_particle_observations!(model_data, nprt_per_rank)
-
+        @timeit_debug timer "Particle Proposal" update_particle_proposal!(model_data, filter_data, observations, nprt_per_rank, filter_type)
+        
+        # TODO: need to have access to *previous* states here as for optimal proposal
+        # particle weights depend on previous particle values not updated values.
         @timeit_debug timer "Particle Weights" get_log_weights!(
             @view(filter_data.weights[1:nprt_per_rank]),
-            truth_observations,
-            observation_means_given_particles,
+            observations,
+            model_data,
             filter_data,
             filter_type,
         )

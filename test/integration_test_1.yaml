@@ -6,5 +6,5 @@ model:
   llw2d:
     time_step: 251.0
     n_integration_step: 251
-
-    nobs: 4
+    n_stations_x: 2
+    n_stations_y: 2

@@ -2,10 +2,11 @@ module Model
 
 using ParticleDA
 
-using Random, Distributions, Base.Threads, GaussianRandomFields, HDF5
+using LinearAlgebra, Random, Distributions, Base.Threads, GaussianRandomFields, HDF5
 using ParticleDA.Default_params
 using DelimitedFiles
 using FieldMetadata
+using PDMats
 
 include("llw2d.jl")
 using .LLW2d
@@ -74,11 +75,15 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     n_integration_step::Int = 50
 
     station_filename::String = ""
-    nobs::Int = 4
+    n_stations_x::Int = 4
+    n_stations_y::Int = 4
     station_distance_x::T = 20.0e3
     station_distance_y::T = 20.0e3
     station_boundary_x::T = 150.0e3
     station_boundary_y::T = 150.0e3
+    obs_noise_std::T = 1.0
+    # Observed indices
+    observed_state_var_indices::Vector{Int} = [1]
 
     source_size::T = 3.0e4
     bathymetry_setup::T = 3.0e3
@@ -110,12 +115,41 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     title_stations::String = "stations"
     title_params::String = "params"
 
-    obs_noise_std::T = 1.0
-    # Observed indices
-    observed_indices::Vector{Int} = [1]
-
     particle_dump_file = "particle_dump.h5"
     particle_dump_time = [-1]
+end
+
+get_float_eltype(::Type{<:ModelParameters{T}}) where {T} = T
+get_float_eltype(p::ModelParameters) = get_float_eltype(typeof(p))
+
+struct RandomField{F<:GaussianRandomField,X<:AbstractArray,W<:AbstractArray,Z<:AbstractArray}
+    grf::F
+    xi::X
+    w::W
+    z::Z
+end
+
+@metadata name ("","","") NTuple{3, String}
+@metadata unit ("","","") NTuple{3, String}
+@metadata description ("","","") NTuple{3, String}
+
+@name @description @unit struct StateVectors{T<:AbstractArray, S<:AbstractArray}
+
+    particles::T | ("height","vx","vy") | ("Ocean surface height","Ocean surface velocity x-component","Ocean surface velocity y-component") | ("m","m/s","m/s")
+    truth::S | ("height","vx","vy") | ("Ocean surface height","Ocean surface velocity x-component","Ocean surface velocity y-component") | ("m","m/s","m/s")
+
+end
+
+struct ModelData{A,B,C,D,E,F,G,H,I}
+    model_params::A
+    states::B
+    observations::C
+    station_grid_indices::D
+    field_buffer::E
+    observation_buffer::F
+    state_noise_grf::G
+    model_matrices::H
+    rng::I
 end
 
 function ParticleDA.get_params(T::Type{ModelParameters}, user_input_dict::Dict)
@@ -131,29 +165,34 @@ function ParticleDA.get_params(T::Type{ModelParameters}, user_input_dict::Dict)
 
 end
 
-function get_obs!(obs::AbstractVector{T},
-                  state::AbstractArray{T,3},
-                  ist::AbstractVector{Int},
-                  jst::AbstractVector{Int},
-                  params::ModelParameters) where T
-
-    get_obs!(obs,state,params.nx,ist,jst)
-
+function get_obs!(
+    observations::AbstractVector{T},
+    state::AbstractArray{T, 3},
+    params::ModelParameters,
+    station_grid_indices::AbstractMatrix,
+) where T
+    get_obs!(
+        observations, state, params.observed_state_var_indices, station_grid_indices
+    )
 end
 
 # Return observation data at stations from given model state
-function get_obs!(obs::AbstractVector{T},
-                  state::AbstractArray{T,3},
-                  nx::Integer,
-                  ist::AbstractVector{Int},
-                  jst::AbstractVector{Int}) where T
-    @assert length(obs) == length(ist) == length(jst)
-
-    for i in eachindex(obs)
-        ii = ist[i]
-        jj = jst[i]
-        iptr = (jj - 1) * nx + ii
-        obs[i] = state[iptr]
+function get_obs!(
+    observations::AbstractVector{T},
+    state::AbstractArray{T, 3},
+    observed_state_var_indices::AbstractVector{Int},
+    station_grid_indices::AbstractMatrix{Int},
+) where T
+    @assert (
+        length(observations) 
+        == size(station_grid_indices, 1) * length(observed_state_var_indices) 
+    )
+    n = 1
+    for k in observed_state_var_indices
+        for (i, j) in eachrow(station_grid_indices)
+            observations[n] = state[i, j, k]
+            n += 1
+        end
     end
 end
 
@@ -191,38 +230,6 @@ function tsunami_update!(dx_buffer::AbstractMatrix{T},
         # Parts of model vector are aliased to tsunami heiht and velocities
         LLW2d.timestep!(dx_buffer, dy_buffer, eta_f, mm_f, nn_f, eta_a, mm_a, nn_a, model_matrices, dx, dy, dt)
     end
-
-end
-
-struct RandomField{F<:GaussianRandomField,X<:AbstractArray,W<:AbstractArray,Z<:AbstractArray}
-    grf::F
-    xi::X
-    w::W
-    z::Z
-end
-
-@metadata name ("","","") NTuple{3, String}
-@metadata unit ("","","") NTuple{3, String}
-@metadata description ("","","") NTuple{3, String}
-
-@name @description @unit struct StateVectors{T<:AbstractArray, S<:AbstractArray}
-
-    particles::T | ("height","vx","vy") | ("Ocean surface height","Ocean surface velocity x-component","Ocean surface velocity y-component") | ("m","m/s","m/s")
-    truth::S | ("height","vx","vy") | ("Ocean surface height","Ocean surface velocity x-component","Ocean surface velocity y-component") | ("m","m/s","m/s")
-
-end
-
-struct ObsVectors{T<:AbstractArray,S<:AbstractArray}
-
-    truth::T
-    model::S
-
-end
-
-struct StationVectors{T<:AbstractArray}
-
-    ist::T
-    jst::T
 
 end
 
@@ -317,227 +324,413 @@ function add_random_field!(state::AbstractArray{T,4},
 
 end
 
-function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, params::ModelParameters) where T
-
-    add_noise!(vec, rng, 0.0, params.obs_noise_std)
-
+function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, cov::AbstractPDMat{T}) where T
+    vec .+= rand(rng, MvNormal(cov))
 end
 
-# Add a (mean, std) normal distributed random number to each element of vec
-function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, mean::T, std::T) where T
-
-    d = Normal(mean, std)
-    @. vec += rand((rng,), d)
-
-end
-
-
-function init_arrays(params::ModelParameters, nprt_per_rank)
-
-    return init_arrays(params.nx, params.ny, params.n_state_var, params.nobs, nprt_per_rank)
-
-end
-
-function init_arrays(nx::Int, ny::Int, n_state_var::Int, nobs::Int, nprt_per_rank::Int)
-
-    # TODO: ideally this will be an argument of the function, to choose a
-    # different datatype.
-    T = Float64
-
-    state_avg = zeros(T, nx, ny, n_state_var) # average of particle state vectors
-    state_var = zeros(T, nx, ny, n_state_var) # variance of particle state vectors
-
-    # Model vector for data assimilation
-    #   state[:, :, 1, :]: tsunami height eta(nx,ny)
-    #   state[:, :, 2, :]: vertically integrated velocity Mx(nx,ny)
-    #   state[:, :, 3, :]: vertically integrated velocity Mx(nx,ny)
-    state_particles = zeros(T, nx, ny, n_state_var, nprt_per_rank)
-    state_truth = zeros(T, nx, ny, n_state_var) # model vector: true wavefield (observation)
-    obs_truth = Vector{T}(undef, nobs)          # observed tsunami height
-    obs_model = Matrix{T}(undef, nobs, nprt_per_rank) # forecasted tsunami height
-
-    # station location in digital grids
-    ist = Vector{Int}(undef, nobs)
-    jst = Vector{Int}(undef, nobs)
-
-    # Buffer array to be used in the tsunami update
-    field_buffer = Array{T}(undef, nx, ny, 2, nthreads())
-
-    return StateVectors(state_particles, state_truth), ObsVectors(obs_truth, obs_model), StationVectors(ist, jst), field_buffer
-end
-
-function set_initial_state!(states::StateVectors, model_matrices::LLW2d.Matrices{T},
-                            field_buffer::AbstractArray{T, 4},
-                            rng::Random.AbstractRNG,
-                            nprt_per_rank::Int,
-                            params::ModelParameters) where T
+function set_initial_state!(
+    states::StateVectors, 
+    model_matrices::LLW2d.Matrices{T},
+    field_buffer::AbstractArray{T, 4},
+    rng::Random.AbstractRNG,
+    nprt_per_rank::Int,
+    params::ModelParameters
+) where T
 
     # Set true initial state
-    LLW2d.initheight!(@view(states.truth[:, :, 1]), model_matrices, params.dx, params.dy,
-                      params.source_size, params.peak_height, params.peak_position)
+    LLW2d.initheight!(
+        @view(states.truth[:, :, 1]), 
+        model_matrices, 
+        params.dx, 
+        params.dy,
+        params.source_size, 
+        params.peak_height, 
+        params.peak_position
+    )
 
     # Create generator for the initial random field
-    x,y = get_axes(params)
-    initial_grf = init_gaussian_random_field_generator(params.lambda_initial_state,
-                                                       params.nu_initial_state,
-                                                       params.sigma_initial_state,
-                                                       x,
-                                                       y,
-                                                       params.padding,
-                                                       params.primes)
+    x, y = get_axes(params)
+    initial_grf = init_gaussian_random_field_generator(
+        params.lambda_initial_state,
+        params.nu_initial_state,
+        params.sigma_initial_state,
+        x,
+        y,
+        params.padding,
+        params.primes
+    )
 
     # Since states.particles is initially created as `zeros` we don't need to set it to 0 here
     # to get the default behaviour
-
     if params.particle_initial_state == "true"
         states.particles .= states.truth
     end
 
     # Add samples of the initial random field to all particles
-    add_random_field!(states.particles, field_buffer, initial_grf, rng, params.n_state_var, nprt_per_rank)
+    add_random_field!(
+        states.particles, 
+        field_buffer, 
+        initial_grf, 
+        rng, 
+        params.n_state_var, 
+        nprt_per_rank
+    )
 
 end
 
-function set_stations!(stations::StationVectors, params::ModelParameters) where T
-
-    set_stations!(stations.ist,
-                  stations.jst,
-                  params.station_filename,
-                  params.station_distance_x,
-                  params.station_distance_y,
-                  params.station_boundary_x,
-                  params.station_boundary_y,
-                  params.dx,
-                  params.dy)
-
-end
-
-function set_stations!(ist::AbstractVector, jst::AbstractVector, filename::String, distance_x::T, distance_y::T, boundary_x::T, boundary_y::T, dx::T, dy::T) where T
-
-    if filename != ""
-        coords = readdlm(filename, ',', Float64, '\n'; comments=true, comment_char='#')
-        ist .= floor.(Int, coords[:,1] / dx)
-        jst .= floor.(Int, coords[:,2] / dy)
+function get_station_grid_indices(params::ModelParameters)
+    if params.station_filename != ""
+        return get_station_grid_indices(
+            params.station_filename,
+            params.dx,
+            params.dy,
+        )
     else
-        LLW2d.set_stations!(ist,jst,distance_x,distance_y,boundary_x,boundary_y,dx,dy)
+        return get_station_grid_indices(
+            params.n_stations_x,
+            params.n_stations_y,
+            params.station_distance_x,
+            params.station_distance_y,
+            params.station_boundary_x,
+            params.station_boundary_y,
+            params.dx,
+            params.dy,
+        )
     end
 
 end
 
-struct ModelData{A,B,C,D,E,F,G,H}
-    model_params::A
-    states::B
-    observations::C
-    stations::D
-    field_buffer::E
-    background_grf::F
-    model_matrices::G
-    rng::H
+function get_station_grid_indices(
+    filename::String,
+    dx::T,
+    dy::T,
+) where T
+    coords = readdlm(filename, ',', Float64, '\n'; comments=true, comment_char='#')
+    return floor(Int, coords ./ [dx dy]) .+ 1
 end
-ParticleDA.get_particles(d::ModelData) = d.states.particles
+
+function get_station_grid_indices(
+    n_stations_x::Integer,
+    n_stations_y::Integer,
+    station_distance_x::T,
+    station_distance_y::T,
+    station_boundary_x::T,
+    station_boundary_y::T,
+    dx::T,
+    dy::T
+) where T
+    # synthetic station locations
+    station_grid_indices = Matrix{Int}(undef, n_stations_x * n_stations_y, 2)
+    n = 0
+    @inbounds for i in 1:n_stations_x, j in 1:n_stations_y
+        n += 1
+        station_grid_indices[n, 1] = round(
+            Int, (station_boundary_x + (i - 1) * station_distance_x) / dx + 1
+        )
+        station_grid_indices[n, 2] = round(
+            Int, (station_boundary_y + (j - 1) * station_distance_y) / dy + 1
+        )
+    end
+    return station_grid_indices
+end
+
+ParticleDA.get_state_dimension(d::ModelData) = (
+    d.model_params.nx * d.model_params.ny * d.model_params.n_state_var
+)
+
+ParticleDA.get_observation_dimension(d::ModelData) = (
+    size(d.station_grid_indices, 1) * length(d.model_params.observed_state_var_indices)
+)
+
+ParticleDA.get_state_eltype(d::ModelData) = get_float_eltype(d.model_params)
+ParticleDA.get_observation_eltype(d::ModelData) = get_float_eltype(d.model_params)
+
+ParticleDA.get_particles(d::ModelData) = reshape(
+    d.states.particles, (ParticleDA.get_state_dimension(d), :)
+)
 # TODO: we should probably get rid of `get_truth`: it is only used as return
 # value of `particle_filter`, we may just return the whole `model_data`.
-ParticleDA.get_truth(d::ModelData) = d.states.truth
-ParticleDA.get_stations(d::ModelData) = (nst = d.model_params.nobs,
-                                         ist = d.stations.ist,
-                                         jst = d.stations.jst)
-ParticleDA.get_obs_noise_std(d::ModelData) = d.model_params.obs_noise_std
-ParticleDA.get_model_noise_params(d::ModelData) = Matern(d.model_params.lambda[1],
-                                                         d.model_params.nu[1],
-                                                         σ=d.model_params.sigma[1])
-ParticleDA.get_observed_state_indices(d::ModelData) = d.model_params.observed_indices
-function ParticleDA.set_particles!(d::ModelData, particles::AbstractArray{T}) where T
+ParticleDA.get_truth(d::ModelData) = reshape(
+    d.states.truth, ParticleDA.get_state_dimension(d),
+)
 
-    d.states.particles .= particles
-
+function ParticleDA.get_covariance_observation_noise(
+    d::ModelData, observation_index_1::Integer, observation_index_2::Integer
+)
+    return (
+        observation_index_1 == observation_index_2 ? d.model_params.obs_noise_std^2 : 0.
+    )
 end
-ParticleDA.get_grid_size(d::ModelData) = d.model_params.nx,d.model_params.ny
-ParticleDA.get_grid_domain_size(d::ModelData) = d.model_params.x_length,d.model_params.y_length
-ParticleDA.get_grid_cell_size(d::ModelData) = d.model_params.dx,d.model_params.dy
-ParticleDA.get_n_state_var(d::ModelData) = d.model_params.n_state_var
+
+function ParticleDA.get_covariance_observation_noise(d::ModelData)
+    return ScalMat(
+        ParticleDA.get_observation_dimension(d), d.model_params.obs_noise_std^2
+    )
+end
+
+function flat_state_index_to_cartesian_index(
+    model_params::ModelParameters, flat_index::Integer
+)
+    n_grid = model_params.nx * model_params.ny
+    state_var_index, flat_grid_index = fldmod1(flat_index, n_grid)
+    grid_y_index, grid_x_index = fldmod1(flat_grid_index, model_params.nx)
+    return CartesianIndex(grid_x_index, grid_y_index, state_var_index)
+end
+
+function grid_index_to_grid_point(
+    model_params::ModelParameters, grid_index::Tuple{T, T}
+) where {T <: Integer}
+    return [
+        (grid_index[1] - 1) * model_params.dx, (grid_index[2] - 1) * model_params.dy
+    ]
+end
+
+function observation_index_to_cartesian_state_index(
+    model_params::ModelParameters, station_grid_indices::AbstractMatrix, observation_index::Integer
+)
+    n_station = model_params.n_stations_x * model_params.n_stations_y
+    state_var_index, station_index = fldmod1(observation_index, n_station)
+    return CartesianIndex(
+        station_grid_indices[station_index]..., state_var_index
+    )
+end
+
+function ParticleDA.get_covariance_state_noise(
+    model_data::ModelData, state_index_1::Integer, state_index_2::Integer
+)
+    return ParticleDA.get_covariance_state_noise(
+        model_data, 
+        flat_state_index_to_cartesian_index(model_data.model_params, state_index_1),
+        flat_state_index_to_cartesian_index(model_data.model_params, state_index_2),
+    )
+end
+
+function ParticleDA.get_covariance_state_noise(
+    model_data::ModelData, state_index_1::CartesianIndex, state_index_2::CartesianIndex
+)
+    x_index_1, y_index_1, var_index_1 = state_index_1.I
+    x_index_2, y_index_2, var_index_2 = state_index_2.I
+    if var_index_1 == var_index_2
+        grid_point_1 = grid_index_to_grid_point(
+            model_data.model_params, (x_index_1, y_index_1)
+        )
+        grid_point_2 = grid_index_to_grid_point(
+            model_data.model_params, (x_index_2, y_index_2)
+        )
+        covariance_structure = d.state_noise_grf[var_index_1].grf.cov.cov
+        return covariance_structure.σ^2 * apply(
+            covariance_structure, abs.(grid_point_1 .- grid_point_2)
+        )
+    else
+        return 0.
+    end
+end
+
+function ParticleDA.get_covariance_observation_observation_given_previous_state(
+    model_data::ModelData, observation_index_1::Integer, observation_index_2::Integer
+)
+    return ParticleDA.get_covariance_state_noise(
+        model_data,
+        observation_index_to_cartesian_state_index(
+            model_data.model_params, 
+            model_data.station_grid_indices, 
+            observation_index_1
+        ),
+        observation_index_to_cartesian_state_index(
+            model_data.model_params, 
+            model_data.station_grid_indices, 
+            observation_index_2
+        ),
+    ) + ParticleDA.get_covariance_observation_noise(
+        model_data, observation_index_1, observation_index_2
+    )
+end
+
+function ParticleDA.get_covariance_state_observation_given_previous_state(
+    model_data::ModelData, state_index::Integer, observation_index::Integer
+)
+    return ParticleDA.get_covariance_state_noise(
+        model_data,
+        flat_state_index_to_cartesian_index(model_data.model_params, state_index),
+        observation_index_to_cartesian_state_index(
+            model_data.model_params, model_data.station_grid_indices, observation_index
+        ),
+    )
+end
+                                                         
+function ParticleDA.get_state_indices_correlated_to_observations(model_data::ModelData)
+    n_grid = model_data.model_params.nx * model_data.model_params.ny
+    return vcat(
+        (
+            (i - 1) * n_grid + 1 : i * n_grid 
+            for i in model_data.model_params.observed_state_var_indices
+        )...
+    )
+end
+
+function ParticleDA.set_particles!(
+    model_data::ModelData, particles::AbstractArray{T}
+) where T
+    model_params = model_data.model_params
+    model_data.states.particles .= reshape(
+        particles, (model_params.nx, model_params.ny, model_params.n_state_var, :)
+    )
+end
 
 function init(model_params_dict::Dict, nprt_per_rank::Int, my_rank::Integer, rng::Random.AbstractRNG)
 
-    model_params = ParticleDA.get_params(ModelParameters, get(model_params_dict, "llw2d", Dict()))
-    states, observations, stations, field_buffer = init_arrays(model_params, nprt_per_rank)
+    model_params = ParticleDA.get_params(
+        ModelParameters, get(model_params_dict, "llw2d", Dict())
+    )
+    
+    station_grid_indices = get_station_grid_indices(model_params)
+     
+    T = get_float_eltype(params)
+    n_stations = size(station_grid_indices, 1)
+    n_observations = n_stations * length(model_params.observed_state_var_indices)
 
-    background_grf = init_gaussian_random_field_generator(model_params)
+    states = StateVectors(
+        zeros(T, nx, ny, n_state_var, nprt_per_rank), 
+        zeros(T, nx, ny, n_state_var)
+    )
+    
+    observations = Vector{T}(undef, n_observations)
+    
+    # Buffer array to be used in the tsunami update
+    field_buffer = Array{T}(undef, model_params.nx, model_params.ny, 2, nthreads())
+    
+    # Buffer array to be used in computing observation mean
+    observation_buffer = Array{T}(undef, n_observations, nthreads())
+    
+    # Gaussian random fields for generating state noise
+    state_noise_grf = init_gaussian_random_field_generator(model_params)
 
     # Set up tsunami model
-    model_matrices = LLW2d.setup(model_params.nx,
-                                 model_params.ny,
-                                 model_params.bathymetry_setup,
-                                 model_params.absorber_thickness_fraction,
-                                 model_params.boundary_damping,
-                                 model_params.cutoff_depth)
+    model_matrices = LLW2d.setup(
+        model_params.nx,
+        model_params.ny,
+        model_params.bathymetry_setup,
+        model_params.absorber_thickness_fraction,
+        model_params.boundary_damping,
+        model_params.cutoff_depth
+    )
 
-    set_stations!(stations, model_params)
+    set_initial_state!(
+        states, model_matrices, field_buffer, rng, nprt_per_rank, model_params
+    )
 
-    set_initial_state!(states, model_matrices, field_buffer, rng, nprt_per_rank, model_params)
-
-    return ModelData(model_params, states, observations, stations, field_buffer, background_grf, model_matrices, rng)
+    return ModelData(
+        model_params, 
+        states, 
+        observations, 
+        station_grid_indices, 
+        field_buffer,
+        observation_buffer,
+        state_noise_grf, 
+        model_matrices, 
+        rng
+    )
 end
 
-function ParticleDA.update_truth!(d::ModelData, _)
-    tsunami_update!(@view(d.field_buffer[:, :, 1, 1]),
-                    @view(d.field_buffer[:, :, 2, 1]),
-                    d.states.truth, d.model_matrices, d.model_params)
-
+function ParticleDA.update_truth!(model_data::ModelData)
+    tsunami_update!(
+        @view(model_data.field_buffer[:, :, 1, 1]),
+        @view(model_data.field_buffer[:, :, 2, 1]),
+        model_data.states.truth, 
+        model_data.model_matrices,
+        model_data.model_params
+    )
     # Get observation from true synthetic wavefield
-    get_obs!(d.observations.truth, d.states.truth, d.stations.ist, d.stations.jst, d.model_params)
-    return d.observations.truth
+    get_obs!(
+        model_data.observations, 
+        model_data.states.truth, 
+        model_data.model_params, 
+        model_data.station_grid_indices
+    )
+    return model_data.observations
+end
+
+function ParticleDA.get_observation_mean_given_state!(
+    state::AbstractVector, model_data::ModelData
+)
+    return get_obs!(
+        model_data.observation_buffer[:, threadid()], 
+        reshape(
+            state, 
+            (
+                model_data.model_params.nx, 
+                model_data.model_params.ny, 
+                model_data.model_params.n_state_var
+            )
+        ), 
+        model_data.model_params, 
+        model_data.station_grid_indices
+    )
 end
 
 function ParticleDA.sample_observations_given_particles!(
-    simulated_observations::AbstractMatrix, d::ModelData, nprt_per_rank
+    simulated_observations::AbstractMatrix, model_data::ModelData
 )
-    @assert size(simulated_observations) == (d.model_params.nobs, nprt_per_rank)
-    for ip in 1:nprt_per_rank
-        get_obs!(
-            @view(simulated_observations[:, ip]),
-            @view(d.states.particles[:, :, :, ip]),
-            d.stations.ist,
-            d.stations.jst,
-            d.model_params
+    Threads.@threads for p in 1:size(simulated_observations, 2)
+        simulated_observations[:, p] = ParticleDA.get_observation_mean_given_state(
+            @view(model_data.states.particles[:, :, :, p]),
+            model_data
         )
         add_noise!(
-            @view(simulated_observations[:, ip]), d.rng, d.model_params
+            @view(simulated_observations[:, p]), 
+            model_data.rng, 
+            model_data.cov_observation_noise,
         )
     end
     return simulated_observations
 end
 
-function ParticleDA.update_particle_dynamics!(d::ModelData, nprt_per_rank)
+function ParticleDA.get_log_density_observation_given_state(
+    observation::AbstractVector, 
+    state::AbstractVector, 
+    model_data::ModelData,
+)
+    observation_mean = ParticleDA.get_observation_mean_given_state!(state, model_data)
+    return -invquad(model_data.cov_observation_noise, observation - observation_mean) / 2 
+end
+
+function ParticleDA.get_log_density_observation_given_previous_state(
+    observation::AbstractVector,
+    previous_state::AbstractVector,
+    model_data::ModelData,
+)
+    observation_mean = ParticleDA.get_observation_mean_given_state!(previous_state, model_data)
+    return -invquad(
+        model_data.cov_observation_observation_given_previous_state, 
+        observation - observation_mean
+    ) / 2 
+end
+
+
+function ParticleDA.update_particle_dynamics!(model_data::ModelData, nprt_per_rank)
     # Update dynamics
-    Threads.@threads for ip in 1:nprt_per_rank
-        tsunami_update!(@view(d.field_buffer[:, :, 1, threadid()]), @view(d.field_buffer[:, :, 2, threadid()]),
-                        @view(d.states.particles[:, :, :, ip]), d.model_matrices, d.model_params)
+    Threads.@threads for p in 1:nprt_per_rank
+        tsunami_update!(
+            @view(model_data.field_buffer[:, :, 1, threadid()]), 
+            @view(model_data.field_buffer[:, :, 2, threadid()]),
+            @view(model_data.states.particles[:, :, :, particle_index]), 
+            model_data.model_matrices, 
+            model_data.model_params
+        )
     end
 end
 
-function ParticleDA.update_particle_noise!(d::ModelData, nprt_per_rank)
-    # Add process noise
-    add_random_field!(d.states.particles,
-                      d.field_buffer,
-                      d.background_grf,
-                      d.rng,
-                      d.model_params.n_state_var,
-                      nprt_per_rank)
+function ParticleDA.update_particle_noise!(model_data::ModelData, nprt_per_rank)
+    # Add state noise
+    add_random_field!(
+        model_data.states.particles,
+        model_data.field_buffer,
+        model_data.state_noise_grf,
+        model_datad.rng,
+        model_data.model_params.n_state_var,
+        nprt_per_rank
+    )
 end
-
-function ParticleDA.get_particle_observations!(d::ModelData, nprt_per_rank)
-
-    # get observations
-    for ip in 1:nprt_per_rank
-        get_obs!(@view(d.observations.model[:,ip]),
-                 @view(d.states.particles[:, :, :, ip]),
-                 d.stations.ist,
-                 d.stations.jst,
-                 d.model_params)
-    end
-    return d.observations.model
-end
-
 
 ### Model IO
 
@@ -594,14 +787,17 @@ function write_grid(output_filename, params)
 
 end
 
-function write_stations(output_filename, ist::AbstractVector, jst::AbstractVector, params::ModelParameters) where T
+function write_stations(
+    output_filename, station_grid_indices::AbstractMatrix, params::ModelParameters
+) where T
 
     h5open(output_filename, "cw") do file
 
         if !haskey(file, params.title_stations)
             group = create_group(file, params.title_stations)
-
-            for (dataset_name, val) in zip(("x", "y"), (ist .* params.dx, jst .* params.dy))
+            x = (station_grid_indices[:, 1] .- 1) .* params.dx
+            y = (station_grid_indices[:, 2] .- 1) .* params.dy
+            for (dataset_name, val) in zip(("x", "y"), (x, y))
                 ds, dtype = create_dataset(group, dataset_name, val)
                 ds[:] = val
                 attributes(ds)["Description"] = "Station "*dataset_name*" coordinate"
@@ -635,41 +831,54 @@ function write_weights(file::HDF5.File, weights::AbstractVector, unit::String, i
 end
 
 function ParticleDA.write_snapshot(output_filename::AbstractString,
-                                   d::ModelData,
-                                   avg::AbstractArray{T,3},
-                                   var::AbstractArray{T,3},
+                                   model_data::ModelData,
+                                   avg::AbstractArray{T},
+                                   var::AbstractArray{T},
                                    weights::AbstractVector{T},
                                    it::Int) where T
 
     if it == 0
         # These are written only at the initial state it == 0
-        write_grid(output_filename, d.model_params)
-        write_params(output_filename, d.model_params)
-        write_stations(output_filename, d.stations.ist, d.stations.jst, d.model_params)
+        write_grid(output_filename, model_data.model_params)
+        write_params(output_filename, model_data.model_params)
+        write_stations(
+            output_filename, model_data.station_grid_indices, model_data.model_params
+        )
     end
 
     if any(d.model_params.particle_dump_time .== it)
-        write_particles(d.model_params.particle_dump_file, d.states, it, d.model_params)
+        write_particles(
+            model_data.model_params.particle_dump_file, 
+            model_data.states, 
+            it, 
+            model_data.model_params
+        )
     end
 
-    return ParticleDA.write_snapshot(output_filename, d.states, avg, var, weights, it, d.model_params)
+    return ParticleDA.write_snapshot(
+        output_filename, model_data.states, avg, var, weights, it, model_data.model_params
+    )
 end
 
 function ParticleDA.write_snapshot(output_filename::AbstractString,
                                    states::StateVectors,
-                                   avg::AbstractArray{T,3},
-                                   var::AbstractArray{T,3},
+                                   avg::AbstractArray{T},
+                                   var::AbstractArray{T},
                                    weights::AbstractVector{T},
                                    it::Int,
                                    params::ModelParameters) where T
 
     println("Writing output at timestep = ", it)
+    
+    truth = reshape(states.truth, (params.nx, params.ny, params.n_state_var, :))
+    avg = reshape(avg, (params.nx, params.ny, params.n_state_var, :))
+    var = reshape(var, (params.nx, params.ny, params.n_state_var, :))
 
     h5open(output_filename, "cw") do file
 
         for (i,(name,desc,unit)) in enumerate(zip(name(states, :truth), description(states, :truth), unit(states, :truth)))
 
-            write_field(file, @view(states.truth[:,:,i]), it, unit, params.title_syn, name, desc, params)
+            write_field(file, @view(truth[:,:,i]), it, unit, params.title_syn, name, desc, params)
             write_field(file, @view(avg[:,:,i]), it, unit, params.title_avg, name, desc, params)
             write_field(file, @view(var[:,:,i]), it, "("*unit*")^2", params.title_var, name, desc, params)
 

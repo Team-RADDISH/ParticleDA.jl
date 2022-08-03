@@ -7,7 +7,8 @@ model:
     time_step: 50.0
     n_integration_step: 50
 
-    nobs: 256
+    n_stations_x: 16
+    n_stations_y: 16
     nx: 50
     ny: 50
     x_length: 1.0e6

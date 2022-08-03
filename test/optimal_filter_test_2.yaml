@@ -6,5 +6,6 @@ model:
   llw2d:
     nx: 11
     ny: 11
-    nobs: 16
+    n_stations_x: 4
+    n_stations_y: 4
     padding: 0

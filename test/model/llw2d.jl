@@ -14,30 +14,6 @@ end
 
 const g_n = 9.80665
 
-# Set station locations.
-function set_stations!(ist::AbstractVector{Int},
-                       jst::AbstractVector{Int},
-                       station_distance_x::T,
-                       station_distance_y::T,
-                       station_boundary_x::T,
-                       station_boundary_y::T,
-                       dx::T,
-                       dy::T) where T
-    # synthetic station locations
-    nst = 0
-
-    # let's check ist and jst have a square number of elements before computing n
-    @assert mod(sqrt(length(ist)),1.0) ≈ 0
-    @assert mod(sqrt(length(jst)),1.0) ≈ 0
-    n = floor(Int, sqrt(length(ist)))
-
-    @inbounds for i in 1:n, j in 1:n
-        nst += 1
-        ist[nst] = floor(Int, (station_boundary_x + (i - 1) * station_distance_x) / dx)
-        jst[nst] = floor(Int, (station_boundary_y + (j - 1) * station_distance_y) / dy)
-    end
-end
-
 
 function timestep!(dx_buffer::AbstractMatrix{T},
                    dy_buffer::AbstractMatrix{T},

@@ -22,7 +22,8 @@ params = Dict(
         "llw2d" => Dict(
             "nx" => 20,
             "ny" => 20,
-            "nobs" => 4,
+            "n_stations_x" => 2,
+            "n_stations_y" => 2,
             "padding" => 0,
         ),
     ),
@@ -37,7 +38,8 @@ println()
 params["filter"]["output_filename"] = "bootstrap_filter.h5"
 params["filter"]["verbose"] = true
 params["filter"]["nprt"] = 2 * my_size
-params["model"]["llw2d"]["nobs"] = 36
+params["model"]["llw2d"]["n_stations_x"] = 6
+params["model"]["llw2d"]["n_stations_y"] = 6
 run_particle_filter(Model.init, params, BootstrapFilter())
 # Flush a newline
 println()
