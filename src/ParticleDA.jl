@@ -151,6 +151,10 @@ function write_snapshot end
     
 Compute the mean of the multivariate normal distribution on the observations given
 the current state and write to the first argument.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model_data`. Only required for filtering conditionally Gaussian models with 
+the optimal proposal filter implementation in [`OptimalFilter`](@ref).
 """
 function get_observation_mean_given_state! end
 
@@ -159,6 +163,10 @@ function get_observation_mean_given_state! end
 
 Return covariance `cov(U[i], U[j])` between components of the zero-mean Gaussian state 
 noise vector `U`.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model_data`. Only required for filtering conditionally Gaussian models with 
+the optimal proposal filter implementation in [`OptimalFilter`](@ref).
 """
 function get_covariance_state_noise end
 
@@ -167,6 +175,10 @@ function get_covariance_state_noise end
 
 Return covariance `cov(V[i], V[j])` between components of the zero-mean Gaussian 
 observation noise vector `V`.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model_data`. Only required for filtering conditionally Gaussian models with 
+the optimal proposal filter implementation in [`OptimalFilter`](@ref).
 """
 function get_covariance_observation_noise end
 
@@ -181,6 +193,10 @@ observation operator, `F` the (potentially non-linear) forward operator describi
 deterministic state dynamics, `U` is a zero-mean Gaussian state noise vector, `V` is a 
 zero-mean Gaussian observation noise vector and `x` is the state at the previous 
 observation time.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model_data`. Only required for filtering conditionally Gaussian models with 
+the optimal proposal filter implementation in [`OptimalFilter`](@ref).
 """
 function get_covariance_state_observation_given_previous_state end
 
@@ -194,6 +210,10 @@ Return covariance `cov(Y[i], Y[j])` between components of the observation vector
 (potentially non-linear) forward operator describing the deterministic state dynamics,
 `U` is a zero-mean Gaussian state noise vector, `V` is a zero-mean Gaussian observation
 noise vector and `x` is the state at the previous observation time.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model_data`. Only required for filtering conditionally Gaussian models with 
+the optimal proposal filter implementation in [`OptimalFilter`](@ref).
 """
 function get_covariance_observation_observation_given_previous_state end
 
