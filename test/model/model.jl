@@ -414,8 +414,11 @@ ParticleDA.get_observation_dimension(d::ModelData) = (
     size(d.station_grid_indices, 1) * length(d.model_params.observed_state_var_indices)
 )
 
-ParticleDA.get_state_eltype(d::ModelData) = get_float_eltype(d.model_params)
-ParticleDA.get_observation_eltype(d::ModelData) = get_float_eltype(d.model_params)
+ParticleDA.get_state_eltype(::Type{<:ModelData{T, U, G}}) where {T, U, G} = T
+ParticleDA.get_state_eltype(d::ModelData) = ParticleDA.get_state_eltype(typeof(d))
+
+ParticleDA.get_observation_eltype(::Type{<:ModelData{T, U, G}}) where {T, U, G} = U
+ParticleDA.get_observation_eltype(d::ModelData) = ParticleDA.get_observation_eltype(typeof(d))
 
 function ParticleDA.get_covariance_observation_noise(
     d::ModelData, observation_index_1::Integer, observation_index_2::Integer
