@@ -140,13 +140,13 @@ const STATE_FIELDS_METADATA = [
     StateFieldMetadata("vy", "m/s", "Ocean surface velocity y-component")
 ]
 
-struct ModelData{T <: Real, U <: Real}
+struct ModelData{T <: Real, U <: Real, G <: GaussianRandomField}
     model_params::ModelParameters{T}
     station_grid_indices::Matrix{Int}
     field_buffer::Array{T, 4}
     observation_buffer::Matrix{U}
-    initial_state_grf#::Vector{RandomField{T, GaussianRandomField}}
-    state_noise_grf#::Vector{RandomField{T, GaussianRandomField}}
+    initial_state_grf::Vector{RandomField{T, G}}
+    state_noise_grf::Vector{RandomField{T, G}}
     model_matrices::LLW2d.Matrices{T}
 end
 
