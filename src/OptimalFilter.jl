@@ -1,7 +1,6 @@
 using LinearAlgebra
 using PDMats
 
-
 struct OfflineMatrices{R<:Real, M<:AbstractMatrix{R}, F<:AbstractPDMat{R}}
     # Covariance between state X and observations Y given previous state x
     cov_X_Y::M  
@@ -42,16 +41,29 @@ function init_online_matrices(model_data, nprt_per_rank::Int)
     )
 end
 
+LinearAlgebra.ldiv!(A::PDMat, B::AbstractMatrix) = ldiv!(A.chol, B)
+
 function update_particles_given_observations!(
-    model_data, filter_data, observations, nprt_per_rank
+    states::AbstractMatrix, 
+    observations::AbstractVector, 
+    model_data, 
+    filter_data, 
+    rng::Random.AbstractRNG
 )
     observation_buffer = filter_data.online_matrices.observation_buffer
     state_buffer = filter_data.online_matrices.state_buffer
     cov_X_Y = filter_data.offline_matrices.cov_X_Y
     cov_Y_Y = filter_data.offline_matrices.cov_Y_Y
     # Compute Y ~ Normal(HX, R) for each particle X
-    sample_observations_given_particles!(observation_buffer, model_data, nprt_per_rank)
-    particles = get_particles(model_data)
+    num_particle = size(states, 2)
+    @Threads.threads :static for p in 1:num_particle
+        sample_observation_given_state!(
+            selectdim(observation_buffer, 2, p),
+            selectdim(states, 2, p),
+            model_data,
+            rng
+        )
+    end
     # To allow for only a subset of state components being correlated to observations
     # (given previous state) and so needing to be updated as part of optimal proposal
     # the model can specify the relevant indices to update. This avoids computing a
@@ -59,14 +71,13 @@ function update_particles_given_observations!(
     update_indices = get_state_indices_correlated_to_observations(model_data)
     # Update particles to account for observations, X = X - QHᵀ(HQHᵀ + R)⁻¹(Y − y)
     # The following lines are equivalent to the single statement version
-    #     @view(particles[update_indices..., :]) .-= (
+    #     particles[update_indices..., :] .-= (
     #         cov_X_Y * (cov_Y_Y  \ (observation_buffer .- observations))
     #     )
     # but we stage across multiple statements to allow using in-place operations to
     # avoid unnecessary allocations.
     observation_buffer .-= observations
     ldiv!(cov_Y_Y, observation_buffer)
-    mul!(states_buffer, cov_X_Y, observation_buffer)
-    @view(particles[update_indices, :]) .-= state_buffer
-    set_particles!(model_data, particles)
+    mul!(state_buffer, cov_X_Y, observation_buffer)
+    states[update_indices, :] .-= state_buffer
 end

@@ -14,39 +14,145 @@ include("OptimalFilter.jl")
 
 using .Default_params
 
-# Functions to extend in the model
+# Functions to extend in the model - required for all filters
 
 """
     ParticleDA.get_state_dimension(model_data) -> Integer
     
-Return the positive integer dimension of the state vector `X` which is assumed to be
-fixed for all time steps.
+Return the positive integer dimension of the state vector which is assumed to be fixed
+for all time steps.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model_data`.
 """
 function get_state_dimension end
 
 """
     ParticleDA.get_observation_dimension(model_data) -> Integer
     
-Return the positive integer dimension of the observation vector `Y` which is assumed to 
-be fixed for all time steps.
+Return the positive integer dimension of the observation vector which is assumed to be
+fixed for all time steps.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model_data`.
 """
 function get_observation_dimension end
 
 """
     ParticleDA.get_state_eltype(model_data) -> Type
 
-Return the element type of the state vector `X` which is assumed to be fixed for all 
-  time steps.
+Return the element type of the state vector which is assumed to be fixed for all time
+steps.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model_data`.
 """
 function get_state_eltype end
 
 """
     ParticleDA.get_observation_eltype(model_data) -> Type
 
-Return the element type of the observation vector `Y` which is assumed to be fixed for 
-all time steps.
+Return the element type of the observation vector which is assumed to be fixed for all
+time steps.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model_data`.
 """
 function get_observation_eltype end
+
+"""
+    ParticleDA.sample_initial_state!(state, model_data, rng)
+    
+Sample value for state vector from its initial distribution for model described by 
+`model_data` using random number generator `rng` to generate random draws and writing
+to `state` argument. 
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model_data`.
+"""
+function sample_initial_state! end
+
+"""
+    ParticleDA.update_state_deterministic!(state, model_data)
+
+Apply the deterministic component of the state time update for the model described by
+`model_data` for the state vector `state`, writing the updated state back to the
+`state` argument.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model_data`.
+"""
+function update_state_deterministic! end
+
+"""
+    ParticleDA.update_state_stochastic!(state, model_data, rng)
+
+Apply the stochastic component of the state time update for the model described by
+`model_data` for the state vector `state`, using random number generator `rng` to
+generate random draws and writing the updated state back to the `state` argument.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model_data`.
+"""
+function update_state_stochastic! end
+
+"""
+    ParticleDA.sample_observation_given_state!(observation, state, model_data, rng)
+
+Simulate noisy observations of the state `state` of model described by `model_data`
+and write to `observation` array using `rng` to generate any random draws.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model_data`.
+"""
+function sample_observation_given_state! end
+
+"""
+    ParticleDA.get_log_density_observation_given_state(
+        observation, state, model_data
+    ) -> Real
+    
+Return the logarithm of the probability density of an observation vector `observation`
+given a state vector `state` for the model associated with `model_data`. Any additive 
+terms that are constant with respect to the state may be neglected.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model_data`.
+"""
+function get_log_density_observation_given_state end
+
+"""
+    ParticleDA.write_snapshot(
+        output_filename, model_data, states, state_mean, state_var, weights, time_step
+    )
+
+Write a snapshot of the particle ensemble to the HDF5 file `output_filename` for the
+model described by `model_data`. `states` is a two-dimensional array containing the
+current state particle values (first axis state component, second particle index), 
+`state_mean` is a one-dimensional array containing the current estimate of the mean
+of the state given the observations up to the current time step, `state_var` is a 
+one-dimensional array containing the current estimate of the variance of the state given
+the observations up to the current time step, `weights` is a one-dimensional array of
+the normalized weights associated with each state particle (these weights together with
+the state vectors in `states` define an empirical distribution which approximates the
+distribution of the model state at the current time step given the observations up to
+that time step) and `time_step` is an integer index indicating the current time step
+with `time_step == 0` corresponding to the initial model state before any updates.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model_data`.
+"""
+function write_snapshot end
+
+# Functions to extend in the model - required only for optimal proposal filter
+
+"""
+    ParticleDA.get_observation_mean_given_state!(observation_mean, state, model_data)
+    
+Compute the mean of the multivariate normal distribution on the observations given
+the current state and write to the first argument.
+"""
+function get_observation_mean_given_state! end
 
 """
     ParticleDA.get_covariance_state_noise(model_data, i, j) -> Real
@@ -90,106 +196,6 @@ Return covariance `cov(Y[i], Y[j])` between components of the observation vector
 noise vector and `x` is the state at the previous observation time.
 """
 function get_covariance_observation_observation_given_previous_state end
-
-"""
-    ParticleDA.get_particles(model_data) -> AbstractMatrix
-
-Return the two-dimensional array of state particles, with first dimension corresponding
-to the state index and second the particle index.  This method is intended to be 
-extended by the user with the above signature, specifying the type of `model_data`. 
-Note: this function should return the particle data itself and not a copy, because it 
-will be modified in-place.
-"""
-function get_particles end
-
-"""
-   ParticleDA.set_particles!(model_data, particles)
-
-Overwrite state particles in `model_data`` with the data in the two-dimensional array 
-`particles`.  This method is intended to be extended by the user with the above 
-signature, specifying the type of `model_data`.
-"""
-function set_particles! end
-
-"""
-    ParticleDA.get_truth(model_data) -> AbstractVector
-
-Return the vector of true observations.  This method is intended to be extended
-by the user with the above signature, specifying the type of `model_data`.
-"""
-function get_truth end
-
-"""
-    ParticleDA.update_truth!(model_data) -> truth_observations
-
-Update the true observations using the dynamic of the model and return the
-vector of the true observations.  `nprt_per_rank` is the number of particles per
-each MPI rank.  This method is intended to be extended by the user with the
-above signature, specifying the type of `model_data`.
-"""
-function update_truth! end
-
-"""
-    ParticleDA.update_particle_dynamics!(model_data, nprt_per_rank::Int)
-
-Update the particles using the dynamic of the model.  `nprt_per_rank` is the
-number of particles per each MPI rank.  This method is intended to be extended
-by the user with the above signature, specifying the type of `model_data`.
-"""
-function update_particle_dynamics! end
-
-"""
-    ParticleDA.update_particle_noise!(model_data, nprt_per_rank::Int)
-
-Update the particles using the noise of the model and return the vector of the
-particles.  `nprt_per_rank` is the number of particles per each MPI rank.  This
-method is intended to be extended by the user with the above signature,
-specifying the type of `model_data`.
-"""
-function update_particle_noise! end
-
-"""
-    ParticleDA.sample_observations_given_particles!(
-        simulated_observations, model_data, nprt_per_rank::Int
-    )
-
-Simulate noisy observations of the state for each of the state particles in `model_data`
-associated with the current MPI rank and write to the `simulated_observation` array
-which should be of size `(dim_observation, nprt_per_rank)` where `dim_observation` is
-the dimension of each observation vector and `nprt_per_rank` is the number of particles
-per each MPI rank.
-"""
-function sample_observations_given_particles! end
-
-"""
-    ParticleDA.get_log_density_observation_given_state(observation, state, model_data)
-    
-Return the logarithm of the probability density of an observation vector given a
-state vector. Any additive terms that are constant with respect to the state may be
-neglected.
-"""
-function get_log_density_observation_given_state end
-
-"""
-    ParticleDA.get_observation_mean_given_state!(observation_mean, state, model_data)
-    
-Compute the mean of the multivariate normal distribution on the observations given
-the current state and write to the first argument.
-"""
-function get_observation_mean_given_state! end
-
-"""
-    ParticleDA.write_snapshot(output_filename, model_data, avg_arr, var_arr, weights, it)
-
-Write a snapshot of the data after an update of the particles to the HDF5 file
-`output_filename`.  `avg_arr` is the array of the mean of the particles,
-`var_arr` is the array of the standard deviation of the particles, `weights` is
-the array of the weigths of the particles, `it` is the index of the time step
-(`it==0` is the initial state, before moving forward the model for the first
-time).  This method is intended to be extended by the user with the above
-signature, specifying the type of `model_data`.
-"""
-function write_snapshot end
 
 # Additional methods for models. These may be optionally extended by the user for a 
 # specific `model_data` type, for example to provide more efficient implementations, 
@@ -332,51 +338,96 @@ of [`run_particle_filter`](@ref) to select the bootstrap filter.
 struct BootstrapFilter <: ParticleFilter end
 struct OptimalFilter <: ParticleFilter end
 
+# Initialize arrays used by the filter
+function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank::Int, ::BootstrapFilter)
 
-# Get logarithm of unnormalized importance weights for particles for filter specific
-# proposal distribution
-function get_log_weights!(
-    log_weights::AbstractVector{T},  
-    observation::AbstractVector{T}, 
-    model_data, 
-    filter_data::NamedTuple,
-    filter_type::ParticleFilter,
-) where T
-    particles = get_particles(model_data)
-    for p in 1:size(log_weights, 1)
-        log_weights[p] = compute_individual_particle_log_weight(
-            observation, 
-            particles[:, p],
-            model_data,
-            filter_data, 
-            filter_type
-       )
+    state_dimension = get_state_dimension(model_data)
+    state_eltype = get_state_eltype(model_data)
+
+    if MPI.Comm_rank(MPI.COMM_WORLD) == filter_params.master_rank
+        weights = Vector{state_eltype}(undef, filter_params.nprt)
+    else
+        weights = Vector{state_eltype}(undef, nprt_per_rank)
+    end
+
+    resampling_indices = Vector{Int}(undef, filter_params.nprt)
+    
+    statistics = Array{SummaryStat{state_eltype}, 1}(undef, state_dimension)
+    avg_arr = Array{state_eltype, 1}(undef, state_dimension)
+    var_arr = Array{state_eltype, 1}(undef, state_dimension)
+
+    # Memory buffer used during copy of the states
+    copy_buffer = Array{state_eltype, 2}(undef, state_dimension, nprt_per_rank)
+
+    return (; weights, resampling_indices, statistics, avg_arr, var_arr, copy_buffer)
+end
+
+# Initialize arrays used by the filter
+function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank::Int, ::OptimalFilter)
+    filter_data = init_filter(filter_params, model_data, nprt_per_rank, BootstrapFilter())
+
+    offline_matrices = init_offline_matrices(model_data)
+    online_matrices = init_online_matrices(model_data, nprt_per_rank)
+    
+    observation_dimension = get_observation_dimension(model_data)
+    observation_eltype = get_state_eltype(model_data)
+    observation_mean_buffer = Array{observation_eltype, 2}(
+        undef, observation_dimension, nthreads()
+    )
+
+    return (; filter_data..., offline_matrices, online_matrices, observation_mean_buffer)
+end
+
+function sample_proposal_and_compute_log_weights!(
+    states::AbstractMatrix,
+    log_weights::AbstractVector,
+    observation::AbstractVector,
+    model_data,
+    ::NamedTuple,
+    ::BootstrapFilter,
+    rng::Random.AbstractRNG,
+)
+    num_particle = size(states, 2)
+    Threads.@threads :static for p in 1:num_particle
+        update_state_deterministic!(selectdim(states, 2, p), model_data)
+        update_state_stochastic!(selectdim(states, 2, p), model_data, rng)
+        log_weights[p] = get_log_density_observation_given_state(
+            observation, selectdim(states, 2, p), model_data
+        )
     end
 end
 
-function compute_individual_particle_log_weight(
+function get_log_density_observation_given_previous_state(
     observation::AbstractVector{T},
-    state::AbstractVector{T},
+    pre_noise_state::AbstractVector{S},
     model_data,
     filter_data::NamedTuple,
-    ::BootstrapFilter,
-) where T
-    return ParticleDA.get_log_density_observation_given_state(
-        observation, state, model_data
-    )
+) where {S, T}
+    observation_mean = view(filter_data.observation_mean_buffer, :, threadid())
+    get_observation_mean_given_state!(observation_mean, pre_noise_state, model_data)
+    return -invquad(
+        filter_data.offline_matrices.cov_Y_Y, observation - observation_mean
+    ) / 2 
 end
 
-function compute_individual_particle_log_weight(
-    observation::AbstractVector{T},
-    state::AbstractVector{T},
+function sample_proposal_and_compute_log_weights!(
+    states::AbstractMatrix,
+    log_weights::AbstractVector,
+    observation::AbstractVector,
     model_data,
     filter_data::NamedTuple,
     ::OptimalFilter,
-) where T
-    observation_mean = ParticleDA.get_observation_mean_given_state!(
-        buffer, state, model_data
-    )
-    return -invquad(filter_data.offline_matrices.cov_Y_Y, observation - observation_mean) / 2
+    rng::Random.AbstractRNG,
+)
+    num_particle = size(states, 2)
+    Threads.@threads :static for p in 1:num_particle
+        update_state_deterministic!(selectdim(states, 2, p), model_data)
+        log_weights[p] = get_log_density_observation_given_previous_state(
+            observation, selectdim(states, 2, p), model_data, filter_data
+        )
+        update_state_stochastic!(selectdim(states, 2, p), model_data, rng)
+    end
+    update_particles_given_observations!(states, observation, model_data, filter_data, rng)
 end
 
 #
@@ -389,15 +440,19 @@ function normalized_exp!(weight::AbstractVector)
 end
 
 # Resample particles from given weights using Stochastic Universal Sampling
-function resample!(resampled_indices::AbstractVector{Int}, weight::AbstractVector{T}, rng::Random.AbstractRNG=Random.TaskLocalRNG()) where T
+function resample!(
+    resampled_indices::AbstractVector{Int}, 
+    weights::AbstractVector{T}, 
+    rng::Random.AbstractRNG=Random.TaskLocalRNG()
+) where T
 
-    nprt = length(weight)
+    nprt = length(weights)
     nprt_inv = 1.0 / nprt
     k = 1
 
     #TODO: Do we need to sort state by weight here?
 
-    weight_cdf = cumsum(weight)
+    weight_cdf = cumsum(weights)
     u0 = nprt_inv * rand(rng, T)
 
     # Note: To parallelise this loop, updates to k and u have to be atomic.
@@ -466,6 +521,16 @@ function unpack_statistics!(avg::AbstractArray{T}, var::AbstractArray{T}, statis
     end
 end
 
+function init_states(model_data, nprt_per_rank::Int, rng::AbstractRNG)
+    state_el_type = ParticleDA.get_state_eltype(model_data)
+    state_dimension = ParticleDA.get_state_dimension(model_data)
+    states = Matrix{state_el_type}(undef, state_dimension, nprt_per_rank)
+    Threads.@threads :static for p in 1:nprt_per_rank
+        sample_initial_state!(selectdim(states, 2, p), model_data, rng)
+    end
+    return states
+end
+
 function copy_states!(particles::AbstractArray{T},
                       buffer::AbstractArray{T},
                       resampling_indices::Vector{Int},
@@ -515,51 +580,30 @@ function copy_states!(particles::AbstractArray{T},
 
 end
 
-# Initialize arrays used by the filter
-function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank::Int, ::Random.AbstractRNG, ::BootstrapFilter)
-
-    state_dimension = get_state_dimension(model_data)
-    cov_observation_noise = get_covariance_observation_noise(model_data)
-    state_eltype = get_state_eltype(model_data)
-
-    if MPI.Comm_rank(MPI.COMM_WORLD) == filter_params.master_rank
-        weights = Vector{state_eltype}(undef, filter_params.nprt)
-    else
-        weights = Vector{state_eltype}(undef, nprt_per_rank)
+function simulate_observations_from_model(
+    model_data, num_time_step::Integer, rng::AbstractRNG
+)
+    state = Vector{get_state_eltype(model_data)}(undef, get_state_dimension(model_data))
+    observation_sequence = Matrix{get_observation_eltype(model_data)}(
+        undef, get_observation_dimension(model_data), num_time_step
+    )
+    sample_initial_state!(state, model_data, rng)
+    for observation in eachcol(observation_sequence)
+        update_state_deterministic!(state, model_data)
+        update_state_stochastic!(state, model_data, rng)
+        sample_observation_given_state!(observation, state, model_data, rng)
     end
-
-    resampling_indices = Vector{Int}(undef, filter_params.nprt)
-    
-    statistics = Array{SummaryStat{state_eltype}, 1}(undef, state_dimension)
-    avg_arr = Array{state_eltype, 1}(undef, state_dimension)
-    var_arr = Array{state_eltype, 1}(undef, state_dimension)
-
-    # Memory buffer used during copy of the states
-    copy_buffer = Array{state_eltype, 2}(undef, state_dimension, nprt_per_rank)
-
-    return (; weights, resampling_indices, statistics, avg_arr, var_arr, copy_buffer, cov_observation_noise)
+    return observation_sequence 
 end
 
-# Initialize arrays used by the filter
-function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank::Int, rng::Random.AbstractRNG, ::OptimalFilter)
-    filter_data = init_filter(filter_params, model_data, nprt_per_rank, rng, BootstrapFilter())
-
-    offline_matrices = init_offline_matrices(model_data)
-    online_matrices = init_online_matrices(model_data, nprt_per_rank)
-
-    return (; filter_data..., offline_matrices, online_matrices, rng)
-end
-
-function update_particle_proposal!(model_data, filter_data, observations, nprt_per_rank, filter_type::BootstrapFilter)
-    update_particle_noise!(model_data, nprt_per_rank)
-end
-
-function update_particle_proposal!(model_data, filter_data, observations, nprt_per_rank, filter_type::OptimalFilter)
-    update_particle_noise!(model_data, nprt_per_rank)
-    update_particles_given_observations!(model_data, filter_data, observations, nprt_per_rank)
-end
-
-function run_particle_filter(init, filter_params::FilterParameters, model_params_dict::Dict, filter_type; rng::Random.AbstractRNG=Random.TaskLocalRNG())
+function run_particle_filter(
+    init_model, 
+    filter_params::FilterParameters, 
+    model_params_dict::Dict, 
+    filter_type;
+    observation_sequence=nothing,
+    rng::Random.AbstractRNG=Random.TaskLocalRNG()
+)
 
     MPI.Init()
 
@@ -579,46 +623,64 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
     nprt_per_rank = Int(filter_params.nprt / MPI.Comm_size(MPI.COMM_WORLD))
 
     # Do memory allocations
-    @timeit_debug timer "Model initialization" model_data = init(model_params_dict, nprt_per_rank, my_rank, rng)
+    @timeit_debug timer "Model initialization" model_data = init_model(model_params_dict)
+    
+    if isnothing(observation_sequence)
+        @timeit_debug timer "Simulating observations" begin
+            if my_rank == filter_params.master_rank
+                observation_sequence = simulate_observations_from_model(
+                    model_data, filter_params.n_time_step, rng
+                )
+            end
+            observation_sequence = MPI.bcast(
+                observation_sequence, filter_params.master_rank, MPI.COMM_WORLD
+            )
+        end 
+    end
+    
+    @timeit_debug timer "State initialization" states = init_states(
+        model_data, nprt_per_rank, rng
+    )
 
-    # TODO: put the body of this block in a function
-    @timeit_debug timer "Filter initialization" filter_data = init_filter(filter_params, model_data, nprt_per_rank, rng, filter_type)
+    @timeit_debug timer "Filter initialization" filter_data = init_filter(
+        filter_params, model_data, nprt_per_rank, filter_type
+        )
 
-    @timeit_debug timer "get_particles" particles = get_particles(model_data)
-    @timeit_debug timer "Mean and Var" get_mean_and_var!(filter_data.statistics, particles, filter_params.master_rank)
+    @timeit_debug timer "Mean and Var" get_mean_and_var!(
+        filter_data.statistics, states, filter_params.master_rank
+    )
 
     # Write initial state (time = 0) + metadata
     if(filter_params.verbose && my_rank == filter_params.master_rank)
         @timeit_debug timer "IO" begin
-            unpack_statistics!(filter_data.avg_arr, filter_data.var_arr, filter_data.statistics)
-            write_snapshot(filter_params.output_filename,
-                           model_data,
-                           filter_data.avg_arr,
-                           filter_data.var_arr,
-                           filter_data.weights,
-                           0)
+            unpack_statistics!(
+                filter_data.avg_arr, filter_data.var_arr, filter_data.statistics
+            )
+            write_snapshot(
+                filter_params.output_filename,
+                model_data,
+                states,
+                filter_data.avg_arr,
+                filter_data.var_arr,
+                filter_data.weights,
+                0
+            )
         end
     end
 
-    for it in 1:filter_params.n_time_step
+    for (time_step, observation) in enumerate(eachcol(observation_sequence))
 
-        # integrate true synthetic wavefield
-        @timeit_debug timer "True State Update and Process Noise" observations = update_truth!(model_data)
-
-        # Forecast: Update tsunami forecast and get observations from it
-        # Parallelised with threads.
-
-        @timeit_debug timer "Particle Dynamics" update_particle_dynamics!(model_data, nprt_per_rank);
-        @timeit_debug timer "Particle Proposal" update_particle_proposal!(model_data, filter_data, observations, nprt_per_rank, filter_type)
-        
-        # TODO: need to have access to *previous* states here as for optimal proposal
-        # particle weights depend on previous particle values not updated values.
-        @timeit_debug timer "Particle Weights" get_log_weights!(
+        # Sample updated values for particles from proposal distribution and compute
+        # unnormalized log weights for each particle in ensemble given observations
+        # for current time step
+        @timeit_debug timer "Proposals and weights" sample_proposal_and_compute_log_weights!(
+            states, 
             @view(filter_data.weights[1:nprt_per_rank]),
-            observations,
-            model_data,
-            filter_data,
-            filter_type,
+            observation, 
+            model_data, 
+            filter_data, 
+            filter_type, 
+            rng
         )
 
         # Gather weights to master rank and resample particles.
@@ -627,12 +689,16 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
         # Note that only master_rank allocates memory for all particles. Other ranks only allocate
         # for their chunk of state.
         if my_rank == filter_params.master_rank
-            @timeit_debug timer "MPI Gather" MPI.Gather!(MPI.IN_PLACE,
-                                                         UBuffer(filter_data.weights, nprt_per_rank),
-                                                         filter_params.master_rank,
-                                                         MPI.COMM_WORLD)
-            @timeit_debug timer "Weights" normalized_exp!(filter_data.weights)
-            @timeit_debug timer "Resample" resample!(filter_data.resampling_indices, filter_data.weights, rng)
+            @timeit_debug timer "MPI Gather" MPI.Gather!(
+                MPI.IN_PLACE,
+                UBuffer(filter_data.weights, nprt_per_rank),
+                filter_params.master_rank,
+                MPI.COMM_WORLD
+            )
+            @timeit_debug timer "Normalize weights" normalized_exp!(filter_data.weights)
+            @timeit_debug timer "Resample" resample!(
+                filter_data.resampling_indices, filter_data.weights, rng
+            )
 
         else
             @timeit_debug timer "MPI Gather" MPI.Gather!(filter_data.weights,
@@ -643,21 +709,38 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
 
         # Broadcast resampled particle indices to all ranks
         MPI.Bcast!(filter_data.resampling_indices, filter_params.master_rank, MPI.COMM_WORLD)
+    
+        @timeit_debug timer "State Copy" copy_states!(
+            states,
+            filter_data.copy_buffer,
+            filter_data.resampling_indices,
+            my_rank,
+            nprt_per_rank
+        )
+                                                      
+        if filter_params.verbose
 
-        @timeit_debug timer "get_particles" particles = get_particles(model_data)
-        @timeit_debug timer "State Copy" copy_states!(particles,
-                                                      filter_data.copy_buffer,
-                                                      filter_data.resampling_indices,
-                                                      my_rank,
-                                                      nprt_per_rank)
-
-        @timeit_debug timer "Mean and Var" get_mean_and_var!(filter_data.statistics, particles, filter_params.master_rank)
+            @timeit_debug timer "Mean and Var" get_mean_and_var!(
+                filter_data.statistics, states, filter_params.master_rank
+            )
+            
+        end
 
         if my_rank == filter_params.master_rank && filter_params.verbose
 
             @timeit_debug timer "IO" begin
-                unpack_statistics!(filter_data.avg_arr, filter_data.var_arr, filter_data.statistics)
-                write_snapshot(filter_params.output_filename, model_data, filter_data.avg_arr, filter_data.var_arr, filter_data.weights, it)
+                unpack_statistics!(
+                    filter_data.avg_arr, filter_data.var_arr, filter_data.statistics
+                )
+                write_snapshot(
+                    filter_params.output_filename,
+                    model_data,
+                    states,
+                    filter_data.avg_arr,
+                    filter_data.var_arr,
+                    filter_data.weights,
+                    time_step,
+                )
             end
 
         end
@@ -690,7 +773,7 @@ function run_particle_filter(init, filter_params::FilterParameters, model_params
 
     unpack_statistics!(filter_data.avg_arr, filter_data.var_arr, filter_data.statistics)
 
-    return get_truth(model_data), filter_data.avg_arr, filter_data.var_arr
+    return states, filter_data.avg_arr, filter_data.var_arr
 end
 
 # Initialise params struct with user-defined dict of values.
@@ -720,49 +803,62 @@ function read_input_file(path_to_input_file::String)
 end
 
 """
-    run_particle_filter(init, path_to_input_file::String, filter_type::ParticleFilter)
+    run_particle_filter(init_model, path_to_input_file::String, filter_type::ParticleFilter)
 
-Run the particle filter.  `init` is the function which initialise the model,
+Run the particle filter. `init_model` is the function which initialise the model,
 `path_to_input_file` is the path to the YAML file with the input parameters.
 `filter_type` is the particle filter to use.  See [`ParticleFilter`](@ref) for
 the possible values.
 """
-function run_particle_filter(init, path_to_input_file::String, filter_type::ParticleFilter; rng::Random.AbstractRNG=Random.TaskLocalRNG())
-
+function run_particle_filter(
+    init_model,
+    path_to_input_file::String,
+    filter_type::ParticleFilter;
+    observation_sequence=nothing,
+    rng::Random.AbstractRNG=Random.TaskLocalRNG()
+)
     MPI.Init()
-
     # Do I/O on rank 0 only and then broadcast params
     if MPI.Comm_rank(MPI.COMM_WORLD) == 0
-
         user_input_dict = read_input_file(path_to_input_file)
-
     else
-
         user_input_dict = nothing
-
     end
-
     user_input_dict = MPI.bcast(user_input_dict, 0, MPI.COMM_WORLD)
-
-    return run_particle_filter(init, user_input_dict, filter_type; rng)
-
+    return run_particle_filter(
+        init_model, 
+        user_input_dict, 
+        filter_type; 
+        observation_sequence, 
+        rng
+    )
 end
 
 """
-    run_particle_filter(init, user_input_dict::Dict, filter_type::ParticleFilter)
+    run_particle_filter(init_model, user_input_dict::Dict, filter_type::ParticleFilter)
 
-Run the particle filter.  `init` is the function which initialise the model,
+Run the particle filter. `init_model` is the function which initialise the model,
 `user_input_dict` is the list of input parameters, as a `Dict`.  `filter_type`
 is the particle filter to use.  See [`ParticleFilter`](@ref) for the possible
 values.
 """
-function run_particle_filter(init, user_input_dict::Dict, filter_type::ParticleFilter; rng::Random.AbstractRNG=Random.TaskLocalRNG())
-
+function run_particle_filter(
+    init_model, 
+    user_input_dict::Dict, 
+    filter_type::ParticleFilter;
+    observation_sequence=nothing,
+    rng::Random.AbstractRNG=Random.TaskLocalRNG()
+)
     filter_params = get_params(FilterParameters, get(user_input_dict, "filter", Dict()))
     model_params_dict = get(user_input_dict, "model", Dict())
-
-    return run_particle_filter(init, filter_params, model_params_dict, filter_type; rng)
-
+    return run_particle_filter(
+        init_model, 
+        filter_params, 
+        model_params_dict, 
+        filter_type; 
+        observation_sequence, 
+        rng
+    )
 end
 
 end # module
