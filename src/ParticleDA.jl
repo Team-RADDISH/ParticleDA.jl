@@ -390,7 +390,7 @@ function init_filter(filter_params::FilterParameters, model_data, nprt_per_rank:
     online_matrices = init_online_matrices(model_data, nprt_per_rank)
     
     observation_dimension = get_observation_dimension(model_data)
-    observation_eltype = get_state_eltype(model_data)
+    observation_eltype = get_observation_eltype(model_data)
     observation_mean_buffer = Array{observation_eltype, 2}(
         undef, observation_dimension, nthreads()
     )
