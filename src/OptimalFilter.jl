@@ -43,9 +43,9 @@ end
 
 LinearAlgebra.ldiv!(A::PDMat, B::AbstractMatrix) = ldiv!(A.chol, B)
 
-function update_particles_given_observations!(
+function update_states_given_observations!(
     states::AbstractMatrix, 
-    observations::AbstractVector, 
+    observation::AbstractVector, 
     model_data, 
     filter_data, 
     rng::Random.AbstractRNG
@@ -72,11 +72,11 @@ function update_particles_given_observations!(
     # Update particles to account for observations, X = X - QHᵀ(HQHᵀ + R)⁻¹(Y − y)
     # The following lines are equivalent to the single statement version
     #     particles[update_indices..., :] .-= (
-    #         cov_X_Y * (cov_Y_Y  \ (observation_buffer .- observations))
+    #         cov_X_Y * (cov_Y_Y  \ (observation_buffer .- observation))
     #     )
     # but we stage across multiple statements to allow using in-place operations to
     # avoid unnecessary allocations.
-    observation_buffer .-= observations
+    observation_buffer .-= observation
     ldiv!(cov_Y_Y, observation_buffer)
     mul!(state_buffer, cov_X_Y, observation_buffer)
     states[update_indices, :] .-= state_buffer
