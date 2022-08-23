@@ -240,7 +240,7 @@ function get_state_indices_correlated_to_observations(model_data)
 end
 
 """
-    ParticleDA.get_covariance_observation_noise(model_data) -> AbstractPDMat
+    ParticleDA.get_covariance_state_noise(model_data) -> AbstractPDMat
 
 Return covariance matrix `cov(U, U)` of zero-mean Gaussian state noise vector `U`. 
 Defaults to computing dense matrix using index-based 
