@@ -378,7 +378,7 @@ function get_station_grid_indices(
     dy::T,
 ) where T
     coords = readdlm(filename, ',', Float64, '\n'; comments=true, comment_char='#')
-    return floor(Int, coords ./ [dx dy]) .+ 1
+    return floor.(Int, coords ./ [dx dy]) .+ 1
 end
 
 function get_station_grid_indices(
