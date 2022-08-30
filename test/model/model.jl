@@ -116,6 +116,8 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
 
     particle_dump_file = "particle_dump.h5"
     particle_dump_time = [-1]
+    truth_obs_filename::String = ""
+
 end
 
 get_float_eltype(::Type{<:ModelParameters{T}}) where {T} = T
@@ -378,7 +380,7 @@ function get_station_grid_indices(
     dy::T,
 ) where T
     coords = readdlm(filename, ',', Float64, '\n'; comments=true, comment_char='#')
-    return floor(Int, coords ./ [dx dy]) .+ 1
+    return floor.(Int, coords ./ [dx dy]) .+ 1
 end
 
 function get_station_grid_indices(
@@ -834,6 +836,45 @@ function ParticleDA.write_snapshot(output_filename::AbstractString,
         write_weights(file, weights, it, params)
     end
 
+end
+
+function write_obs(file::HDF5.File, observation::AbstractVector, it::Int, params::ModelParameters)
+
+    group_name = "obs"
+    dataset_name = "t" * lpad(string(it),4,'0')
+
+    group, subgroup = ParticleDA.create_or_open_group(file, group_name)
+
+    if !haskey(group, dataset_name)
+        #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
+        ds,dtype = create_dataset(group, dataset_name, observation)
+        ds[:] = observation
+        attributes(ds)["Description"] = "Observations"
+        attributes(ds)["Unit"] = ""
+        attributes(ds)["Time step"] = it
+        attributes(ds)["Time (s)"] = it * params.time_step
+    else
+        @warn "Write failed, dataset $group_name/$dataset_name  already exists in $(file.filename) !"
+    end
+
+end
+
+function ParticleDA.write_state_and_observations(state::AbstractArray{T}, 
+                                      observation::AbstractArray{T},
+                                      it::Int, 
+                                      model_data::ModelData) where T
+
+    println("Writing output at timestep = ", it)
+    params = model_data.model_params
+    state = reshape(state, (params.nx, params.ny, params.n_state_var, :))
+    h5open(params.truth_obs_filename, "cw") do file
+        for (i, metadata) in enumerate(STATE_FIELDS_METADATA)
+            write_field(file, @view(state[:,:,i]), it, params.title_syn, metadata, params)
+        end
+        if it > 0
+            write_obs(file, observation, it, params)
+        end
+    end
 end
 
 function write_particles(

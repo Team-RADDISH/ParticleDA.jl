@@ -25,3 +25,5 @@ model:
 
     observed_state_var_indices: [1]
     particle_initial_state: "true"
+
+    truth_obs_filename: "observations.h5"

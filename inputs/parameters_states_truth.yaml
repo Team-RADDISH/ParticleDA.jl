@@ -3,7 +3,7 @@
 
 filter:
   nprt: 50
-  n_time_step: 640
+  n_time_step: 25
   verbose: true
   enable_timers: true
   output_filename: "test.h5"
