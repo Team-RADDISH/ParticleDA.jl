@@ -717,6 +717,30 @@ function copy_states!(particles::AbstractArray{T},
 
 end
 
+"""
+    simulate_observations_from_model(init_model, path_to_input_file::String)
+
+Initialise the truth model and extract observations. `init_model` is the function which initialise the model,
+`path_to_input_file` is the path to the YAML file with the truth model input parameters. See [`ParticleFilter`](@ref) for
+the possible values.
+"""
+function simulate_observations_from_model(
+    init_model, 
+    path_to_input_file::String,
+    rng::Random.AbstractRNG=Random.TaskLocalRNG()
+)
+    user_input_dict = read_input_file(path_to_input_file)
+    filter_params = get_params(FilterParameters, get(user_input_dict, "filter", Dict()))
+    model_params_dict = get(user_input_dict, "model", Dict())
+    model_data = init_model(model_params_dict)
+
+    return simulate_observations_from_model(
+        model_data, 
+        filter_params.n_time_step, 
+        rng
+    )
+end
+
 function simulate_observations_from_model(
     model_data, num_time_step::Integer, rng::AbstractRNG
 )
@@ -765,9 +789,15 @@ function run_particle_filter(
     if isnothing(observation_sequence)
         @timeit_debug timer "Simulating observations" begin
             if my_rank == filter_params.master_rank
-                observation_sequence = simulate_observations_from_model(
+                if filter_params.truth_param_file != ""
+                    observation_sequence = simulate_observations_from_model(
+                        init_model, filter_params.truth_param_file, rng
+                    )
+                else
+                    observation_sequence = simulate_observations_from_model(
                     model_data, filter_params.n_time_step, rng
-                )
+                    )
+                end
             end
             observation_sequence = MPI.bcast(
                 observation_sequence, filter_params.master_rank, MPI.COMM_WORLD
