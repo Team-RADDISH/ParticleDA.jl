@@ -13,6 +13,7 @@ Parameters for ParticleDA run. Keyword arguments:
 * `output_filename::String` : Name of output file
 * `nprt::Int` : Number of particles for particle filter
 * `enable_timers::Bool` : Flag to control run time measurements
+* `truth_param_file::String` : Optional file to initialise the truth model
 """
 Base.@kwdef struct FilterParameters
 
@@ -26,6 +27,8 @@ Base.@kwdef struct FilterParameters
     nprt::Int = 4
 
     enable_timers::Bool = false
+
+    truth_param_file::String = ""
 
 end
 

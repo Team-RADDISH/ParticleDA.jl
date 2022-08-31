@@ -149,6 +149,36 @@ the type of `model_data`.
 """
 function write_snapshot end
 
+"""
+    ParticleDA.write_state_and_observations(
+        states, observation, ind, model_data_truth
+    )
+
+Write the state and observations from the truth model described by `model_data_truth` 
+to a HDF5 file. Note that `model_data_truth` can be different to the defined model_data. 
+`states` is a one-dimensional array containing the state values, `observation` 
+is a one-dimensional array containing the observed state variables at the observation locations 
+and `ind` is an integer index indicating the current time step.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model_data_truth`.
+"""
+
+function write_state_and_observations end
+
+"""
+    ParticleDA.read_observation_sequence(
+        observation_file, filter_params.n_time_step, model_data
+    )
+
+Read in the observation sequence from a HDF5 file named `observation_file` and
+`filter_params.n_time_step` is the number of assimilation steps.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model_data`.
+"""
+function read_observation_sequence end
+
 # Functions to extend in the model - required only for optimal proposal filter
 
 """
@@ -717,28 +747,74 @@ function copy_states!(particles::AbstractArray{T},
 
 end
 
+"""
+    simulate_observations_from_model(init_model, path_to_input_file::String)
+
+Initialise the truth model and extract observations. `init_model` is the function which initialise the model,
+`path_to_input_file` is the path to the YAML file with the truth model input parameters. See [`ParticleFilter`](@ref) for
+the possible values.
+"""
 function simulate_observations_from_model(
-    model_data, num_time_step::Integer, rng::AbstractRNG
+    init_model,
+    num_time_step::Integer,
+    path_to_input_file::String,
+    rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
-    state = Vector{get_state_eltype(model_data)}(undef, get_state_dimension(model_data))
+    user_input_dict_truth = read_input_file(path_to_input_file)
+    @show path_to_input_file
+    model_params_truth_dict = get(user_input_dict_truth, "model", Dict())
+    model_data_truth = init_model(model_params_truth_dict)
+
+    return simulate_observations_from_model(
+        model_data_truth,
+        num_time_step, 
+        rng
+    )
+end
+
+function simulate_observations_from_model(
+    model_data_truth, num_time_step::Integer, rng::AbstractRNG
+)
+    state = Vector{get_state_eltype(model_data_truth)}(undef, get_state_dimension(model_data_truth))
+    observation_sequence = Matrix{get_observation_eltype(model_data_truth)}(
+        undef, get_observation_dimension(model_data_truth), num_time_step
+    )
+    sample_initial_state!(state, model_data_truth, rng)
+    ind = 0
+    observation = zeros(get_observation_dimension(model_data_truth))
+    dummy_obs = Vector{get_observation_eltype(model_data_truth)}(undef, get_observation_dimension(model_data_truth))
+
+    write_state_and_observations(state, dummy_obs, ind, model_data_truth)
+    for observation in eachcol(observation_sequence)
+        ind = ind + 1
+        update_state_deterministic!(state, model_data_truth)
+        update_state_stochastic!(state, model_data_truth, rng)
+        sample_observation_given_state!(observation, state, model_data_truth, rng)
+        write_state_and_observations(state, observation, ind, model_data_truth)
+    end
+    return observation_sequence
+end
+
+function read_observation_sequence(filename::AbstractString, num_time_step::Integer, model_data)
     observation_sequence = Matrix{get_observation_eltype(model_data)}(
         undef, get_observation_dimension(model_data), num_time_step
     )
-    sample_initial_state!(state, model_data, rng)
-    for observation in eachcol(observation_sequence)
-        update_state_deterministic!(state, model_data)
-        update_state_stochastic!(state, model_data, rng)
-        sample_observation_given_state!(observation, state, model_data, rng)
+    file = h5open(filename, "r")
+    ind = 1
+    for timestamp ∈ keys(file["obs"])
+        obs = read(file["obs"][timestamp])
+        observation_sequence[:, ind] .= obs
+        ind = ind + 1
     end
-    return observation_sequence 
-end
+    return observation_sequence
+end 
 
 function run_particle_filter(
     init_model, 
     filter_params::FilterParameters, 
     model_params_dict::Dict, 
-    filter_type;
-    observation_sequence=nothing,
+    filter_type,
+    observation_file::String="";
     rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
 
@@ -762,18 +838,30 @@ function run_particle_filter(
     # Do memory allocations
     @timeit_debug timer "Model initialization" model_data = init_model(model_params_dict)
     
-    if isnothing(observation_sequence)
+    if isempty(observation_file)
         @timeit_debug timer "Simulating observations" begin
             if my_rank == filter_params.master_rank
-                observation_sequence = simulate_observations_from_model(
+                @show filter_params.truth_param_file
+                if isempty(filter_params.truth_param_file)
+                    observation_sequence = simulate_observations_from_model(
                     model_data, filter_params.n_time_step, rng
-                )
+                    )
+                else
+                    observation_sequence = simulate_observations_from_model(
+                        init_model, filter_params.n_time_step, filter_params.truth_param_file, rng
+                    )
+                end
             end
-            observation_sequence = MPI.bcast(
-                observation_sequence, filter_params.master_rank, MPI.COMM_WORLD
-            )
-        end 
+        end
+    else
+        @timeit_debug timer "Reading observations" begin
+            if my_rank == filter_params.master_rank
+                println("Reading observations from file \n")
+                observation_sequence = read_observation_sequence(observation_file, filter_params.n_time_step, model_data)
+            end
+        end
     end
+    observation_sequence = MPI.bcast(observation_sequence, filter_params.master_rank, MPI.COMM_WORLD)
     
     @timeit_debug timer "State initialization" states = init_states(
         model_data, nprt_per_rank, rng
@@ -950,8 +1038,8 @@ the possible values.
 function run_particle_filter(
     init_model,
     path_to_input_file::String,
-    filter_type::ParticleFilter;
-    observation_sequence=nothing,
+    filter_type::ParticleFilter,
+    observation_file::String="";
     rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
     MPI.Init()
@@ -965,8 +1053,8 @@ function run_particle_filter(
     return run_particle_filter(
         init_model, 
         user_input_dict, 
-        filter_type; 
-        observation_sequence, 
+        filter_type, 
+        observation_file; 
         rng
     )
 end
@@ -982,8 +1070,8 @@ values.
 function run_particle_filter(
     init_model, 
     user_input_dict::Dict, 
-    filter_type::ParticleFilter;
-    observation_sequence=nothing,
+    filter_type::ParticleFilter,
+    observation_file::String="";
     rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
     filter_params = get_params(FilterParameters, get(user_input_dict, "filter", Dict()))
@@ -992,8 +1080,8 @@ function run_particle_filter(
         init_model, 
         filter_params, 
         model_params_dict, 
-        filter_type; 
-        observation_sequence, 
+        filter_type,
+        observation_file; 
         rng
     )
 end
