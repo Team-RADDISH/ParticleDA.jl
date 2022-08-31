@@ -151,29 +151,32 @@ function write_snapshot end
 
 """
     ParticleDA.write_state_and_observations(
-        output_filename, model_data, states, state_mean, state_var, weights, time_step
+        states, observation, ind, model_data_truth
     )
 
-Write a snapshot of the particle ensemble to the HDF5 file `output_filename` for the
-model described by `model_data`. `states` is a two-dimensional array containing the
-current state particle values (first axis state component, second particle index), 
-`state_mean` is a one-dimensional array containing the current estimate of the mean
-of the state given the observations up to the current time step, `state_var` is a 
-one-dimensional array containing the current estimate of the variance of the state given
-the observations up to the current time step, `weights` is a one-dimensional array of
-the normalized weights associated with each state particle (these weights together with
-the state vectors in `states` define an empirical distribution which approximates the
-distribution of the model state at the current time step given the observations up to
-that time step) and `time_step` is an integer index indicating the current time step
-with `time_step == 0` corresponding to the initial model state before any updates.
+Write the state and observations from the truth model described by `model_data_truth` 
+to a HDF5 file. Note that `model_data_truth` can be different to the defined model_data. 
+`states` is a one-dimensional array containing the state values, `observation` 
+is a one-dimensional array containing the observed state variables at the observation locations 
+and `ind` is an integer index indicating the current time step.
 
 This method is intended to be extended by the user with the above signature, specifying
-the type of `model_data`.
+the type of `model_data_truth`.
 """
 
 function write_state_and_observations end
 
+"""
+    ParticleDA.read_observation_sequence(
+        observation_file, filter_params.n_time_step, model_data
+    )
 
+Read in the observation sequence from a HDF5 file named `observation_file` and
+`filter_params.n_time_step` is the number of assimilation steps.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model_data`.
+"""
 function read_observation_sequence end
 
 # Functions to extend in the model - required only for optimal proposal filter
@@ -780,7 +783,7 @@ function simulate_observations_from_model(
     ind = 0
     observation = zeros(get_observation_dimension(model_data_truth))
     dummy_obs = Vector{get_observation_eltype(model_data_truth)}(undef, get_observation_dimension(model_data_truth))
-    @show model_data_truth.model_params.truth_obs_filename
+
     write_state_and_observations(state, dummy_obs, ind, model_data_truth)
     for observation in eachcol(observation_sequence)
         ind = ind + 1

@@ -872,6 +872,7 @@ function ParticleDA.write_state_and_observations(state::AbstractArray{T},
             write_field(file, @view(state[:,:,i]), it, params.title_syn, metadata, params)
         end
         if it > 0
+            # These are written only after the initial state
             write_obs(file, observation, it, params)
         end
     end
