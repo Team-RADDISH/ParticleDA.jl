@@ -54,7 +54,7 @@ Parameters for the linear long wave two-dimensional (LLW2d) model. Keyword argum
 * `absorber_thickness_fraction::Float` : Thickness of absorber for sponge absorbing boundary conditions, fraction of grid size
 * `boundary_damping::Float` : damping for boundaries
 * `cutoff_depth::Float` : Shallowest water depth
-* `obs_noise_std::Float`: Standard deviation of noise added to observations of the true state
+* `obs_noise_std::Vector`: Standard deviations of noise added to observations of the true state
 * `observed_indices::Vector`: Vector containing the indices of the observed values in the state vector
 * `particle_dump_file::String`: file name for dump of particle state vectors
 * `particle_dump_time::Int`: list of (one more more) time steps to dump particle states
@@ -80,7 +80,7 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     station_distance_y::T = 20.0e3
     station_boundary_x::T = 150.0e3
     station_boundary_y::T = 150.0e3
-    obs_noise_std::T = 1.0
+    obs_noise_std::Vector{T} = [1.0]
     # Observed indices
     observed_state_var_indices::Vector{Int} = [1]
 
@@ -116,7 +116,7 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
 
     particle_dump_file = "particle_dump.h5"
     particle_dump_time = [-1]
-    truth_obs_filename::String = ""
+    truth_obs_filename::String = "test_observations.h5"
 
 end
 
@@ -423,16 +423,22 @@ ParticleDA.get_observation_eltype(::Type{<:ModelData{T, U, G}}) where {T, U, G} 
 ParticleDA.get_observation_eltype(d::ModelData) = ParticleDA.get_observation_eltype(typeof(d))
 
 function ParticleDA.get_covariance_observation_noise(
-    d::ModelData, observation_index_1::Integer, observation_index_2::Integer
+    d::ModelData, state_index_1::CartesianIndex, state_index_2::CartesianIndex
 )
-    return (
-        observation_index_1 == observation_index_2 ? d.model_params.obs_noise_std^2 : 0.
-    )
+    x_index_1, y_index_1, var_index_1 = state_index_1.I
+    x_index_2, y_index_2, var_index_2 = state_index_2.I
+
+    if (x_index_1 == x_index_2 && y_index_1 == y_index_2)
+        return (d.model_params.obs_noise_std[var_index_1]^2)
+    else
+        return 0.
+    end
 end
 
 function ParticleDA.get_covariance_observation_noise(d::ModelData)
-    return ScalMat(
-        ParticleDA.get_observation_dimension(d), d.model_params.obs_noise_std^2
+    return PDiagMat(
+        ParticleDA.get_observation_dimension(d), 
+        repeat(d.model_params.obs_noise_std.^2, inner=ParticleDA.get_observation_dimension(d))
     )
 end
 
@@ -456,7 +462,7 @@ end
 function observation_index_to_cartesian_state_index(
     model_params::ModelParameters, station_grid_indices::AbstractMatrix, observation_index::Integer
 )
-    n_station = model_params.n_stations_x * model_params.n_stations_y
+    n_station = size(station_grid_indices,1)
     state_var_index, station_index = fldmod1(observation_index, n_station)
     return CartesianIndex(
         station_grid_indices[station_index, :]..., state_var_index
@@ -497,20 +503,23 @@ end
 function ParticleDA.get_covariance_observation_observation_given_previous_state(
     model_data::ModelData, observation_index_1::Integer, observation_index_2::Integer
 )
-    return ParticleDA.get_covariance_state_noise(
-        model_data,
-        observation_index_to_cartesian_state_index(
+    observation_1 = observation_index_to_cartesian_state_index(
             model_data.model_params, 
             model_data.station_grid_indices, 
             observation_index_1
-        ),
-        observation_index_to_cartesian_state_index(
-            model_data.model_params, 
+        )
+
+    observation_2 = observation_index_to_cartesian_state_index(
+        model_data.model_params, 
             model_data.station_grid_indices, 
             observation_index_2
-        ),
+    )
+    return ParticleDA.get_covariance_state_noise(
+        model_data,
+        observation_1,
+        observation_2,
     ) + ParticleDA.get_covariance_observation_noise(
-        model_data, observation_index_1, observation_index_2
+        model_data, observation_1, observation_2
     )
 end
 

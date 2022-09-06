@@ -761,7 +761,6 @@ function simulate_observations_from_model(
     rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
     user_input_dict_truth = read_input_file(path_to_input_file)
-    @show path_to_input_file
     model_params_truth_dict = get(user_input_dict_truth, "model", Dict())
     model_data_truth = init_model(model_params_truth_dict)
 
@@ -841,7 +840,6 @@ function run_particle_filter(
     if isempty(observation_file)
         @timeit_debug timer "Simulating observations" begin
             if my_rank == filter_params.master_rank
-                @show filter_params.truth_param_file
                 if isempty(filter_params.truth_param_file)
                     observation_sequence = simulate_observations_from_model(
                     model_data, filter_params.n_time_step, rng
@@ -856,7 +854,7 @@ function run_particle_filter(
     else
         @timeit_debug timer "Reading observations" begin
             if my_rank == filter_params.master_rank
-                println("Reading observations from file \n")
+                println("Reading observations from file")
                 observation_sequence = read_observation_sequence(observation_file, filter_params.n_time_step, model_data)
             end
         end
