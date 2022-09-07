@@ -15,8 +15,7 @@ model:
     nx: 51
     ny: 51
     station_filename: "stationsW1.txt"
-    nobs: 15
-    obs_noise_std: 0.01
+    obs_noise_std: [0.01]
 
     nu: 2.5
     lambda: 5.0e3

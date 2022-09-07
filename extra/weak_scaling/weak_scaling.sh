@@ -19,6 +19,6 @@ rm -f weak_scaling_r*.h5
 # In the past we've run up to 256 ranks on CSD3
 for ranks in 1 2 4
 do
-    mpirun -np $ranks julia run_particleda.jl
+    mpiexecjl -np $ranks julia run_particleda.jl
 done
 

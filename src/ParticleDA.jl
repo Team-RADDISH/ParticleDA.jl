@@ -849,6 +849,8 @@ function run_particle_filter(
                         init_model, filter_params.n_time_step, filter_params.truth_param_file, rng
                     )
                 end
+            else
+                observation_sequence = nothing
             end
         end
     else
@@ -856,6 +858,8 @@ function run_particle_filter(
             if my_rank == filter_params.master_rank
                 println("Reading observations from file")
                 observation_sequence = read_observation_sequence(observation_file, filter_params.n_time_step, model_data)
+            else
+                observation_sequence = nothing
             end
         end
     end
