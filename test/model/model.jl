@@ -605,8 +605,8 @@ function ParticleDA.get_log_density_observation_given_state(
     ) / 2 
 end
 
-
 function ParticleDA.update_state_deterministic!(
+    state::AbstractVector, model_data::ModelData, time_index::Integer
 )
     tsunami_update!(
         view(model_data.field_buffer, :, :, 1, threadid()), 

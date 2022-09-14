@@ -78,11 +78,11 @@ the type of `model_data`.
 function sample_initial_state! end
 
 """
-    ParticleDA.update_state_deterministic!(state, model_data)
+    ParticleDA.update_state_deterministic!(state, model_data, time_index)
 
-Apply the deterministic component of the state time update for the model described by
-`model_data` for the state vector `state`, writing the updated state back to the
-`state` argument.
+Apply the deterministic component of the state time update at discrete time index 
+`time_index` for the model described by `model_data` for the state vector `state`
+writing the updated state back to the `state` argument.
 
 This method is intended to be extended by the user with the above signature, specifying
 the type of `model_data`.
@@ -501,6 +501,7 @@ function sample_proposal_and_compute_log_weights!(
     states::AbstractMatrix,
     log_weights::AbstractVector,
     observation::AbstractVector,
+    time_index::Integer,
     model_data,
     ::NamedTuple,
     ::BootstrapFilter,
@@ -508,7 +509,7 @@ function sample_proposal_and_compute_log_weights!(
 )
     num_particle = size(states, 2)
     Threads.@threads :static for p in 1:num_particle
-        update_state_deterministic!(selectdim(states, 2, p), model_data)
+        update_state_deterministic!(selectdim(states, 2, p), model_data, time_index)
         update_state_stochastic!(selectdim(states, 2, p), model_data, rng)
         log_weights[p] = get_log_density_observation_given_state(
             observation, selectdim(states, 2, p), model_data
@@ -575,6 +576,7 @@ function sample_proposal_and_compute_log_weights!(
     states::AbstractMatrix,
     log_weights::AbstractVector,
     observation::AbstractVector,
+    time_index::Integer,
     model_data,
     filter_data::NamedTuple,
     ::OptimalFilter,
@@ -582,7 +584,7 @@ function sample_proposal_and_compute_log_weights!(
 )
     num_particle = size(states, 2)
     Threads.@threads :static for p in 1:num_particle
-        update_state_deterministic!(selectdim(states, 2, p), model_data)
+        update_state_deterministic!(selectdim(states, 2, p), model_data, time_index)
         # Particle weights for optimal proposal _do not_ depend on state noise values
         # therefore we calculate them using states after applying deterministic part of
         # time update but before adding state noise
@@ -779,17 +781,14 @@ function simulate_observations_from_model(
         undef, get_observation_dimension(model_data_truth), num_time_step
     )
     sample_initial_state!(state, model_data_truth, rng)
-    ind = 0
     observation = zeros(get_observation_dimension(model_data_truth))
     dummy_obs = Vector{get_observation_eltype(model_data_truth)}(undef, get_observation_dimension(model_data_truth))
-
-    write_state_and_observations(state, dummy_obs, ind, model_data_truth)
-    for observation in eachcol(observation_sequence)
-        ind = ind + 1
-        update_state_deterministic!(state, model_data_truth)
+    write_state_and_observations(state, dummy_obs, 0, model_data_truth)
+    for (time_index, observation) in enumerate(eachcol(observation_sequence))
+        update_state_deterministic!(state, model_data_truth, time_index)
         update_state_stochastic!(state, model_data_truth, rng)
         sample_observation_given_state!(observation, state, model_data_truth, rng)
-        write_state_and_observations(state, observation, ind, model_data_truth)
+        write_state_and_observations(state, observation, time_index, model_data_truth)
     end
     return observation_sequence
 end
@@ -895,7 +894,7 @@ function run_particle_filter(
         end
     end
 
-    for (time_step, observation) in enumerate(eachcol(observation_sequence))
+    for (time_index, observation) in enumerate(eachcol(observation_sequence))
 
         # Sample updated values for particles from proposal distribution and compute
         # unnormalized log weights for each particle in ensemble given observations
@@ -903,7 +902,8 @@ function run_particle_filter(
         @timeit_debug timer "Proposals and weights" sample_proposal_and_compute_log_weights!(
             states, 
             @view(filter_data.weights[1:nprt_per_rank]),
-            observation, 
+            observation,
+            time_index,
             model_data, 
             filter_data, 
             filter_type, 
@@ -966,7 +966,7 @@ function run_particle_filter(
                     filter_data.avg_arr,
                     filter_data.var_arr,
                     filter_data.weights,
-                    time_step,
+                    time_index,
                 )
             end
 
