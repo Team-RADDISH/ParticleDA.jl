@@ -78,7 +78,7 @@ the type of `model_data`.
 function sample_initial_state! end
 
 """
-    ParticleDA.update_state_deterministic!(state, model_data, ip)
+    ParticleDA.update_state_deterministic!(state, model_data)
 
 Apply the deterministic component of the state time update for the model described by
 `model_data` for the state vector `state`, writing the updated state back to the
@@ -336,10 +336,10 @@ function get_covariance_observation_state_given_previous_state(model_data)
     cov = Matrix{get_state_eltype(model_data)}(
         undef, length(state_indices), observation_dimension
     )
-    for i in length(state_indices)
+    for (i, state_index) in enumerate(state_indices)
         for j in 1:observation_dimension
             cov[i, j] = get_covariance_state_observation_given_previous_state(
-                model_data, state_indices[i], j
+                model_data, state_index, j
             )
         end
     end
@@ -508,7 +508,7 @@ function sample_proposal_and_compute_log_weights!(
 )
     num_particle = size(states, 2)
     Threads.@threads :static for p in 1:num_particle
-        update_state_deterministic!(selectdim(states, 2, p), model_data, p)
+        update_state_deterministic!(selectdim(states, 2, p), model_data)
         update_state_stochastic!(selectdim(states, 2, p), model_data, rng)
         log_weights[p] = get_log_density_observation_given_state(
             observation, selectdim(states, 2, p), model_data
@@ -582,7 +582,7 @@ function sample_proposal_and_compute_log_weights!(
 )
     num_particle = size(states, 2)
     Threads.@threads :static for p in 1:num_particle
-        update_state_deterministic!(selectdim(states, 2, p), model_data, p)
+        update_state_deterministic!(selectdim(states, 2, p), model_data)
         # Particle weights for optimal proposal _do not_ depend on state noise values
         # therefore we calculate them using states after applying deterministic part of
         # time update but before adding state noise
@@ -786,7 +786,7 @@ function simulate_observations_from_model(
     write_state_and_observations(state, dummy_obs, ind, model_data_truth)
     for observation in eachcol(observation_sequence)
         ind = ind + 1
-        update_state_deterministic!(state, model_data_truth, 1)
+        update_state_deterministic!(state, model_data_truth)
         update_state_stochastic!(state, model_data_truth, rng)
         sample_observation_given_state!(observation, state, model_data_truth, rng)
         write_state_and_observations(state, observation, ind, model_data_truth)
