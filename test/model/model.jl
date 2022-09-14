@@ -165,36 +165,6 @@ function ParticleDA.get_params(T::Type{ModelParameters}, user_input_dict::Dict)
 
 end
 
-function get_obs!(
-    observations::AbstractVector{T},
-    state::AbstractArray{T, 3},
-    params::ModelParameters,
-    station_grid_indices::AbstractMatrix,
-) where T
-    get_obs!(
-        observations, state, params.observed_state_var_indices, station_grid_indices
-    )
-end
-
-# Return observation data at stations from given model state
-function get_obs!(
-    observations::AbstractVector{T},
-    state::AbstractArray{T, 3},
-    observed_state_var_indices::AbstractVector{Int},
-    station_grid_indices::AbstractMatrix{Int},
-) where T
-    @assert (
-        length(observations) 
-        == size(station_grid_indices, 1) * length(observed_state_var_indices) 
-    )
-    n = 1
-    for k in observed_state_var_indices
-        for (i, j) in eachrow(station_grid_indices)
-            observations[n] = state[i, j, k]
-            n += 1
-        end
-    end
-end
 
 function tsunami_update!(dx_buffer::AbstractMatrix{T},
                          dy_buffer::AbstractMatrix{T},
@@ -609,19 +579,21 @@ end
 function ParticleDA.get_observation_mean_given_state!(
     observation_mean::AbstractVector, state::AbstractVector, model_data::ModelData
 )
-    return get_obs!(
-        observation_mean, 
-        reshape(
-            state, 
-            (
-                model_data.model_params.nx, 
-                model_data.model_params.ny, 
-                model_data.model_params.n_state_var
-            )
-        ), 
-        model_data.model_params, 
-        model_data.station_grid_indices
+    state_fields = reshape(
+        state, 
+        (
+            model_data.model_params.nx, 
+            model_data.model_params.ny, 
+            model_data.model_params.n_state_var
+        )
     )
+    n = 1
+    for k in model_data.model_params.observed_state_var_indices
+        for (i, j) in eachrow(model_data.station_grid_indices)
+            observation_mean[n] = state_fields[i, j, k]
+            n += 1
+        end
+    end
 end
 
 function ParticleDA.sample_observation_given_state!(
