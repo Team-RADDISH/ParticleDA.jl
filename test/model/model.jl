@@ -165,6 +165,14 @@ function ParticleDA.get_params(T::Type{ModelParameters}, user_input_dict::Dict)
 
 end
 
+function flat_state_to_fields(state::AbstractArray, params::ModelParameters)
+    if ndims(state) == 1
+        return reshape(state, (params.nx, params.ny, params.n_state_var))
+    else
+        return reshape(state, (params.nx, params.ny, params.n_state_var, :))
+    end
+end
+
 
 function tsunami_update!(dx_buffer::AbstractMatrix{T},
                          dy_buffer::AbstractMatrix{T},
@@ -289,14 +297,7 @@ function ParticleDA.sample_initial_state!(
     model_data::ModelData, 
     rng::Random.AbstractRNG,
 ) where T
-    state_fields = reshape(
-        state, 
-        (
-            model_data.model_params.nx, 
-            model_data.model_params.ny, 
-            model_data.model_params.n_state_var, 
-        )
-    )
+    state_fields = flat_state_to_fields(state, model_data.model_params)
     if model_data.model_params.particle_initial_state == "true"
         # Set true initial state
         LLW2d.initheight!(
@@ -579,14 +580,7 @@ end
 function ParticleDA.get_observation_mean_given_state!(
     observation_mean::AbstractVector, state::AbstractVector, model_data::ModelData
 )
-    state_fields = reshape(
-        state, 
-        (
-            model_data.model_params.nx, 
-            model_data.model_params.ny, 
-            model_data.model_params.n_state_var
-        )
-    )
+    state_fields = flat_state_to_fields(state, model_data.model_params)
     n = 1
     for k in model_data.model_params.observed_state_var_indices
         for (i, j) in eachrow(model_data.station_grid_indices)
@@ -626,20 +620,11 @@ end
 
 
 function ParticleDA.update_state_deterministic!(
-    state::AbstractVector, model_data::ModelData
 )
-    state_fields = reshape(
-        state, 
-        (
-            model_data.model_params.nx, 
-            model_data.model_params.ny, 
-            model_data.model_params.n_state_var, 
-        )
-    )
     tsunami_update!(
         view(model_data.field_buffer, :, :, 1, threadid()), 
         view(model_data.field_buffer, :, :, 2, threadid()),
-        state_fields, 
+        flat_state_to_fields(state, model_data.model_params), 
         model_data.model_matrices, 
         model_data.model_params
     )
@@ -648,17 +633,9 @@ end
 function ParticleDA.update_state_stochastic!(
     state::AbstractVector, model_data::ModelData, rng::AbstractRNG
 )
-    state_fields = reshape(
-        state, 
-        (
-            model_data.model_params.nx, 
-            model_data.model_params.ny, 
-            model_data.model_params.n_state_var, 
-        )
-    )
     # Add state noise
     add_random_field!(
-        state_fields,
+        flat_state_to_fields(state, model_data.model_params),
         view(model_data.field_buffer, :, :, 1, threadid()),
         model_data.state_noise_grf,
         rng,
@@ -803,8 +780,8 @@ function ParticleDA.write_snapshot(output_filename::AbstractString,
 
     println("Writing output at timestep = ", it)
     
-    avg = reshape(avg, (params.nx, params.ny, params.n_state_var, :))
-    var = reshape(var, (params.nx, params.ny, params.n_state_var, :))
+    avg = flat_state_to_fields(avg, params)
+    var = flat_state_to_fields(var, params)
 
     h5open(output_filename, "cw") do file
 
@@ -848,7 +825,7 @@ function ParticleDA.write_state_and_observations(state::AbstractArray{T},
 
     println("Writing output at timestep = ", it)
     params = model_data.model_params
-    state = reshape(state, (params.nx, params.ny, params.n_state_var, :))
+    state = flat_state_to_fields(state, params)
     h5open(params.truth_obs_filename, "cw") do file
         for (i, metadata) in enumerate(STATE_FIELDS_METADATA)
             write_field(file, @view(state[:,:,i]), it, params.title_syn, metadata, params)
@@ -870,7 +847,7 @@ function write_particles(
     println("Writing particle states at timestep = ", it)
     
     nprt = size(states, 2)
-    state_fields = reshape(states, (params.nx, params.ny, params.n_state_var, nprt))
+    state_fields = flat_state_to_fields(states, params)
 
     h5open(output_filename, "cw") do file
         for p = 1:nprt
