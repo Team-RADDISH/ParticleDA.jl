@@ -288,10 +288,6 @@ function add_random_field!(
     end
 end
 
-function add_noise!(vec::AbstractVector{T}, rng::Random.AbstractRNG, cov::AbstractPDMat{T}) where T
-    vec .+= rand(rng, MvNormal(cov))
-end
-
 function ParticleDA.sample_initial_state!(
     state::AbstractVector{T},
     model_data::ModelData, 
@@ -597,10 +593,8 @@ function ParticleDA.sample_observation_given_state!(
     rng::AbstractRNG
 ) where{S, T}
     ParticleDA.get_observation_mean_given_state!(observation, state, model_data)
-    add_noise!(
-        observation, 
-        rng, 
-        ParticleDA.get_covariance_observation_noise(model_data),
+    observation .+= rand(
+        rng, MvNormal(ParticleDA.get_covariance_observation_noise(model_data))
     )
     return observation
 end
