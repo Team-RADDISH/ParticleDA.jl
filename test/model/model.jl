@@ -211,19 +211,12 @@ function tsunami_update!(dx_buffer::AbstractMatrix{T},
 
 end
 
-function get_axes(params::ModelParameters)
-
-    return get_axes(params.nx, params.ny, params.dx, params.dy)
-
+function get_grid_axes(params::ModelParameters)
+    x = range(0, length=params.nx, step=params.dx)
+    y = range(0, length=params.ny, step=params.dy)
+    return x, y
 end
 
-function get_axes(nx::Int, ny::Int, dx::Real, dy::Real)
-
-    x = range(0, length=nx, step=dx)
-    y = range(0, length=ny, step=dy)
-
-    return x,y
-end
 
 
 # Initialize a gaussian random field generating function using the Matern covariance kernel
@@ -532,7 +525,7 @@ function init(model_params_dict::Dict)
     observation_buffer = Array{T}(undef, n_observations, nthreads())
     
     # Gaussian random fields for generating intial state and state noise
-    x, y = get_axes(model_params)
+    x, y = get_grid_axes(model_params)
     initial_state_grf = init_gaussian_random_field_generator(
         model_params.lambda_initial_state,
         model_params.nu_initial_state,
@@ -672,7 +665,7 @@ function write_grid(output_filename, params)
 
             # Write grid axes
             group = create_group(file, params.title_grid)
-            x,y = get_axes(params)
+            x, y = get_grid_axes(params)
             #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
             ds_x,dtype_x = create_dataset(group, "x", collect(x))
             ds_y,dtype_x = create_dataset(group, "y", collect(x))
