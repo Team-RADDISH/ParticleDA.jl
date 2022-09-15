@@ -742,26 +742,15 @@ function ParticleDA.write_snapshot(output_filename::AbstractString,
                                    avg::AbstractArray{T},
                                    var::AbstractArray{T},
                                    weights::AbstractVector{T},
-                                   it::Int,
+                                   time_index::Int,
                                    params::ModelParameters) where T
 
-    println("Writing output at timestep = ", it)
-    
-    avg = flat_state_to_fields(avg, params)
-    var = flat_state_to_fields(var, params)
-
+    println("Writing output at timestep = ", time_index)
     h5open(output_filename, "cw") do file
-
-        for (i, metadata) in enumerate(STATE_FIELDS_METADATA)
-
-            write_field(file, @view(avg[:,:,i]), it, params.title_avg, metadata, params)
-            write_field(file, @view(var[:,:,i]), it, params.title_var, metadata, params)
-
-        end
-
-        write_weights(file, weights, it, params)
+        write_state(file, avg, time_index, params.title_avg, params)
+        write_state(file, var, time_index, params.title_var, params)
+        write_weights(file, weights, time_index, params)
     end
-
 end
 
 function write_obs(file::HDF5.File, observation::AbstractVector, it::Int, params::ModelParameters)
@@ -787,19 +776,16 @@ end
 
 function ParticleDA.write_state_and_observations(state::AbstractArray{T}, 
                                       observation::AbstractArray{T},
-                                      it::Int, 
+                                      time_index::Int, 
                                       model_data::ModelData) where T
 
-    println("Writing output at timestep = ", it)
+    println("Writing output at timestep = ", time_index)
     params = model_data.model_params
-    state = flat_state_to_fields(state, params)
     h5open(params.truth_obs_filename, "cw") do file
-        for (i, metadata) in enumerate(STATE_FIELDS_METADATA)
-            write_field(file, @view(state[:,:,i]), it, params.title_syn, metadata, params)
-        end
-        if it > 0
+        write_state(file, state, time_index, params.title_syn, params)
+        if time_index > 0
             # These are written only after the initial state
-            write_obs(file, observation, it, params)
+            write_obs(file, observation, time_index, params)
         end
     end
 end
@@ -807,53 +793,42 @@ end
 function write_particles(
     output_filename::AbstractString,
     states::AbstractMatrix{T},
-    it::Int,
+    time_index::Int,
     params::ModelParameters
 ) where T
-
-    println("Writing particle states at timestep = ", it)
-    
-    nprt = size(states, 2)
-    state_fields = flat_state_to_fields(states, params)
-
+    println("Writing particle states at timestep = ", time_index)
     h5open(output_filename, "cw") do file
-        for p = 1:nprt
-            group_name = "particle" * string(p)
-            for (i, metadata) in enumerate(STATE_FIELDS_METADATA)
-                write_field(
-                    file, @view(state_fields[:, :, i, p]), it, group_name, metadata, params
-                )
-            end
+        for (index, state) in enumerate(eachcol(states))
+            group_name = "particle" * string(index)
+            write_state(file, state, time_index, group_name, params)
         end
     end
-
 end
 
-function write_field(
+function write_state(
     file::HDF5.File,
-    field::AbstractMatrix{T},
-    it::Int,
-    group::String,
-    metadata::StateFieldMetadata,
+    state::AbstractVector{T},
+    time_index::Int,
+    group_suffix::String,
     params::ModelParameters
 ) where T
-
-    group_name = params.state_prefix * "_" * group
-    subgroup_name = "t" * lpad(string(it), 4, '0')
-    dataset_name = metadata.name
-
+    group_name = params.state_prefix * "_" * group_suffix
+    subgroup_name = "t" * lpad(string(time_index), 4, '0')
     group, subgroup = ParticleDA.create_or_open_group(file, group_name, subgroup_name)
-
-    if !haskey(subgroup, dataset_name)
-        #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
-        ds, _ = create_dataset(subgroup, dataset_name, field)
-        ds[:,:] = field
-        attributes(ds)["Description"] = metadata.description
-        attributes(ds)["Unit"] = metadata.unit
-        attributes(ds)["Time step"] = it
-        attributes(ds)["Time (s)"] = it * params.time_step
-    else
-        @warn "Write failed, dataset $group_name/$subgroup_name/$dataset_name already exists in $(file.filename) !"
+    state_fields = flat_state_to_fields(state, params)
+    for (field, metadata) in zip(eachslice(state_fields, dims=3), STATE_FIELDS_METADATA)
+        dataset_name = metadata.name
+        if !haskey(subgroup, dataset_name)
+            #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
+            ds, _ = create_dataset(subgroup, dataset_name, field)
+            ds[:,:] = field
+            attributes(ds)["Description"] = metadata.description
+            attributes(ds)["Unit"] = metadata.unit
+            attributes(ds)["Time step"] = time_index
+            attributes(ds)["Time (s)"] = time_index * params.time_step
+        else
+            @warn "Write failed, dataset $group_name/$subgroup_name/$dataset_name already exists in $(file.filename) !"
+        end
     end
 end
 
