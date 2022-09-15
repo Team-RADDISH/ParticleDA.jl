@@ -174,49 +174,11 @@ function flat_state_to_fields(state::AbstractArray, params::ModelParameters)
 end
 
 
-function tsunami_update!(dx_buffer::AbstractMatrix{T},
-                         dy_buffer::AbstractMatrix{T},
-                         state::AbstractArray{T,3},
-                         model_matrices::LLW2d.Matrices{T},
-                         params::ModelParameters) where T
-
-    tsunami_update!(dx_buffer, dy_buffer, state, params.n_integration_step,
-                    params.dx, params.dy, params.time_step, model_matrices)
-
-end
-
-# Update tsunami wavefield with LLW2d in-place.
-function tsunami_update!(dx_buffer::AbstractMatrix{T},
-                         dy_buffer::AbstractMatrix{T},
-                         state::AbstractArray{T,3},
-                         nt::Int,
-                         dx::Real,
-                         dy::Real,
-                         time_interval::Real,
-                         model_matrices::LLW2d.Matrices{T}) where T
-
-    eta_a = @view(state[:, :, 1])
-    mm_a  = @view(state[:, :, 2])
-    nn_a  = @view(state[:, :, 3])
-    eta_f = @view(state[:, :, 1])
-    mm_f  = @view(state[:, :, 2])
-    nn_f  = @view(state[:, :, 3])
-
-    dt = time_interval / nt
-
-    for it in 1:nt
-        # Parts of model vector are aliased to tsunami heiht and velocities
-        LLW2d.timestep!(dx_buffer, dy_buffer, eta_f, mm_f, nn_f, eta_a, mm_a, nn_a, model_matrices, dx, dy, dt)
-    end
-
-end
-
 function get_grid_axes(params::ModelParameters)
     x = range(0, length=params.nx, step=params.dx)
     y = range(0, length=params.ny, step=params.dy)
     return x, y
 end
-
 
 
 # Initialize a gaussian random field generating function using the Matern covariance kernel
@@ -608,13 +570,31 @@ end
 function ParticleDA.update_state_deterministic!(
     state::AbstractVector, model_data::ModelData, time_index::Integer
 )
-    tsunami_update!(
-        view(model_data.field_buffer, :, :, 1, threadid()), 
-        view(model_data.field_buffer, :, :, 2, threadid()),
-        flat_state_to_fields(state, model_data.model_params), 
-        model_data.model_matrices, 
-        model_data.model_params
-    )
+    # Parts of state vector are aliased to tsunami height and velocity component fields
+    state_fields = flat_state_to_fields(state, model_data.model_params)
+    height_field = @view(state_fields[:, :, 1])
+    velocity_x_field = @view(state_fields[:, :, 2])
+    velocity_y_field = @view(state_fields[:, :, 3])
+    dx_buffer = view(model_data.field_buffer, :, :, 1, threadid())
+    dy_buffer = view(model_data.field_buffer, :, :, 2, threadid())
+    dt = model_data.model_params.time_step / model_data.model_params.n_integration_step
+    for _ in 1:model_data.model_params.n_integration_step
+        # Update tsunami wavefield with LLW2d.timestep in-place
+        LLW2d.timestep!(
+            dx_buffer, 
+            dy_buffer, 
+            height_field, 
+            velocity_x_field,
+            velocity_y_field,
+            height_field, 
+            velocity_x_field, 
+            velocity_y_field, 
+            model_data.model_matrices,
+            model_data.model_params.dx,
+            model_data.model_params.dy, 
+            dt
+        )
+    end
 end
 
 function ParticleDA.update_state_stochastic!(
