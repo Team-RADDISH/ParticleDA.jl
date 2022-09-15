@@ -664,9 +664,9 @@ function write_model_data(file::HDF5.File, model_data::ModelData)
     write_stations(file, model_data.station_grid_indices, model_data.model_params)
 end    
 
-function write_weights(file::HDF5.File, weights::AbstractVector, it::Int, params::ModelParameters)
+function write_weights(file::HDF5.File, weights::AbstractVector, time_index::Int)
     group_name = "weights"
-    dataset_name = "t" * lpad(string(it),4,'0')
+    dataset_name = "t" * lpad(string(time_index), 4, '0')
     group, subgroup = ParticleDA.create_or_open_group(file, group_name)
     if !haskey(group, dataset_name)
         #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
@@ -674,8 +674,7 @@ function write_weights(file::HDF5.File, weights::AbstractVector, it::Int, params
         ds[:] = weights
         attributes(ds)["Description"] = "Particle Weights"
         attributes(ds)["Unit"] = ""
-        attributes(ds)["Time step"] = it
-        attributes(ds)["Time (s)"] = it * params.time_step
+        attributes(ds)["Time step"] = time_index
     else
         @warn "Write failed, dataset $group_name/$dataset_name  already exists in $(file.filename) !"
     end
@@ -693,53 +692,51 @@ function ParticleDA.write_snapshot(
     println("Writing output at timestep = ", time_index)
     h5open(output_filename, "cw") do file
         time_index == 0 && write_model_data(file, model_data)
-        write_state(file, avg, time_index, model_data.model_params.title_avg, model_data.model_params)
-        write_state(file, var, time_index, model_data.model_params.title_var, model_data.model_params)
-        write_weights(file, weights, time_index, model_data.model_params)
+        write_state(file, avg, time_index, "data_avg", model_data)
+        write_state(file, var, time_index, "data_var", model_data)
+        write_weights(file, weights, time_index)
     end
     if any(model_data.model_params.particle_dump_time .== time_index)
         write_particles(
             model_data.model_params.particle_dump_file, 
             states, 
             time_index, 
-            model_data.model_params
+            model_data
         )
     end
 end
 
-function write_obs(file::HDF5.File, observation::AbstractVector, it::Int, params::ModelParameters)
-
+function write_observation(
+    file::HDF5.File, observation::AbstractVector, time_index::Int, model_data::ModelData
+)
     group_name = "obs"
-    dataset_name = "t" * lpad(string(it),4,'0')
-
+    dataset_name = "t" * lpad(string(time_index), 4, '0')
     group, subgroup = ParticleDA.create_or_open_group(file, group_name)
-
     if !haskey(group, dataset_name)
         #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
-        ds,dtype = create_dataset(group, dataset_name, observation)
+        ds, dtype = create_dataset(group, dataset_name, observation)
         ds[:] = observation
         attributes(ds)["Description"] = "Observations"
         attributes(ds)["Unit"] = ""
-        attributes(ds)["Time step"] = it
-        attributes(ds)["Time (s)"] = it * params.time_step
+        attributes(ds)["Time step"] = time_index
     else
         @warn "Write failed, dataset $group_name/$dataset_name  already exists in $(file.filename) !"
     end
 
 end
 
-function ParticleDA.write_state_and_observations(state::AbstractArray{T}, 
-                                      observation::AbstractArray{T},
-                                      time_index::Int, 
-                                      model_data::ModelData) where T
-
+function ParticleDA.write_state_and_observations(
+    state::AbstractArray{T}, 
+    observation::AbstractArray{T},
+    time_index::Int, 
+    model_data::ModelData
+) where T
     println("Writing output at timestep = ", time_index)
-    params = model_data.model_params
-    h5open(params.truth_obs_filename, "cw") do file
-        write_state(file, state, time_index, params.title_syn, params)
+    h5open(model_data.model_params.truth_obs_filename, "cw") do file
+        write_state(file, state, time_index, "data_syn", model_data)
         if time_index > 0
             # These are written only after the initial state
-            write_obs(file, observation, time_index, params)
+            write_observation(file, observation, time_index, model_data)
         end
     end
 end
@@ -748,12 +745,12 @@ function write_particles(
     file::HDF5.File,
     states::AbstractMatrix{T},
     time_index::Int,
-    params::ModelParameters
+    model_data::ModelData
 ) where T
     println("Writing particle states at timestep = ", time_index)
     for (index, state) in enumerate(eachcol(states))
-        group_name = "particle" * string(index)
-        write_state(file, state, time_index, group_name, params)
+        group_name = "data_particle" * string(index)
+        write_state(file, state, time_index, group_name, model_data)
     end
 end
 
@@ -761,13 +758,12 @@ function write_state(
     file::HDF5.File,
     state::AbstractVector{T},
     time_index::Int,
-    group_suffix::String,
-    params::ModelParameters
+    group_name::String,
+    model_data::ModelData
 ) where T
-    group_name = params.state_prefix * "_" * group_suffix
     subgroup_name = "t" * lpad(string(time_index), 4, '0')
     group, subgroup = ParticleDA.create_or_open_group(file, group_name, subgroup_name)
-    state_fields = flat_state_to_fields(state, params)
+    state_fields = flat_state_to_fields(state, model_data.model_params)
     for (field, metadata) in zip(eachslice(state_fields, dims=3), STATE_FIELDS_METADATA)
         dataset_name = metadata.name
         if !haskey(subgroup, dataset_name)
@@ -777,7 +773,7 @@ function write_state(
             attributes(ds)["Description"] = metadata.description
             attributes(ds)["Unit"] = metadata.unit
             attributes(ds)["Time step"] = time_index
-            attributes(ds)["Time (s)"] = time_index * params.time_step
+            attributes(ds)["Time (s)"] = time_index * model_data.model_params.time_step
         else
             @warn "Write failed, dataset $group_name/$subgroup_name/$dataset_name already exists in $(file.filename) !"
         end
