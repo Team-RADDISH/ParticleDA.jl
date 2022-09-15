@@ -610,35 +610,15 @@ function write_params(file::HDF5.File, params::ModelParameters)
     end
 end
 
-function write_grid(file::HDF5.File, params::ModelParameters)
-    group_name = "grid"
-    if !haskey(file, group_name)
-        # Write grid axes
-        group = create_group(file, group_name)
-        x, y = get_grid_axes(params)
-        for (dataset_name, val) in zip(("x", "y"), (collect(x), collect(y)))
-            dataset, _ = create_dataset(group, dataset_name, val)
-            dataset[:] = val
-            attributes(dataset)["Description"] = "Grid $dataset_name coordinate"
-            attributes(dataset)["Unit"] = "m"
-        end
-    else
-        @warn "Write failed, group $group_name already exists in $(file.filename) !"
-    end
-end
-
-function write_stations(
-    file::HDF5.File, station_grid_indices::AbstractMatrix, params::ModelParameters
+function write_coordinates(
+    file::HDF5.File, group_name::String, x::AbstractVector, y::AbstractVector
 )
-    group_name = "stations"
     if !haskey(file, group_name)
         group = create_group(file, group_name)
-        x = (station_grid_indices[:, 1] .- 1) .* params.dx
-        y = (station_grid_indices[:, 2] .- 1) .* params.dy
         for (dataset_name, val) in zip(("x", "y"), (x, y))
             dataset, _ = create_dataset(group, dataset_name, val)
             dataset[:] = val
-            attributes(dataset)["Description"] = "Station $dataset_name coordinate"
+            attributes(dataset)["Description"] = "$dataset_name coordinate"
             attributes(dataset)["Unit"] = "m"
         end
     else
@@ -647,9 +627,12 @@ function write_stations(
 end
 
 function write_model_data(file::HDF5.File, model_data::ModelData)
-    write_grid(file, model_data.model_params)
-    write_params(file, model_data.model_params)
-    write_stations(file, model_data.station_grid_indices, model_data.model_params)
+    model_params = model_data.model_params
+    write_params(file, model_params)
+    write_coordinates(file, "grid", map(collect, get_grid_axes(model_params))...)
+    stations_x = (model_data.station_grid_indices[:, 1] .- 1) .* model_params.dx
+    stations_y = (model_data.station_grid_indices[:, 2] .- 1) .* model_params.dy
+    write_coordinates(file, "stations", stations_x, stations_y)
 end    
 
 function write_weights(file::HDF5.File, weights::AbstractVector, time_index::Int)
