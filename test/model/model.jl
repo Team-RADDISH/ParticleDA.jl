@@ -658,6 +658,12 @@ function write_stations(
     end
 end
 
+function write_model_data(file::HDF5.File, model_data::ModelData)
+    write_grid(file, model_data.model_params)
+    write_params(file, model_data.model_params)
+    write_stations(file, model_data.station_grid_indices, model_data.model_params)
+end    
+
 function write_weights(file::HDF5.File, weights::AbstractVector, it::Int, params::ModelParameters)
     group_name = "weights"
     dataset_name = "t" * lpad(string(it),4,'0')
@@ -675,23 +681,22 @@ function write_weights(file::HDF5.File, weights::AbstractVector, it::Int, params
     end
 end
 
-function ParticleDA.write_snapshot(output_filename::AbstractString,
-                                   model_data::ModelData,
-                                   states::AbstractMatrix{T},
-                                   avg::AbstractArray{T},
-                                   var::AbstractArray{T},
-                                   weights::AbstractVector{T},
-                                   time_index::Int) where T
-
-    if time_index == 0
-        h5open(output_filename, "cw") do file
-            # These are written only at the initial state it == 0
-            write_grid(file, model_data.model_params)
-            write_params(file, model_data.model_params)
-            write_stations(file, model_data.station_grid_indices, model_data.model_params)
-        end
+function ParticleDA.write_snapshot(
+    output_filename::AbstractString,
+    model_data::ModelData,
+    states::AbstractMatrix{T},
+    avg::AbstractArray{T},
+    var::AbstractArray{T},
+    weights::AbstractVector{T},
+    time_index::Int
+) where T
+    println("Writing output at timestep = ", time_index)
+    h5open(output_filename, "cw") do file
+        time_index == 0 && write_model_data(file, model_data)
+        write_state(file, avg, time_index, model_data.model_params.title_avg, model_data.model_params)
+        write_state(file, var, time_index, model_data.model_params.title_var, model_data.model_params)
+        write_weights(file, weights, time_index, model_data.model_params)
     end
-
     if any(model_data.model_params.particle_dump_time .== time_index)
         write_particles(
             model_data.model_params.particle_dump_file, 
@@ -699,13 +704,6 @@ function ParticleDA.write_snapshot(output_filename::AbstractString,
             time_index, 
             model_data.model_params
         )
-    end
-    
-    println("Writing output at timestep = ", time_index)
-    h5open(output_filename, "cw") do file
-        write_state(file, avg, time_index, model_data.model_params.title_avg, model_data.model_params)
-        write_state(file, var, time_index, model_data.model_params.title_var, model_data.model_params)
-        write_weights(file, weights, time_index, model_data.model_params)
     end
 end
 
