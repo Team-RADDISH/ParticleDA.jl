@@ -713,9 +713,9 @@ function ParticleDA.write_snapshot(output_filename::AbstractString,
                                    avg::AbstractArray{T},
                                    var::AbstractArray{T},
                                    weights::AbstractVector{T},
-                                   it::Int) where T
+                                   time_index::Int) where T
 
-    if it == 0
+    if time_index == 0
         # These are written only at the initial state it == 0
         write_grid(output_filename, model_data.model_params)
         write_params(output_filename, model_data.model_params)
@@ -724,32 +724,20 @@ function ParticleDA.write_snapshot(output_filename::AbstractString,
         )
     end
 
-    if any(model_data.model_params.particle_dump_time .== it)
+    if any(model_data.model_params.particle_dump_time .== time_index)
         write_particles(
             model_data.model_params.particle_dump_file, 
             states, 
-            it, 
+            time_index, 
             model_data.model_params
         )
     end
-
-    return ParticleDA.write_snapshot(
-        output_filename, avg, var, weights, it, model_data.model_params
-    )
-end
-
-function ParticleDA.write_snapshot(output_filename::AbstractString,
-                                   avg::AbstractArray{T},
-                                   var::AbstractArray{T},
-                                   weights::AbstractVector{T},
-                                   time_index::Int,
-                                   params::ModelParameters) where T
-
+    
     println("Writing output at timestep = ", time_index)
     h5open(output_filename, "cw") do file
-        write_state(file, avg, time_index, params.title_avg, params)
-        write_state(file, var, time_index, params.title_var, params)
-        write_weights(file, weights, time_index, params)
+        write_state(file, avg, time_index, model_data.model_params.title_avg, model_data.model_params)
+        write_state(file, var, time_index, model_data.model_params.title_var, model_data.model_params)
+        write_weights(file, weights, time_index, model_data.model_params)
     end
 end
 
