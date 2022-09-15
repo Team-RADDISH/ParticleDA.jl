@@ -597,42 +597,39 @@ end
 
 ### Model IO
 
-function write_params(file::HDF5.File, params::ModelParameters)
-    group_name = "params"
-    if !haskey(file, group_name)
-        group = create_group(file, group_name)
-        fields = fieldnames(typeof(params))
-        for field in fields
-            attributes(group)[string(field)] = getfield(params, field)
-        end
-    else
-        @warn "Write failed, group $group_name already exists in $(file.filename)!"
+function write_params(group::HDF5.Group, params::ModelParameters)
+    fields = fieldnames(typeof(params))
+    for field in fields
+        attributes(group)[string(field)] = getfield(params, field)
     end
 end
 
-function write_coordinates(
-    file::HDF5.File, group_name::String, x::AbstractVector, y::AbstractVector
-)
-    if !haskey(file, group_name)
-        group = create_group(file, group_name)
-        for (dataset_name, val) in zip(("x", "y"), (x, y))
-            dataset, _ = create_dataset(group, dataset_name, val)
-            dataset[:] = val
-            attributes(dataset)["Description"] = "$dataset_name coordinate"
-            attributes(dataset)["Unit"] = "m"
-        end
-    else
-        @warn "Write failed, group $group_name already exists in  $(file.filename)!"
+function write_coordinates(group::HDF5.Group, x::AbstractVector, y::AbstractVector)
+    for (dataset_name, val) in zip(("x", "y"), (x, y))
+        dataset, _ = create_dataset(group, dataset_name, val)
+        dataset[:] = val
+        attributes(dataset)["Description"] = "$dataset_name coordinate"
+        attributes(dataset)["Unit"] = "m"
     end
 end
 
 function write_model_data(file::HDF5.File, model_data::ModelData)
     model_params = model_data.model_params
-    write_params(file, model_params)
-    write_coordinates(file, "grid", map(collect, get_grid_axes(model_params))...)
+    grid_x, grid_y = map(collect, get_grid_axes(model_params))
     stations_x = (model_data.station_grid_indices[:, 1] .- 1) .* model_params.dx
     stations_y = (model_data.station_grid_indices[:, 2] .- 1) .* model_params.dy
-    write_coordinates(file, "stations", stations_x, stations_y)
+    for (group_name, write_group) in [
+        ("params", group -> write_params(group, model_params)),
+        ("grid", group -> write_coordinates(group, grid_x, grid_y)),
+        ("stations", group -> write_coordinates(group, stations_x, stations_y)),
+    ]
+        if !haskey(file, group_name)
+            group = create_group(file, group_name)
+            write_group(group)
+        else
+            @warn "Write failed, group $group_name already exists in  $(file.filename)!"
+        end
+    end
 end    
 
 function write_weights(file::HDF5.File, weights::AbstractVector, time_index::Int)
