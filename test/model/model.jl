@@ -611,88 +611,57 @@ end
 
 ### Model IO
 
-function write_params(output_filename, params)
-
-    file = h5open(output_filename, "cw")
-
+function write_params(file::HDF5.File, params::ModelParameters)
     if !haskey(file, params.title_params)
-
         group = create_group(file, params.title_params)
-
         fields = fieldnames(typeof(params));
-
         for field in fields
-
             attributes(group)[string(field)] = getfield(params, field)
-
         end
-
     else
-
         @warn "Write failed, group $(params.title_params) already exists in $(file.filename)!"
-
     end
-
-    close(file)
-
 end
 
-function write_grid(output_filename, params)
-
-    h5open(output_filename, "cw") do file
-
-        if !haskey(file, params.title_grid)
-
-            # Write grid axes
-            group = create_group(file, params.title_grid)
-            x, y = get_grid_axes(params)
-            #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
-            ds_x,dtype_x = create_dataset(group, "x", collect(x))
-            ds_y,dtype_x = create_dataset(group, "y", collect(x))
-            ds_x[1:params.nx] = collect(x)
-            ds_y[1:params.ny] = collect(y)
-            attributes(ds_x)["Unit"] = "m"
-            attributes(ds_y)["Unit"] = "m"
-
-        else
-
-            @warn "Write failed, group $(params.title_grid) already exists in $(file.filename) !"
-
-        end
-
+function write_grid(file::HDF5.File, params::ModelParameters)
+    if !haskey(file, params.title_grid)
+        # Write grid axes
+        group = create_group(file, params.title_grid)
+        x, y = get_grid_axes(params)
+        #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
+        ds_x,dtype_x = create_dataset(group, "x", collect(x))
+        ds_y,dtype_x = create_dataset(group, "y", collect(x))
+        ds_x[1:params.nx] = collect(x)
+        ds_y[1:params.ny] = collect(y)
+        attributes(ds_x)["Unit"] = "m"
+        attributes(ds_y)["Unit"] = "m"
+    else
+        @warn "Write failed, group $(params.title_grid) already exists in $(file.filename) !"
     end
-
 end
 
 function write_stations(
-    output_filename, station_grid_indices::AbstractMatrix, params::ModelParameters
+    file::HDF5.File, station_grid_indices::AbstractMatrix, params::ModelParameters
 ) where T
-
-    h5open(output_filename, "cw") do file
-
-        if !haskey(file, params.title_stations)
-            group = create_group(file, params.title_stations)
-            x = (station_grid_indices[:, 1] .- 1) .* params.dx
-            y = (station_grid_indices[:, 2] .- 1) .* params.dy
-            for (dataset_name, val) in zip(("x", "y"), (x, y))
-                ds, dtype = create_dataset(group, dataset_name, val)
-                ds[:] = val
-                attributes(ds)["Description"] = "Station $dataset_name coordinate"
-                attributes(ds)["Unit"] = "m"
-            end
-        else
-            @warn "Write failed, group $(params.title_stations) already exists in  $(file.filename)!"
+    if !haskey(file, params.title_stations)
+        group = create_group(file, params.title_stations)
+        x = (station_grid_indices[:, 1] .- 1) .* params.dx
+        y = (station_grid_indices[:, 2] .- 1) .* params.dy
+        for (dataset_name, val) in zip(("x", "y"), (x, y))
+            ds, dtype = create_dataset(group, dataset_name, val)
+            ds[:] = val
+            attributes(ds)["Description"] = "Station $dataset_name coordinate"
+            attributes(ds)["Unit"] = "m"
         end
+    else
+        @warn "Write failed, group $(params.title_stations) already exists in  $(file.filename)!"
     end
 end
 
 function write_weights(file::HDF5.File, weights::AbstractVector, it::Int, params::ModelParameters)
-
     group_name = "weights"
     dataset_name = "t" * lpad(string(it),4,'0')
-
     group, subgroup = ParticleDA.create_or_open_group(file, group_name)
-
     if !haskey(group, dataset_name)
         #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
         ds,dtype = create_dataset(group, dataset_name, weights)
@@ -704,7 +673,6 @@ function write_weights(file::HDF5.File, weights::AbstractVector, it::Int, params
     else
         @warn "Write failed, dataset $group_name/$dataset_name  already exists in $(file.filename) !"
     end
-
 end
 
 function ParticleDA.write_snapshot(output_filename::AbstractString,
@@ -716,12 +684,12 @@ function ParticleDA.write_snapshot(output_filename::AbstractString,
                                    time_index::Int) where T
 
     if time_index == 0
-        # These are written only at the initial state it == 0
-        write_grid(output_filename, model_data.model_params)
-        write_params(output_filename, model_data.model_params)
-        write_stations(
-            output_filename, model_data.station_grid_indices, model_data.model_params
-        )
+        h5open(output_filename, "cw") do file
+            # These are written only at the initial state it == 0
+            write_grid(file, model_data.model_params)
+            write_params(file, model_data.model_params)
+            write_stations(file, model_data.station_grid_indices, model_data.model_params)
+        end
     end
 
     if any(model_data.model_params.particle_dump_time .== time_index)
@@ -779,17 +747,15 @@ function ParticleDA.write_state_and_observations(state::AbstractArray{T},
 end
 
 function write_particles(
-    output_filename::AbstractString,
+    file::HDF5.File,
     states::AbstractMatrix{T},
     time_index::Int,
     params::ModelParameters
 ) where T
     println("Writing particle states at timestep = ", time_index)
-    h5open(output_filename, "cw") do file
-        for (index, state) in enumerate(eachcol(states))
-            group_name = "particle" * string(index)
-            write_state(file, state, time_index, group_name, params)
-        end
+    for (index, state) in enumerate(eachcol(states))
+        group_name = "particle" * string(index)
+        write_state(file, state, time_index, group_name, params)
     end
 end
 
