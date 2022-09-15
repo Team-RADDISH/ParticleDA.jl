@@ -30,12 +30,6 @@ Parameters for the linear long wave two-dimensional (LLW2d) model. Keyword argum
 * `station_boundary_y::Float` : Distance between bottom left edge of box and first station in the y direction [m]
 * `n_integration_step::Int` : Number of sub-steps to integrate the forward model per time step.
 * `time_step::AbstractFloat` : Time step length (s)
-* `state_prefix::String` : Prefix of the time slice data groups in output
-* `title_da::String` : Suffix of the data assimilated data group in output
-* `title_syn::String` : Suffix of the true state data group in output
-* `title_grid::String` : Name of the grid data group in output
-* `title_stations::String` : Name of the station coordinates data group in output
-* `title_params::String` : Name of the parameters data group in output
 * `peak_position::Vector{AbstractFloat}` : The [x,y] coordinates (m) of the initial wave peak
 * `peak_height::AbstractFloat` : The height (m) of the initial wave peak
 * `source_size::AbstractFloat` : Cutoff distance (m) from the peak for the initial wave
@@ -105,14 +99,6 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     absorber_thickness_fraction::T = 0.1
     boundary_damping::T = 0.015
     cutoff_depth::T = 10.0
-
-    state_prefix::String = "data"
-    title_avg::String = "avg"
-    title_var::String = "var"
-    title_syn::String = "syn"
-    title_grid::String = "grid"
-    title_stations::String = "stations"
-    title_params::String = "params"
 
     particle_dump_file = "particle_dump.h5"
     particle_dump_time = [-1]
@@ -612,49 +598,51 @@ end
 ### Model IO
 
 function write_params(file::HDF5.File, params::ModelParameters)
-    if !haskey(file, params.title_params)
-        group = create_group(file, params.title_params)
-        fields = fieldnames(typeof(params));
+    group_name = "params"
+    if !haskey(file, group_name)
+        group = create_group(file, group_name)
+        fields = fieldnames(typeof(params))
         for field in fields
             attributes(group)[string(field)] = getfield(params, field)
         end
     else
-        @warn "Write failed, group $(params.title_params) already exists in $(file.filename)!"
+        @warn "Write failed, group $group_name already exists in $(file.filename)!"
     end
 end
 
 function write_grid(file::HDF5.File, params::ModelParameters)
-    if !haskey(file, params.title_grid)
+    group_name = "grid"
+    if !haskey(file, group_name)
         # Write grid axes
-        group = create_group(file, params.title_grid)
+        group = create_group(file, group_name)
         x, y = get_grid_axes(params)
-        #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
-        ds_x,dtype_x = create_dataset(group, "x", collect(x))
-        ds_y,dtype_x = create_dataset(group, "y", collect(x))
-        ds_x[1:params.nx] = collect(x)
-        ds_y[1:params.ny] = collect(y)
-        attributes(ds_x)["Unit"] = "m"
-        attributes(ds_y)["Unit"] = "m"
+        for (dataset_name, val) in zip(("x", "y"), (collect(x), collect(y)))
+            dataset, _ = create_dataset(group, dataset_name, val)
+            dataset[:] = val
+            attributes(dataset)["Description"] = "Grid $dataset_name coordinate"
+            attributes(dataset)["Unit"] = "m"
+        end
     else
-        @warn "Write failed, group $(params.title_grid) already exists in $(file.filename) !"
+        @warn "Write failed, group $group_name already exists in $(file.filename) !"
     end
 end
 
 function write_stations(
     file::HDF5.File, station_grid_indices::AbstractMatrix, params::ModelParameters
-) where T
-    if !haskey(file, params.title_stations)
-        group = create_group(file, params.title_stations)
+)
+    group_name = "stations"
+    if !haskey(file, group_name)
+        group = create_group(file, group_name)
         x = (station_grid_indices[:, 1] .- 1) .* params.dx
         y = (station_grid_indices[:, 2] .- 1) .* params.dy
         for (dataset_name, val) in zip(("x", "y"), (x, y))
-            ds, dtype = create_dataset(group, dataset_name, val)
-            ds[:] = val
-            attributes(ds)["Description"] = "Station $dataset_name coordinate"
-            attributes(ds)["Unit"] = "m"
+            dataset, _ = create_dataset(group, dataset_name, val)
+            dataset[:] = val
+            attributes(dataset)["Description"] = "Station $dataset_name coordinate"
+            attributes(dataset)["Unit"] = "m"
         end
     else
-        @warn "Write failed, group $(params.title_stations) already exists in  $(file.filename)!"
+        @warn "Write failed, group $group_name already exists in  $(file.filename)!"
     end
 end
 
