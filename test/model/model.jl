@@ -50,8 +50,6 @@ Parameters for the linear long wave two-dimensional (LLW2d) model. Keyword argum
 * `cutoff_depth::Float` : Shallowest water depth
 * `obs_noise_std::Vector`: Standard deviations of noise added to observations of the true state
 * `observed_indices::Vector`: Vector containing the indices of the observed values in the state vector
-* `particle_dump_file::String`: file name for dump of particle state vectors
-* `particle_dump_time::Int`: list of (one more more) time steps to dump particle states
 """
 Base.@kwdef struct ModelParameters{T<:AbstractFloat}
 
@@ -100,8 +98,6 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     boundary_damping::T = 0.015
     cutoff_depth::T = 10.0
 
-    particle_dump_file = "particle_dump.h5"
-    particle_dump_time = [-1]
     truth_obs_filename::String = "test_observations.h5"
 
 end
@@ -651,26 +647,24 @@ end
 function ParticleDA.write_snapshot(
     output_filename::AbstractString,
     model_data::ModelData,
+    filter_data::NamedTuple,
     states::AbstractMatrix{T},
-    avg::AbstractArray{T},
-    var::AbstractArray{T},
-    weights::AbstractVector{T},
-    time_index::Int
+    time_index::Int,
+    save_states::Bool,
 ) where T
     println("Writing output at timestep = ", time_index)
     h5open(output_filename, "cw") do file
         time_index == 0 && write_model_data(file, model_data)
-        write_state(file, avg, time_index, "data_avg", model_data)
-        write_state(file, var, time_index, "data_var", model_data)
-        write_weights(file, weights, time_index)
-    end
-    if any(model_data.model_params.particle_dump_time .== time_index)
-        write_particles(
-            model_data.model_params.particle_dump_file, 
-            states, 
-            time_index, 
-            model_data
-        )
+        write_state(file, filter_data.avg_arr, time_index, "data_avg", model_data)
+        write_state(file, filter_data.var_arr, time_index, "data_var", model_data)
+        write_weights(file, filter_data.weights, time_index)
+        if save_states
+            println("Writing particle states at timestep = ", time_index)
+            for (index, state) in enumerate(eachcol(states))
+                group_name = "data_particle" * string(index)
+                write_state(file, state, time_index, group_name, model_data)
+            end
+        end
     end
 end
 
@@ -706,19 +700,6 @@ function ParticleDA.write_state_and_observations(
             # These are written only after the initial state
             write_observation(file, observation, time_index, model_data)
         end
-    end
-end
-
-function write_particles(
-    file::HDF5.File,
-    states::AbstractMatrix{T},
-    time_index::Int,
-    model_data::ModelData
-) where T
-    println("Writing particle states at timestep = ", time_index)
-    for (index, state) in enumerate(eachcol(states))
-        group_name = "data_particle" * string(index)
-        write_state(file, state, time_index, group_name, model_data)
     end
 end
 

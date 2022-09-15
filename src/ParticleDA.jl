@@ -883,11 +883,10 @@ function run_particle_filter(
             write_snapshot(
                 filter_params.output_filename,
                 model_data,
+                filter_data,
                 states,
-                filter_data.avg_arr,
-                filter_data.var_arr,
-                filter_data.weights,
-                0
+                0,
+                0 in filter_params.particle_save_time_indices,
             )
         end
     end
@@ -960,11 +959,10 @@ function run_particle_filter(
                 write_snapshot(
                     filter_params.output_filename,
                     model_data,
+                    filter_data,
                     states,
-                    filter_data.avg_arr,
-                    filter_data.var_arr,
-                    filter_data.weights,
                     time_index,
+                    time_index in filter_params.particle_save_time_indices,
                 )
             end
 
