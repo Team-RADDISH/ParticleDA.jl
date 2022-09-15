@@ -774,21 +774,19 @@ function simulate_observations_from_model(
 end
 
 function simulate_observations_from_model(
-    model_data_truth, num_time_step::Integer, rng::AbstractRNG
+    model_data, num_time_step::Integer, rng::AbstractRNG
 )
-    state = Vector{get_state_eltype(model_data_truth)}(undef, get_state_dimension(model_data_truth))
-    observation_sequence = Matrix{get_observation_eltype(model_data_truth)}(
-        undef, get_observation_dimension(model_data_truth), num_time_step
+    state = Vector{get_state_eltype(model_data)}(undef, get_state_dimension(model_data))
+    observation_sequence = Matrix{get_observation_eltype(model_data)}(
+        undef, get_observation_dimension(model_data), num_time_step
     )
-    sample_initial_state!(state, model_data_truth, rng)
-    observation = zeros(get_observation_dimension(model_data_truth))
-    dummy_obs = Vector{get_observation_eltype(model_data_truth)}(undef, get_observation_dimension(model_data_truth))
-    write_state_and_observations(state, dummy_obs, 0, model_data_truth)
+    sample_initial_state!(state, model_data, rng)
+    write_state_and_observations(state, selectdim(observation_sequence, 2, 1), 0, model_data)
     for (time_index, observation) in enumerate(eachcol(observation_sequence))
-        update_state_deterministic!(state, model_data_truth, time_index)
-        update_state_stochastic!(state, model_data_truth, rng)
-        sample_observation_given_state!(observation, state, model_data_truth, rng)
-        write_state_and_observations(state, observation, time_index, model_data_truth)
+        update_state_deterministic!(state, model_data, time_index)
+        update_state_stochastic!(state, model_data, rng)
+        sample_observation_given_state!(observation, state, model_data, rng)
+        write_state_and_observations(state, observation, time_index, model_data)
     end
     return observation_sequence
 end
