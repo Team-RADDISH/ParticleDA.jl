@@ -609,7 +609,7 @@ function write_coordinates(group::HDF5.Group, x::AbstractVector, y::AbstractVect
     end
 end
 
-function write_model_data(file::HDF5.File, model_data::ModelData)
+function ParticleDA.write_model_data(file::HDF5.File, model_data::ModelData)
     model_params = model_data.model_params
     grid_x, grid_y = map(collect, get_grid_axes(model_params))
     stations_x = (model_data.station_grid_indices[:, 1] .- 1) .* model_params.dx
@@ -628,82 +628,7 @@ function write_model_data(file::HDF5.File, model_data::ModelData)
     end
 end    
 
-function write_weights(file::HDF5.File, weights::AbstractVector, time_index::Int)
-    group_name = "weights"
-    dataset_name = "t" * lpad(string(time_index), 4, '0')
-    group, subgroup = ParticleDA.create_or_open_group(file, group_name)
-    if !haskey(group, dataset_name)
-        #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
-        ds,dtype = create_dataset(group, dataset_name, weights)
-        ds[:] = weights
-        attributes(ds)["Description"] = "Particle Weights"
-        attributes(ds)["Unit"] = ""
-        attributes(ds)["Time step"] = time_index
-    else
-        @warn "Write failed, dataset $group_name/$dataset_name  already exists in $(file.filename) !"
-    end
-end
-
-function ParticleDA.write_snapshot(
-    output_filename::AbstractString,
-    model_data::ModelData,
-    filter_data::NamedTuple,
-    states::AbstractMatrix{T},
-    time_index::Int,
-    save_states::Bool,
-) where T
-    println("Writing output at timestep = ", time_index)
-    h5open(output_filename, "cw") do file
-        time_index == 0 && write_model_data(file, model_data)
-        write_state(file, filter_data.avg_arr, time_index, "data_avg", model_data)
-        write_state(file, filter_data.var_arr, time_index, "data_var", model_data)
-        write_weights(file, filter_data.weights, time_index)
-        if save_states
-            println("Writing particle states at timestep = ", time_index)
-            for (index, state) in enumerate(eachcol(states))
-                group_name = "data_particle" * string(index)
-                write_state(file, state, time_index, group_name, model_data)
-            end
-        end
-    end
-end
-
-function write_observation(
-    file::HDF5.File, observation::AbstractVector, time_index::Int, model_data::ModelData
-)
-    group_name = "obs"
-    dataset_name = "t" * lpad(string(time_index), 4, '0')
-    group, subgroup = ParticleDA.create_or_open_group(file, group_name)
-    if !haskey(group, dataset_name)
-        #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
-        ds, dtype = create_dataset(group, dataset_name, observation)
-        ds[:] = observation
-        attributes(ds)["Description"] = "Observations"
-        attributes(ds)["Unit"] = ""
-        attributes(ds)["Time step"] = time_index
-    else
-        @warn "Write failed, dataset $group_name/$dataset_name  already exists in $(file.filename) !"
-    end
-
-end
-
-function ParticleDA.write_state_and_observations(
-    state::AbstractArray{T}, 
-    observation::AbstractArray{T},
-    time_index::Int, 
-    model_data::ModelData
-) where T
-    println("Writing output at timestep = ", time_index)
-    h5open(model_data.model_params.truth_obs_filename, "cw") do file
-        write_state(file, state, time_index, "data_syn", model_data)
-        if time_index > 0
-            # These are written only after the initial state
-            write_observation(file, observation, time_index, model_data)
-        end
-    end
-end
-
-function write_state(
+function ParticleDA.write_state(
     file::HDF5.File,
     state::AbstractVector{T},
     time_index::Int,

@@ -127,44 +127,32 @@ the type of `model_data`.
 function get_log_density_observation_given_state end
 
 """
-    ParticleDA.write_snapshot(
-        output_filename, model_data, states, state_mean, state_var, weights, time_step
-    )
+    ParticleDA.write_model_data(file::HDF5.File, model_data)
 
-Write a snapshot of the particle ensemble to the HDF5 file `output_filename` for the
-model described by `model_data`. `states` is a two-dimensional array containing the
-current state particle values (first axis state component, second particle index), 
-`state_mean` is a one-dimensional array containing the current estimate of the mean
-of the state given the observations up to the current time step, `state_var` is a 
-one-dimensional array containing the current estimate of the variance of the state given
-the observations up to the current time step, `weights` is a one-dimensional array of
-the normalized weights associated with each state particle (these weights together with
-the state vectors in `states` define an empirical distribution which approximates the
-distribution of the model state at the current time step given the observations up to
-that time step) and `time_step` is an integer index indicating the current time step
-with `time_step == 0` corresponding to the initial model state before any updates.
+Write metadata for with the model described by `model_data` to the HDF5 file `file`.
 
 This method is intended to be extended by the user with the above signature, specifying
 the type of `model_data`.
 """
-function write_snapshot end
+function write_model_data end
 
 """
-    ParticleDA.write_state_and_observations(
-        states, observation, ind, model_data_truth
+    ParticleDA.write_state(
+        file::HDF5.File,
+        state::AbstractVector{T},
+        time_index::Int,
+        group_name::String,
+        model_data
     )
 
-Write the state and observations from the truth model described by `model_data_truth` 
-to a HDF5 file. Note that `model_data_truth` can be different to the defined model_data. 
-`states` is a one-dimensional array containing the state values, `observation` 
-is a one-dimensional array containing the observed state variables at the observation locations 
-and `ind` is an integer index indicating the current time step.
+Write the model state at time index `time_index` represented by the vector `state` to 
+the HDF5 file `file` with `group_name` for the model represented by `model_data`.
 
 This method is intended to be extended by the user with the above signature, specifying
 the type of `model_data_truth`.
 """
 
-function write_state_and_observations end
+function write_state end
 
 """
     ParticleDA.read_observation_sequence(
@@ -373,6 +361,86 @@ function get_covariance_observation_observation_given_previous_state(
         end
     end
     return PDMat(Symmetric(cov, :L))
+end
+
+function write_array(
+    file::HDF5.File, 
+    array::AbstractArray, 
+    time_index::Int,
+    group_name::String,
+    description::String,
+)
+    dataset_name = "t" * lpad(string(time_index), 4, '0')
+    group, _ = create_or_open_group(file, group_name)
+    if !haskey(group, dataset_name)
+        #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
+        dataset, _ = create_dataset(group, dataset_name, array)
+        dataset[:] = array
+        attributes(dataset)["Description"] = description
+        attributes(dataset)["Time step"] = time_index
+    else
+        @warn "Write failed, dataset $group_name/$dataset_name already exists in $(file.filename) !"
+    end
+end
+
+
+"""
+    ParticleDA.write_snapshot(
+        output_filename, model_data, filter_data, states, time_index, save_states
+    )
+
+Write a snapshot of the model and filter states to the HDF5 file `output_filename` for
+the model and filters described by `model_data` and `filter_data` respectively at time
+index `time_index`, optionally saving the current ensemble of state particles
+represented by the two-dimensional array `states` (first axis state component, second
+particle index) if `save_states == true`. `time_index == 0` corresponds to the initial
+model and filter states before any updates and non-time dependent model data will be
+written out when called with this value of `time_index`.
+"""
+function write_snapshot(
+    output_filename::AbstractString,
+    model_data,
+    filter_data::NamedTuple,
+    states::AbstractMatrix{T},
+    time_index::Int,
+    save_states::Bool,
+) where T
+    println("Writing output at timestep = ", time_index)
+    h5open(output_filename, "cw") do file
+        time_index == 0 && write_model_data(file, model_data)
+        write_state(file, filter_data.avg_arr, time_index, "data_avg", model_data)
+        write_state(file, filter_data.var_arr, time_index, "data_var", model_data)
+        write_array(file, filter_data.weights, time_index, "weights", "Particle weights")
+        if save_states
+            println("Writing particle states at timestep = ", time_index)
+            for (index, state) in enumerate(eachcol(states))
+                group_name = "data_particle" * string(index)
+                write_state(file, state, time_index, group_name, model_data)
+            end
+        end
+    end
+end
+
+function write_observation(
+    file::HDF5.File, observation::AbstractVector, time_index::Int, model_data
+)
+    write_array(file, observation, time_index, "obs", "Observations")
+end
+
+function write_state_and_observations(
+    state::AbstractArray{T}, 
+    observation::AbstractArray{T},
+    time_index::Int, 
+    model_data
+) where T
+    println("Writing output at timestep = ", time_index)
+    h5open(model_data.model_params.truth_obs_filename, "cw") do file
+        write_state(file, state, time_index, "data_syn", model_data)
+        if time_index > 0
+            # These are written only after the initial state
+            write_observation(file, observation, time_index, model_data)
+        end
+    end
 end
 
 """
