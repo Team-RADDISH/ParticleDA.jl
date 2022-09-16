@@ -581,7 +581,7 @@ end
 
 ### Model IO
 
-function write_params(group::HDF5.Group, params::ModelParameters)
+function write_parameters(group::HDF5.Group, params::ModelParameters)
     fields = fieldnames(typeof(params))
     for field in fields
         attributes(group)[string(field)] = getfield(params, field)
@@ -597,15 +597,15 @@ function write_coordinates(group::HDF5.Group, x::AbstractVector, y::AbstractVect
     end
 end
 
-function ParticleDA.write_model_data(file::HDF5.File, model_data::ModelData)
+function ParticleDA.write_model_metadata(file::HDF5.File, model_data::ModelData)
     model_params = model_data.model_params
     grid_x, grid_y = map(collect, get_grid_axes(model_params))
     stations_x = (model_data.station_grid_indices[:, 1] .- 1) .* model_params.dx
     stations_y = (model_data.station_grid_indices[:, 2] .- 1) .* model_params.dy
     for (group_name, write_group) in [
-        ("params", group -> write_params(group, model_params)),
-        ("grid", group -> write_coordinates(group, grid_x, grid_y)),
-        ("stations", group -> write_coordinates(group, stations_x, stations_y)),
+        ("parameters", group -> write_parameters(group, model_params)),
+        ("grid_coordinates", group -> write_coordinates(group, grid_x, grid_y)),
+        ("station_coordinates", group -> write_coordinates(group, stations_x, stations_y)),
     ]
         if !haskey(file, group_name)
             group = create_group(file, group_name)

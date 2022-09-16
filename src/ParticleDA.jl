@@ -127,14 +127,14 @@ the type of `model_data`.
 function get_log_density_observation_given_state end
 
 """
-    ParticleDA.write_model_data(file::HDF5.File, model_data)
+    ParticleDA.write_model_metadata(file::HDF5.File, model_data)
 
 Write metadata for with the model described by `model_data` to the HDF5 file `file`.
 
 This method is intended to be extended by the user with the above signature, specifying
 the type of `model_data`.
 """
-function write_model_data end
+function write_model_metadata end
 
 """
     ParticleDA.write_state(
