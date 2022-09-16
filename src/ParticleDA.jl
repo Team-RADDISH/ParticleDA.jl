@@ -407,14 +407,21 @@ function write_snapshot(
 ) where T
     println("Writing output at timestep = ", time_index)
     h5open(output_filename, "cw") do file
-        time_index == 0 && write_model_data(file, model_data)
-        write_state(file, filter_data.avg_arr, time_index, "data_avg", model_data)
-        write_state(file, filter_data.var_arr, time_index, "data_var", model_data)
+        time_index == 0 && write_model_metadata(file, model_data)
+        for name in keys(filter_data.unpacked_statistics)
+            write_state(
+                file, 
+                filter_data.unpacked_statistics[name],
+                time_index,
+                "state_$name",
+                model_data
+            )
+        end
         write_array(file, filter_data.weights, time_index, "weights", "Particle weights")
         if save_states
             println("Writing particle states at timestep = ", time_index)
             for (index, state) in enumerate(eachcol(states))
-                group_name = "data_particle" * string(index)
+                group_name = "state_particle_$index"
                 write_state(file, state, time_index, group_name, model_data)
             end
         end
@@ -502,12 +509,17 @@ function init_filter(
         weights = Vector{state_eltype}(undef, nprt_per_rank)
     end
     resampling_indices = Vector{Int}(undef, filter_params.nprt)
-    statistics = Array{SummaryStat{state_eltype}, 1}(undef, state_dimension)
-    avg_arr = Array{state_eltype, 1}(undef, state_dimension)
-    var_arr = Array{state_eltype, 1}(undef, state_dimension)
+    S = MeanAndVarSummaryStat{state_eltype}
+    statistics = Array{S}(undef, state_dimension)
+    unpacked_statistics = (;
+        (
+            name => Array{state_eltype}(undef, state_dimension) 
+            for name in statistic_names(S)
+        )...
+    )
     # Memory buffer used during copy of the states
     copy_buffer = Array{state_eltype, 2}(undef, state_dimension, nprt_per_rank)
-    return (; weights, resampling_indices, statistics, avg_arr, var_arr, copy_buffer)
+    return (; weights, resampling_indices, statistics, unpacked_statistics, copy_buffer)
 end
 
 struct OfflineMatrices{R<:Real, M<:AbstractMatrix{R}, F<:AbstractPDMat{R}}
@@ -708,54 +720,69 @@ function resample!(
 
 end
 
-struct SummaryStat{T}
+abstract type AbstractSummaryStat{T} end
+
+struct MeanSummaryStat{T} <: AbstractSummaryStat{T}
+    avg::T
+    n::Int
+end
+
+compute_statistic(::Type{<:MeanSummaryStat}, x::AbstractVector) = MeanSummaryStat(mean(x), length(x))
+
+statistic_names(::Type{<:MeanSummaryStat}) = (:avg,)
+
+function combine_statistics(s1::MeanSummaryStat, s2::MeanSummaryStat)
+    n = s1.n + s2.n
+    m = (s1.avg * s1.n + s2.avg * s2.n) / n
+    MeanSummaryStat(m, n)
+end
+
+struct MeanAndVarSummaryStat{T} <: AbstractSummaryStat{T}
     avg::T
     var::T
     n::Int
 end
 
-function SummaryStat(X::AbstractVector)
-    m = mean(X)
-    v = varm(X,m, corrected=true)
-    n = length(X)
-    SummaryStat(m,v,n)
+function compute_statistic(::Type{<:MeanAndVarSummaryStat}, x::AbstractVector)
+    m = mean(x)
+    v = varm(x, m, corrected=true)
+    n = length(x)
+    MeanAndVarSummaryStat(m, v, n)
 end
 
-function stats_reduction(S1::SummaryStat, S2::SummaryStat)
+statistic_names(::Type{<:MeanAndVarSummaryStat}) = (:avg, :var)
 
-    n = S1.n + S2.n
-    m = (S1.avg*S1.n + S2.avg*S2.n) / n
-
-    # Calculate pooled unbiased sample variance of two groups. From https://stats.stackexchange.com/q/384951
+function combine_statistics(s1::MeanAndVarSummaryStat, s2::MeanAndVarSummaryStat)
+    n = s1.n + s2.n
+    m = (s1.avg * s1.n + s2.avg * s2.n) / n
+    # Calculate pooled unbiased sample variance of two groups.
+    # From https://stats.stackexchange.com/q/384951
     # Can be found in https://www.tandfonline.com/doi/abs/10.1080/00031305.2014.966589
-    # To get the uncorrected variance, use
-    # v = (S1.n * (S1.var + S1.avg * (S1.avg-m)) + S2.n * (S2.var + S2.avg * (S2.avg-m)))/n
-    v = ((S1.n-1) * S1.var + (S2.n-1) * S2.var + S1.n*S2.n/n * (S2.avg - S1.avg)^2 )/(n-1)
-
-    SummaryStat(m, v, n)
-
+    v = (
+        (s1.n - 1) * s1.var 
+        + (s2.n - 1) * s2.var 
+        + s1.n * s2.n / n * (s2.avg - s1.avg)^2
+    ) / (n - 1)
+    MeanAndVarSummaryStat(m, v, n)
 end
 
-function get_mean_and_var!(statistics::Array{SummaryStat{T}},
-                           particles::AbstractArray{T},
-                           master_rank::Int) where T
-
-    ndims(particles) != ndims(statistics) + 1 &&
-        error("particles must have one dimension more than statistics")
-    Threads.@threads for idx in CartesianIndices(statistics)
-        statistics[idx] = SummaryStat(@view(particles[idx,:]))
+function update_statistics!(
+    statistics::AbstractVector{S}, states::AbstractMatrix{T}, master_rank::Int,
+) where {T, S <: AbstractSummaryStat{T}}
+    Threads.@threads for i in eachindex(statistics)
+        statistics[i] = compute_statistic(S, selectdim(states, 1, i))
     end
-
-    MPI.Reduce!(statistics, stats_reduction, master_rank, MPI.COMM_WORLD)
-
+    MPI.Reduce!(statistics, combine_statistics, master_rank, MPI.COMM_WORLD)
 end
 
-function unpack_statistics!(avg::AbstractArray{T}, var::AbstractArray{T}, statistics::AbstractArray{SummaryStat{T}}) where T
-
-    for idx in CartesianIndices(statistics)
-        avg[idx] = statistics[idx].avg
-        var[idx] = statistics[idx].var
-    end
+function unpack_statistics!(
+    unpacked_statistics::NamedTuple, statistics::AbstractVector{S}
+) where {T, S <: AbstractSummaryStat{T}}
+    Threads.@threads for i in eachindex(statistics)
+        for name in statistic_names(S)
+            unpacked_statistics[name][i] = getfield(statistics[i], name)
+        end
+    end     
 end
 
 function init_states(model_data, nprt_per_rank::Int, rng::AbstractRNG)
@@ -938,7 +965,7 @@ function run_particle_filter(
         filter_params, model_data, nprt_per_rank, filter_type
         )
 
-    @timeit_debug timer "Mean and Var" get_mean_and_var!(
+    @timeit_debug timer "Summary statistics" update_statistics!(
         filter_data.statistics, states, filter_params.master_rank
     )
 
@@ -946,7 +973,7 @@ function run_particle_filter(
     if(filter_params.verbose && my_rank == filter_params.master_rank)
         @timeit_debug timer "IO" begin
             unpack_statistics!(
-                filter_data.avg_arr, filter_data.var_arr, filter_data.statistics
+                filter_data.unpacked_statistics, filter_data.statistics
             )
             write_snapshot(
                 filter_params.output_filename,
@@ -1011,18 +1038,16 @@ function run_particle_filter(
         )
                                                       
         if filter_params.verbose
-
-            @timeit_debug timer "Mean and Var" get_mean_and_var!(
+            @timeit_debug timer "Summary statistics" update_statistics!(
                 filter_data.statistics, states, filter_params.master_rank
             )
-            
         end
 
         if my_rank == filter_params.master_rank && filter_params.verbose
 
             @timeit_debug timer "IO" begin
                 unpack_statistics!(
-                    filter_data.avg_arr, filter_data.var_arr, filter_data.statistics
+                    filter_data.unpacked_statistics, filter_data.statistics
                 )
                 write_snapshot(
                     filter_params.output_filename,
@@ -1061,10 +1086,18 @@ function run_particle_filter(
             end
         end
     end
+    
+    if !filter_params.verbose
+        # Do final update and unpack of statistics if not performed in filtering loop
+        update_statistics!(
+            filter_data.statistics, states, filter_params.master_rank
+        )
+        if my_rank == filter_params.master_rank
+            unpack_statistics!(filter_data.unpacked_statistics, filter_data.statistics)
+        end
+    end
 
-    unpack_statistics!(filter_data.avg_arr, filter_data.var_arr, filter_data.statistics)
-
-    return states, filter_data.avg_arr, filter_data.var_arr
+    return states, filter_data.unpacked_statistics
 end
 
 # Initialise params struct with user-defined dict of values.
