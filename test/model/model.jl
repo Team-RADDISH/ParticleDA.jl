@@ -112,18 +112,6 @@ struct RandomField{T<:Real, F<:GaussianRandomField}
     z::Array{T, 3}
 end
 
-struct StateFieldMetadata
-    name::String
-    unit::String
-    description::String
-end
-
-const STATE_FIELDS_METADATA = [
-    StateFieldMetadata("height", "m", "Ocean surface height"),
-    StateFieldMetadata("vx", "m/s", "Ocean surface velocity x-component"),
-    StateFieldMetadata("vy", "m/s", "Ocean surface velocity y-component")
-]
-
 struct ModelData{T <: Real, U <: Real, G <: GaussianRandomField}
     model_params::ModelParameters{T}
     station_grid_indices::Matrix{Int}
@@ -635,21 +623,25 @@ function ParticleDA.write_state(
     group_name::String,
     model_data::ModelData
 ) where T
+    model_params = model_data.model_params
     subgroup_name = "t" * lpad(string(time_index), 4, '0')
-    group, subgroup = ParticleDA.create_or_open_group(file, group_name, subgroup_name)
-    state_fields = flat_state_to_fields(state, model_data.model_params)
-    for (field, metadata) in zip(eachslice(state_fields, dims=3), STATE_FIELDS_METADATA)
-        dataset_name = metadata.name
-        if !haskey(subgroup, dataset_name)
-            #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
-            ds, _ = create_dataset(subgroup, dataset_name, field)
-            ds[:,:] = field
-            attributes(ds)["Description"] = metadata.description
-            attributes(ds)["Unit"] = metadata.unit
-            attributes(ds)["Time step"] = time_index
-            attributes(ds)["Time (s)"] = time_index * model_data.model_params.time_step
+    _, subgroup = ParticleDA.create_or_open_group(file, group_name, subgroup_name)
+    state_fields = flat_state_to_fields(state, model_params)
+    state_fields_metadata = [
+        (name="height", unit="m", description="Ocean surface height"),
+        (name="vx", unit="m/s", description="Ocean surface velocity x-component"),
+        (name="vy", unit="m/s", description="Ocean surface velocity y-component")
+    ]
+    for (field, metadata) in zip(eachslice(state_fields, dims=3), state_fields_metadata)
+        if !haskey(subgroup, metadata.name)
+            subgroup[metadata.name] = field
+            dataset_attributes = attributes(subgroup[metadata.name])
+            dataset_attributes["Description"] = metadata.description
+            dataset_attributes["Unit"] = metadata.unit
+            dataset_attributes["Time step"] = time_index
+            dataset_attributes["Time (s)"] = time_index * model_params.time_step
         else
-            @warn "Write failed, dataset $group_name/$subgroup_name/$dataset_name already exists in $(file.filename) !"
+            @warn "Write failed, dataset $group_name/$subgroup_name/$(metadata.name) already exists in $(file.filename) !"
         end
     end
 end
