@@ -13,7 +13,6 @@ Parameters for ParticleDA run. Keyword arguments:
 * `output_filename::String` : Name of output file
 * `nprt::Int` : Number of particles for particle filter
 * `enable_timers::Bool` : Flag to control run time measurements
-* `truth_param_file::String` : Optional file to initialise the truth model
 * `particle_save_time_indices: Set of time indices to save particles at
 """
 Base.@kwdef struct FilterParameters{V<:Union{AbstractSet, AbstractVector}}
@@ -25,14 +24,13 @@ Base.@kwdef struct FilterParameters{V<:Union{AbstractSet, AbstractVector}}
 
     output_filename::String = "particle_da.h5"
 
-    nprt::Int = 4d
+    nprt::Int = 4
 
     enable_timers::Bool = false
-
-    truth_param_file::String = ""
     
     particle_save_time_indices::V = 0:n_time_step
 
 end
+
 
 end
