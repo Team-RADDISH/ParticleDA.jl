@@ -12,7 +12,7 @@ using EllipsisNotation
 using LinearAlgebra
 using PDMats
 
-export run_particle_filter, BootstrapFilter, OptimalFilter
+export run_particle_filter, simulate_observations_from_model, BootstrapFilter, OptimalFilter
 
 include("params.jl")
 include("io.jl")
@@ -135,37 +135,6 @@ This method is intended to be extended by the user with the above signature, spe
 the type of `model_data`.
 """
 function write_model_metadata end
-
-"""
-    ParticleDA.write_state(
-        file::HDF5.File,
-        state::AbstractVector{T},
-        time_index::Int,
-        group_name::String,
-        model_data
-    )
-
-Write the model state at time index `time_index` represented by the vector `state` to 
-the HDF5 file `file` with `group_name` for the model represented by `model_data`.
-
-This method is intended to be extended by the user with the above signature, specifying
-the type of `model_data_truth`.
-"""
-
-function write_state end
-
-"""
-    ParticleDA.read_observation_sequence(
-        observation_file, filter_params.n_time_step, model_data
-    )
-
-Read in the observation sequence from a HDF5 file named `observation_file` and
-`filter_params.n_time_step` is the number of assimilation steps.
-
-This method is intended to be extended by the user with the above signature, specifying
-the type of `model_data`.
-"""
-function read_observation_sequence end
 
 # Functions to extend in the model - required only for optimal proposal filter
 
@@ -363,26 +332,96 @@ function get_covariance_observation_observation_given_previous_state(
     return PDMat(Symmetric(cov, :L))
 end
 
+# Additional IO methods for models. These may be optionally extended by the user for a 
+# specific `model_data` type, for example to write out arrays in a more useful format.
+
+time_index_to_string(time_index::Int) = "t" * lpad(string(time_index), 4, "0")
+
 function write_array(
-    file::HDF5.File, 
-    array::AbstractArray, 
-    time_index::Int,
-    group_name::String,
-    description::String,
+    group::HDF5.Group,
+    dataset_name::String,
+    array::AbstractArray,
+    dataset_attributes::Union{Dict{String, Any}, Nothing}=nothing
 )
-    dataset_name = "t" * lpad(string(time_index), 4, '0')
-    group, _ = create_or_open_group(file, group_name)
     if !haskey(group, dataset_name)
-        #TODO: use d_write instead of create_dataset when they fix it in the HDF5 package
-        dataset, _ = create_dataset(group, dataset_name, array)
-        dataset[:] = array
-        attributes(dataset)["Description"] = description
-        attributes(dataset)["Time step"] = time_index
+        group[dataset_name] = array
+        if !isnothing(dataset_attributes)
+            for (key, value) in pairs(dataset_attributes)
+                attributes(group[dataset_name])[key] = value
+            end
+        end
     else
-        @warn "Write failed, dataset $group_name/$dataset_name already exists in $(file.filename) !"
+        @warn "Write failed, dataset $dataset_name already exists in $group!"
     end
 end
 
+"""
+    ParticleDA.write_observation(
+        file::HDF5.File,
+        observation::AbstractVector,
+        time_index::Int,
+        model_data
+    )
+
+Write the observations at time index `time_index` represented by the vector
+`observation` to the HDF5 file `file` for the model represented by `model_data`.
+"""
+function write_observation(
+    file::HDF5.File, observation::AbstractVector, time_index::Int, model_data
+)
+    time_stamp = time_index_to_string(time_index)
+    group, _ = create_or_open_group(file, "observations")
+    attributes = Dict("Description" => "Observations", "Time index" => time_index)
+    write_array(group, time_stamp, observation, attributes)
+end
+
+"""
+    ParticleDA.write_state(
+        file::HDF5.File,
+        state::AbstractVector{T},
+        time_index::Int,
+        group_name::String,
+        model_data
+    )
+
+Write the model state at time index `time_index` represented by the vector `state` to 
+the HDF5 file `file` with `group_name` for the model represented by `model_data`.
+"""
+function write_state(
+    file::HDF5.File,
+    state::AbstractVector,
+    time_index::Int,
+    group_name::String,
+    model_data
+)
+    time_stamp = time_index_to_string(time_index)
+    group, _ = create_or_open_group(file, group_name)
+    attributes = Dict("Description" => "Model state", "Time index" => time_index)
+    write_array(group, time_stamp, state, attributes)
+end
+
+"""
+    ParticleDA.write_weights(
+        file::HDF5.File,
+        weights::AbstractVector{T},
+        time_index::Int,
+        model_data
+    )
+
+Write the particle weights at time index `time_index` represented by the vector 
+`weights` to the HDF5 file `file` for the model represented by `model_data`.
+"""
+function write_weights(
+    file::HDF5.File,
+    weights::AbstractVector,
+    time_index::Int,
+    model_data
+)
+    time_stamp = time_index_to_string(time_index)
+    group, _ = create_or_open_group(file, "weights")
+    attributes = Dict("Description" => "Particle weights", "Time index" => time_index)
+    write_array(group, time_stamp, weights, attributes)
+end
 
 """
     ParticleDA.write_snapshot(
@@ -417,35 +456,13 @@ function write_snapshot(
                 model_data
             )
         end
-        write_array(file, filter_data.weights, time_index, "weights", "Particle weights")
+        write_weights(file, filter_data.weights, time_index, model_data)
         if save_states
             println("Writing particle states at timestep = ", time_index)
             for (index, state) in enumerate(eachcol(states))
                 group_name = "state_particle_$index"
                 write_state(file, state, time_index, group_name, model_data)
             end
-        end
-    end
-end
-
-function write_observation(
-    file::HDF5.File, observation::AbstractVector, time_index::Int, model_data
-)
-    write_array(file, observation, time_index, "obs", "Observations")
-end
-
-function write_state_and_observations(
-    state::AbstractArray{T}, 
-    observation::AbstractArray{T},
-    time_index::Int, 
-    model_data
-) where T
-    println("Writing output at timestep = ", time_index)
-    h5open(model_data.model_params.truth_obs_filename, "cw") do file
-        write_state(file, state, time_index, "data_syn", model_data)
-        if time_index > 0
-            # These are written only after the initial state
-            write_observation(file, observation, time_index, model_data)
         end
     end
 end
@@ -845,67 +862,59 @@ function copy_states!(particles::AbstractArray{T},
 end
 
 """
-    simulate_observations_from_model(init_model, path_to_input_file::String)
-
-Initialise the truth model and extract observations. `init_model` is the function which initialise the model,
-`path_to_input_file` is the path to the YAML file with the truth model input parameters. See [`ParticleFilter`](@ref) for
-the possible values.
+    simulate_observations_from_model(
+        init_model, num_time_step, input_file_path, output_file_path
+    )
 """
 function simulate_observations_from_model(
     init_model,
     num_time_step::Integer,
-    path_to_input_file::String,
+    input_file_path::String,
+    output_file_path::String;
     rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
-    user_input_dict_truth = read_input_file(path_to_input_file)
-    model_params_truth_dict = get(user_input_dict_truth, "model", Dict())
-    model_data_truth = init_model(model_params_truth_dict)
-
-    return simulate_observations_from_model(
-        model_data_truth,
-        num_time_step, 
-        rng
-    )
+    h5open(output_file_path, "cw") do output_file
+        return simulate_observations_from_model(
+            init_model(get(read_input_file(input_file_path), "model", Dict())),
+            num_time_step;
+            output_file,
+            rng
+        )
+    end
 end
 
 function simulate_observations_from_model(
-    model_data, num_time_step::Integer, rng::AbstractRNG
+    model_data, 
+    num_time_step::Integer;
+    output_file::Union{Nothing, HDF5.File}=nothing,
+    rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
     state = Vector{get_state_eltype(model_data)}(undef, get_state_dimension(model_data))
     observation_sequence = Matrix{get_observation_eltype(model_data)}(
         undef, get_observation_dimension(model_data), num_time_step
     )
     sample_initial_state!(state, model_data, rng)
-    write_state_and_observations(state, selectdim(observation_sequence, 2, 1), 0, model_data)
+    if !isnothing(output_file)
+        write_state(output_file, state, 0, "state", model_data)
+    end
     for (time_index, observation) in enumerate(eachcol(observation_sequence))
         update_state_deterministic!(state, model_data, time_index)
         update_state_stochastic!(state, model_data, rng)
         sample_observation_given_state!(observation, state, model_data, rng)
-        write_state_and_observations(state, observation, time_index, model_data)
+        if !isnothing(output_file)
+            write_state(output_file, state, time_index, "state", model_data)
+            write_observation(output_file, observation, time_index, model_data)
+        end
     end
     return observation_sequence
 end
 
-function read_observation_sequence(filename::AbstractString, num_time_step::Integer, model_data)
-    observation_sequence = Matrix{get_observation_eltype(model_data)}(
-        undef, get_observation_dimension(model_data), num_time_step
-    )
-    file = h5open(filename, "r")
-    ind = 1
-    for timestamp ∈ keys(file["obs"])
-        obs = read(file["obs"][timestamp])
-        observation_sequence[:, ind] .= obs
-        ind = ind + 1
-    end
-    return observation_sequence
-end 
-
 function run_particle_filter(
     init_model, 
     filter_params::FilterParameters, 
-    model_params_dict::Dict, 
-    filter_type,
-    observation_file::String="";
+    model_params_dict::Dict,
+    observation_sequence::AbstractMatrix,
+    filter_type;
     rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
 
@@ -928,34 +937,6 @@ function run_particle_filter(
 
     # Do memory allocations
     @timeit_debug timer "Model initialization" model_data = init_model(model_params_dict)
-    
-    if isempty(observation_file)
-        @timeit_debug timer "Simulating observations" begin
-            if my_rank == filter_params.master_rank
-                if isempty(filter_params.truth_param_file)
-                    observation_sequence = simulate_observations_from_model(
-                    model_data, filter_params.n_time_step, rng
-                    )
-                else
-                    observation_sequence = simulate_observations_from_model(
-                        init_model, filter_params.n_time_step, filter_params.truth_param_file, rng
-                    )
-                end
-            else
-                observation_sequence = nothing
-            end
-        end
-    else
-        @timeit_debug timer "Reading observations" begin
-            if my_rank == filter_params.master_rank
-                println("Reading observations from file")
-                observation_sequence = read_observation_sequence(observation_file, filter_params.n_time_step, model_data)
-            else
-                observation_sequence = nothing
-            end
-        end
-    end
-    observation_sequence = MPI.bcast(observation_sequence, filter_params.master_rank, MPI.COMM_WORLD)
     
     @timeit_debug timer "State initialization" states = init_states(
         model_data, nprt_per_rank, rng
@@ -1126,6 +1107,23 @@ function read_input_file(path_to_input_file::String)
 
 end
 
+function read_observation_sequence(observation_file_path::String)
+    file = h5open(observation_file_path, "r")
+    observation_group = file["observations"]
+    time_stamps = sort(keys(observation_group))
+    num_time_step = length(time_stamps)
+    observation = observation_group[time_stamps[1]]
+    observation_dimension = length(observation)
+    observation_sequence = Matrix{eltype(observation)}(
+        undef, observation_dimension, num_time_step
+    )
+    for (time_index, time_stamp) in enumerate(time_stamps)
+        observation_sequence[:, time_index] .= read(observation_group[time_stamp])
+    end
+    close(file)
+    return observation_sequence
+end 
+
 """
     run_particle_filter(init_model, path_to_input_file::String, filter_type::ParticleFilter)
 
@@ -1136,24 +1134,27 @@ the possible values.
 """
 function run_particle_filter(
     init_model,
-    path_to_input_file::String,
-    filter_type::ParticleFilter,
-    observation_file::String="";
+    input_file_path::String,
+    observation_file_path::String,
+    filter_type::ParticleFilter;
     rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
     MPI.Init()
-    # Do I/O on rank 0 only and then broadcast params
+    # Do I/O on rank 0 only and then broadcast
     if MPI.Comm_rank(MPI.COMM_WORLD) == 0
-        user_input_dict = read_input_file(path_to_input_file)
+        user_input_dict = read_input_file(input_file_path)
+        observation_sequence = read_observation_sequence(observation_file_path)
     else
         user_input_dict = nothing
+        observation_sequence = nothing
     end
     user_input_dict = MPI.bcast(user_input_dict, 0, MPI.COMM_WORLD)
+    observation_sequence = MPI.bcast(observation_sequence, 0, MPI.COMM_WORLD)
     return run_particle_filter(
         init_model, 
         user_input_dict, 
-        filter_type, 
-        observation_file; 
+        observation_sequence,
+        filter_type;
         rng
     )
 end
@@ -1168,9 +1169,9 @@ values.
 """
 function run_particle_filter(
     init_model, 
-    user_input_dict::Dict, 
-    filter_type::ParticleFilter,
-    observation_file::String="";
+    user_input_dict::Dict,
+    observation_sequence::AbstractMatrix,
+    filter_type::ParticleFilter;
     rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
     filter_params = get_params(FilterParameters, get(user_input_dict, "filter", Dict()))
@@ -1178,9 +1179,9 @@ function run_particle_filter(
     return run_particle_filter(
         init_model, 
         filter_params, 
-        model_params_dict, 
-        filter_type,
-        observation_file; 
+        model_params_dict,
+        observation_sequence,
+        filter_type; 
         rng
     )
 end

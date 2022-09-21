@@ -98,8 +98,6 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     boundary_damping::T = 0.015
     cutoff_depth::T = 10.0
 
-    truth_obs_filename::String = "test_observations.h5"
-
 end
 
 get_float_eltype(::Type{<:ModelParameters{T}}) where {T} = T
@@ -624,7 +622,7 @@ function ParticleDA.write_state(
     model_data::ModelData
 ) where T
     model_params = model_data.model_params
-    subgroup_name = "t" * lpad(string(time_index), 4, '0')
+    subgroup_name = ParticleDA.time_index_to_string(time_index)
     _, subgroup = ParticleDA.create_or_open_group(file, group_name, subgroup_name)
     state_fields = flat_state_to_fields(state, model_params)
     state_fields_metadata = [
@@ -638,10 +636,10 @@ function ParticleDA.write_state(
             dataset_attributes = attributes(subgroup[metadata.name])
             dataset_attributes["Description"] = metadata.description
             dataset_attributes["Unit"] = metadata.unit
-            dataset_attributes["Time step"] = time_index
+            dataset_attributes["Time index"] = time_index
             dataset_attributes["Time (s)"] = time_index * model_params.time_step
         else
-            @warn "Write failed, dataset $group_name/$subgroup_name/$(metadata.name) already exists in $(file.filename) !"
+            @warn "Write failed, dataset $(metadata.name) already exists in $group!"
         end
     end
 end
