@@ -336,7 +336,8 @@ end
 # Additional IO methods for models. These may be optionally extended by the user for a 
 # specific `model_data` type, for example to write out arrays in a more useful format.
 
-time_index_to_string(time_index::Int) = "t" * lpad(string(time_index), 4, "0")
+time_index_to_hdf5_key(time_index::Int) = "t" * lpad(string(time_index), 4, "0")
+hdf5_key_to_time_index(key::String) = parse(Int, key[2:end])
 
 function write_array(
     group::HDF5.Group,
@@ -370,7 +371,7 @@ Write the observations at time index `time_index` represented by the vector
 function write_observation(
     file::HDF5.File, observation::AbstractVector, time_index::Int, model_data
 )
-    time_stamp = time_index_to_string(time_index)
+    time_stamp = time_index_to_hdf5_key(time_index)
     group, _ = create_or_open_group(file, "observations")
     attributes = Dict("Description" => "Observations", "Time index" => time_index)
     write_array(group, time_stamp, observation, attributes)
@@ -395,7 +396,7 @@ function write_state(
     group_name::String,
     model_data
 )
-    time_stamp = time_index_to_string(time_index)
+    time_stamp = time_index_to_hdf5_key(time_index)
     group, _ = create_or_open_group(file, group_name)
     attributes = Dict("Description" => "Model state", "Time index" => time_index)
     write_array(group, time_stamp, state, attributes)
@@ -418,7 +419,7 @@ function write_weights(
     time_index::Int,
     model_data
 )
-    time_stamp = time_index_to_string(time_index)
+    time_stamp = time_index_to_hdf5_key(time_index)
     group, _ = create_or_open_group(file, "weights")
     attributes = Dict("Description" => "Particle weights", "Time index" => time_index)
     write_array(group, time_stamp, weights, attributes)
@@ -1187,15 +1188,17 @@ end
 function read_observation_sequence(observation_file_path::String)
     file = h5open(observation_file_path, "r")
     observation_group = file["observations"]
-    time_stamps = sort(keys(observation_group))
-    num_time_step = length(time_stamps)
-    observation = observation_group[time_stamps[1]]
+    time_keys = sort(keys(observation_group), by=hdf5_key_to_time_index)
+    @assert Set(map(hdf5_key_to_time_index, time_keys)) == Set(
+        hdf5_key_to_time_index(time_keys[1]):hdf5_key_to_time_index(time_keys[end])
+    ) "Observations in $observation_file_path are at non-contiguous time indices"
+    observation = observation_group[time_keys[1]]
     observation_dimension = length(observation)
     observation_sequence = Matrix{eltype(observation)}(
-        undef, observation_dimension, num_time_step
+        undef, observation_dimension, length(time_keys)
     )
-    for (time_index, time_stamp) in enumerate(time_stamps)
-        observation_sequence[:, time_index] .= read(observation_group[time_stamp])
+    for (time_index, key) in enumerate(time_keys)
+        observation_sequence[:, time_index] .= read(observation_group[key])
     end
     close(file)
     return observation_sequence

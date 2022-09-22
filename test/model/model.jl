@@ -622,7 +622,7 @@ function ParticleDA.write_state(
     model_data::ModelData
 ) where T
     model_params = model_data.model_params
-    subgroup_name = ParticleDA.time_index_to_string(time_index)
+    subgroup_name = ParticleDA.time_index_to_hdf5_key(time_index)
     _, subgroup = ParticleDA.create_or_open_group(file, group_name, subgroup_name)
     state_fields = flat_state_to_fields(state, model_params)
     state_fields_metadata = [
