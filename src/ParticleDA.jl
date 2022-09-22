@@ -11,6 +11,7 @@ using TimerOutputs
 using EllipsisNotation
 using LinearAlgebra
 using PDMats
+using StructArrays
 
 export run_particle_filter, simulate_observations_from_model, BootstrapFilter, OptimalFilter
 
@@ -468,13 +469,73 @@ function write_snapshot(
 end
 
 abstract type AbstractSummaryStat{T} end
+abstract type AbstractSumReductionSummaryStat{T} <: AbstractSummaryStat{T} end
+abstract type AbstractCustomReductionSummaryStat{T} <: AbstractSummaryStat{T} end
 
-struct MeanSummaryStat{T} <: AbstractSummaryStat{T}
+struct NaiveMeanSummaryStat{T} <: AbstractSumReductionSummaryStat{T}
+    sum::T
+    n::Int
+end
+
+compute_statistic(::Type{<:NaiveMeanSummaryStat}, x::AbstractVector) = (
+    NaiveMeanSummaryStat(sum(x), length(x))
+)
+
+statistic_names(::Type{<:NaiveMeanSummaryStat}) = (:avg,)
+
+unpack(S::NaiveMeanSummaryStat) = (; avg=S.sum / S.n)
+
+struct NaiveMeanAndVarSummaryStat{T} <: AbstractSumReductionSummaryStat{T}
+    sum::T
+    sum_sq::T
+    n::Int
+end
+
+compute_statistic(::Type{<:NaiveMeanAndVarSummaryStat}, x::AbstractVector) = (
+    NaiveMeanAndVarSummaryStat(sum(x), sum(abs2, x), length(x))
+)
+
+statistic_names(::Type{<:NaiveMeanAndVarSummaryStat}) = (:avg, :var)
+
+unpack(S::NaiveMeanAndVarSummaryStat) = (
+    avg=S.sum / S.n, var=(S.sum_sq - S.sum^2 / S.n) / (S.n - 1)
+)
+
+function init_statistics(
+    S::Type{<:AbstractSumReductionSummaryStat}, T::Type, dimension::Int
+)
+    return StructVector{S{T}}(undef, dimension)
+end
+
+function update_statistics!(
+    statistics::StructVector{S}, states::AbstractMatrix{T}, master_rank::Int,
+) where {T, S <: AbstractSumReductionSummaryStat{T}}
+    Threads.@threads for i in eachindex(statistics)
+        statistics[i] = compute_statistic(S, selectdim(states, 1, i))
+    end
+    for name in fieldnames(S)
+        MPI.Reduce!(getproperty(statistics, name), +, master_rank, MPI.COMM_WORLD)
+    end
+end
+
+function unpack_statistics!(
+    unpacked_statistics::NamedTuple, statistics::StructVector{S}
+) where {T, S <: AbstractSumReductionSummaryStat{T}}
+        Threads.@threads for i in eachindex(statistics)
+        for (name, val) in pairs(unpack(statistics[i]))
+            unpacked_statistics[name][i] = val
+        end
+    end     
+end
+
+struct MeanSummaryStat{T} <: AbstractCustomReductionSummaryStat{T}
     avg::T
     n::Int
 end
 
-compute_statistic(::Type{<:MeanSummaryStat}, x::AbstractVector) = MeanSummaryStat(mean(x), length(x))
+compute_statistic(::Type{<:MeanSummaryStat}, x::AbstractVector) = (
+    MeanSummaryStat(mean(x), length(x))
+)
 
 statistic_names(::Type{<:MeanSummaryStat}) = (:avg,)
 
@@ -484,7 +545,7 @@ function combine_statistics(s1::MeanSummaryStat, s2::MeanSummaryStat)
     MeanSummaryStat(m, n)
 end
 
-struct MeanAndVarSummaryStat{T} <: AbstractSummaryStat{T}
+struct MeanAndVarSummaryStat{T} <: AbstractCustomReductionSummaryStat{T}
     avg::T
     var::T
     n::Int
@@ -513,9 +574,15 @@ function combine_statistics(s1::MeanAndVarSummaryStat, s2::MeanAndVarSummaryStat
     MeanAndVarSummaryStat(m, v, n)
 end
 
+function init_statistics(
+    S::Type{<:AbstractCustomReductionSummaryStat}, T::Type, dimension::Int
+)
+    return Array{S{T}}(undef, dimension)
+end
+
 function update_statistics!(
     statistics::AbstractVector{S}, states::AbstractMatrix{T}, master_rank::Int,
-) where {T, S <: AbstractSummaryStat{T}}
+) where {T, S <: AbstractCustomReductionSummaryStat{T}}
     Threads.@threads for i in eachindex(statistics)
         statistics[i] = compute_statistic(S, selectdim(states, 1, i))
     end
@@ -524,7 +591,7 @@ end
 
 function unpack_statistics!(
     unpacked_statistics::NamedTuple, statistics::AbstractVector{S}
-) where {T, S <: AbstractSummaryStat{T}}
+) where {T, S <: AbstractCustomReductionSummaryStat{T}}
     Threads.@threads for i in eachindex(statistics)
         for name in statistic_names(S)
             unpacked_statistics[name][i] = getfield(statistics[i], name)
@@ -595,8 +662,7 @@ function init_filter(
         weights = Vector{state_eltype}(undef, nprt_per_rank)
     end
     resampling_indices = Vector{Int}(undef, filter_params.nprt)
-    S = MeanAndVarSummaryStat{state_eltype}
-    statistics = Array{summary_stat_type{state_eltype}}(undef, state_dimension)
+    statistics = init_statistics(summary_stat_type, state_eltype, state_dimension)
     unpacked_statistics = (;
         (
             name => Array{state_eltype}(undef, state_dimension) 
@@ -924,8 +990,8 @@ function run_particle_filter(
     filter_params::FilterParameters, 
     model_params_dict::Dict,
     observation_sequence::AbstractMatrix,
-    filter_type::Type{<:ParticleFilter}=BootstrapFilter,
-    summary_stat_type::Type{<:AbstractSummaryStat}=MeanAndVarSummaryStat;
+    filter_type::Type{<:ParticleFilter},
+    summary_stat_type::Type{<:AbstractSummaryStat};
     rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
 
@@ -1184,8 +1250,8 @@ function run_particle_filter(
     init_model, 
     user_input_dict::Dict,
     observation_sequence::AbstractMatrix,
-    filter_type::Type{<:ParticleFilter}=BootstrapFilter,
-    summary_stat_type::Type{<:AbstractSummaryStat}=MeanAndVarSummaryStat;
+    filter_type::Type{<:ParticleFilter},
+    summary_stat_type::Type{<:AbstractSummaryStat};
     rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
     filter_params = get_params(FilterParameters, get(user_input_dict, "filter", Dict()))
