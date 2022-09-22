@@ -467,6 +467,71 @@ function write_snapshot(
     end
 end
 
+abstract type AbstractSummaryStat{T} end
+
+struct MeanSummaryStat{T} <: AbstractSummaryStat{T}
+    avg::T
+    n::Int
+end
+
+compute_statistic(::Type{<:MeanSummaryStat}, x::AbstractVector) = MeanSummaryStat(mean(x), length(x))
+
+statistic_names(::Type{<:MeanSummaryStat}) = (:avg,)
+
+function combine_statistics(s1::MeanSummaryStat, s2::MeanSummaryStat)
+    n = s1.n + s2.n
+    m = (s1.avg * s1.n + s2.avg * s2.n) / n
+    MeanSummaryStat(m, n)
+end
+
+struct MeanAndVarSummaryStat{T} <: AbstractSummaryStat{T}
+    avg::T
+    var::T
+    n::Int
+end
+
+function compute_statistic(::Type{<:MeanAndVarSummaryStat}, x::AbstractVector)
+    m = mean(x)
+    v = varm(x, m, corrected=true)
+    n = length(x)
+    MeanAndVarSummaryStat(m, v, n)
+end
+
+statistic_names(::Type{<:MeanAndVarSummaryStat}) = (:avg, :var)
+
+function combine_statistics(s1::MeanAndVarSummaryStat, s2::MeanAndVarSummaryStat)
+    n = s1.n + s2.n
+    m = (s1.avg * s1.n + s2.avg * s2.n) / n
+    # Calculate pooled unbiased sample variance of two groups.
+    # From https://stats.stackexchange.com/q/384951
+    # Can be found in https://www.tandfonline.com/doi/abs/10.1080/00031305.2014.966589
+    v = (
+        (s1.n - 1) * s1.var 
+        + (s2.n - 1) * s2.var 
+        + s1.n * s2.n / n * (s2.avg - s1.avg)^2
+    ) / (n - 1)
+    MeanAndVarSummaryStat(m, v, n)
+end
+
+function update_statistics!(
+    statistics::AbstractVector{S}, states::AbstractMatrix{T}, master_rank::Int,
+) where {T, S <: AbstractSummaryStat{T}}
+    Threads.@threads for i in eachindex(statistics)
+        statistics[i] = compute_statistic(S, selectdim(states, 1, i))
+    end
+    MPI.Reduce!(statistics, combine_statistics, master_rank, MPI.COMM_WORLD)
+end
+
+function unpack_statistics!(
+    unpacked_statistics::NamedTuple, statistics::AbstractVector{S}
+) where {T, S <: AbstractSummaryStat{T}}
+    Threads.@threads for i in eachindex(statistics)
+        for name in statistic_names(S)
+            unpacked_statistics[name][i] = getfield(statistics[i], name)
+        end
+    end     
+end
+
 """
     ParticleFilter
 
@@ -516,7 +581,11 @@ struct OptimalFilter <: ParticleFilter end
 
 # Initialize arrays used by the filter
 function init_filter(
-    filter_params::FilterParameters, model_data, nprt_per_rank::Int, ::BootstrapFilter
+    filter_params::FilterParameters, 
+    model_data, 
+    nprt_per_rank::Int, 
+    ::Type{BootstrapFilter}, 
+    summary_stat_type::Type{<:AbstractSummaryStat}
 )
     state_dimension = get_state_dimension(model_data)
     state_eltype = get_state_eltype(model_data)
@@ -527,11 +596,11 @@ function init_filter(
     end
     resampling_indices = Vector{Int}(undef, filter_params.nprt)
     S = MeanAndVarSummaryStat{state_eltype}
-    statistics = Array{S}(undef, state_dimension)
+    statistics = Array{summary_stat_type{state_eltype}}(undef, state_dimension)
     unpacked_statistics = (;
         (
             name => Array{state_eltype}(undef, state_dimension) 
-            for name in statistic_names(S)
+            for name in statistic_names(summary_stat_type)
         )...
     )
     # Memory buffer used during copy of the states
@@ -581,9 +650,15 @@ end
 
 # Initialize arrays used by the filter
 function init_filter(
-    filter_params::FilterParameters, model_data, nprt_per_rank::Int, ::OptimalFilter
+    filter_params::FilterParameters, 
+    model_data, 
+    nprt_per_rank::Int, 
+    ::Type{OptimalFilter}, 
+    summary_stat_type::Type{<:AbstractSummaryStat}
 )
-    filter_data = init_filter(filter_params, model_data, nprt_per_rank, BootstrapFilter())
+    filter_data = init_filter(
+        filter_params, model_data, nprt_per_rank, BootstrapFilter, summary_stat_type
+    )
     offline_matrices = init_offline_matrices(model_data)
     online_matrices = init_online_matrices(model_data, nprt_per_rank)
     observation_dimension = get_observation_dimension(model_data)
@@ -601,7 +676,7 @@ function sample_proposal_and_compute_log_weights!(
     time_index::Integer,
     model_data,
     ::NamedTuple,
-    ::BootstrapFilter,
+    ::Type{BootstrapFilter},
     rng::Random.AbstractRNG,
 )
     num_particle = size(states, 2)
@@ -676,7 +751,7 @@ function sample_proposal_and_compute_log_weights!(
     time_index::Integer,
     model_data,
     filter_data::NamedTuple,
-    ::OptimalFilter,
+    ::Type{OptimalFilter},
     rng::Random.AbstractRNG,
 )
     num_particle = size(states, 2)
@@ -735,71 +810,6 @@ function resample!(
 
     end
 
-end
-
-abstract type AbstractSummaryStat{T} end
-
-struct MeanSummaryStat{T} <: AbstractSummaryStat{T}
-    avg::T
-    n::Int
-end
-
-compute_statistic(::Type{<:MeanSummaryStat}, x::AbstractVector) = MeanSummaryStat(mean(x), length(x))
-
-statistic_names(::Type{<:MeanSummaryStat}) = (:avg,)
-
-function combine_statistics(s1::MeanSummaryStat, s2::MeanSummaryStat)
-    n = s1.n + s2.n
-    m = (s1.avg * s1.n + s2.avg * s2.n) / n
-    MeanSummaryStat(m, n)
-end
-
-struct MeanAndVarSummaryStat{T} <: AbstractSummaryStat{T}
-    avg::T
-    var::T
-    n::Int
-end
-
-function compute_statistic(::Type{<:MeanAndVarSummaryStat}, x::AbstractVector)
-    m = mean(x)
-    v = varm(x, m, corrected=true)
-    n = length(x)
-    MeanAndVarSummaryStat(m, v, n)
-end
-
-statistic_names(::Type{<:MeanAndVarSummaryStat}) = (:avg, :var)
-
-function combine_statistics(s1::MeanAndVarSummaryStat, s2::MeanAndVarSummaryStat)
-    n = s1.n + s2.n
-    m = (s1.avg * s1.n + s2.avg * s2.n) / n
-    # Calculate pooled unbiased sample variance of two groups.
-    # From https://stats.stackexchange.com/q/384951
-    # Can be found in https://www.tandfonline.com/doi/abs/10.1080/00031305.2014.966589
-    v = (
-        (s1.n - 1) * s1.var 
-        + (s2.n - 1) * s2.var 
-        + s1.n * s2.n / n * (s2.avg - s1.avg)^2
-    ) / (n - 1)
-    MeanAndVarSummaryStat(m, v, n)
-end
-
-function update_statistics!(
-    statistics::AbstractVector{S}, states::AbstractMatrix{T}, master_rank::Int,
-) where {T, S <: AbstractSummaryStat{T}}
-    Threads.@threads for i in eachindex(statistics)
-        statistics[i] = compute_statistic(S, selectdim(states, 1, i))
-    end
-    MPI.Reduce!(statistics, combine_statistics, master_rank, MPI.COMM_WORLD)
-end
-
-function unpack_statistics!(
-    unpacked_statistics::NamedTuple, statistics::AbstractVector{S}
-) where {T, S <: AbstractSummaryStat{T}}
-    Threads.@threads for i in eachindex(statistics)
-        for name in statistic_names(S)
-            unpacked_statistics[name][i] = getfield(statistics[i], name)
-        end
-    end     
 end
 
 function init_states(model_data, nprt_per_rank::Int, rng::AbstractRNG)
@@ -914,7 +924,8 @@ function run_particle_filter(
     filter_params::FilterParameters, 
     model_params_dict::Dict,
     observation_sequence::AbstractMatrix,
-    filter_type;
+    filter_type::Type{<:ParticleFilter}=BootstrapFilter,
+    summary_stat_type::Type{<:AbstractSummaryStat}=MeanAndVarSummaryStat;
     rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
 
@@ -943,8 +954,8 @@ function run_particle_filter(
     )
 
     @timeit_debug timer "Filter initialization" filter_data = init_filter(
-        filter_params, model_data, nprt_per_rank, filter_type
-        )
+        filter_params, model_data, nprt_per_rank, filter_type, summary_stat_type
+    )
 
     @timeit_debug timer "Summary statistics" update_statistics!(
         filter_data.statistics, states, filter_params.master_rank
@@ -1125,18 +1136,19 @@ function read_observation_sequence(observation_file_path::String)
 end 
 
 """
-    run_particle_filter(init_model, path_to_input_file::String, filter_type::ParticleFilter)
+    run_particle_filter(init_model, path_to_input_file::String, filter_type)
 
 Run the particle filter. `init_model` is the function which initialise the model,
 `path_to_input_file` is the path to the YAML file with the input parameters.
-`filter_type` is the particle filter to use.  See [`ParticleFilter`](@ref) for
+`filter_type` is the particle filter type to use.  See [`ParticleFilter`](@ref) for
 the possible values.
 """
 function run_particle_filter(
     init_model,
     input_file_path::String,
     observation_file_path::String,
-    filter_type::ParticleFilter;
+    filter_type::Type{<:ParticleFilter}=BootstrapFilter,
+    summary_stat_type::Type{<:AbstractSummaryStat}=MeanAndVarSummaryStat;
     rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
     MPI.Init()
@@ -1154,7 +1166,8 @@ function run_particle_filter(
         init_model, 
         user_input_dict, 
         observation_sequence,
-        filter_type;
+        filter_type,
+        summary_stat_type;
         rng
     )
 end
@@ -1171,7 +1184,8 @@ function run_particle_filter(
     init_model, 
     user_input_dict::Dict,
     observation_sequence::AbstractMatrix,
-    filter_type::ParticleFilter;
+    filter_type::Type{<:ParticleFilter}=BootstrapFilter,
+    summary_stat_type::Type{<:AbstractSummaryStat}=MeanAndVarSummaryStat;
     rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
     filter_params = get_params(FilterParameters, get(user_input_dict, "filter", Dict()))
@@ -1181,7 +1195,8 @@ function run_particle_filter(
         filter_params, 
         model_params_dict,
         observation_sequence,
-        filter_type; 
+        filter_type,
+        summary_stat_type; 
         rng
     )
 end
