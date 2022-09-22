@@ -42,14 +42,13 @@ Parameters for the linear long wave two-dimensional (LLW2d) model. Keyword argum
 * `sigma_initial_state::AbstractFloat` : Marginal standard deviation for Matérn covariance kernel in initial state of particles
 * `padding::Int` : Min padding for circulant embedding gaussian random field generator
 * `primes::Int`: Whether the size of the minimum circulant embedding of the covariance matrix can be written as a product of small primes (2, 3, 5 and 7). Default is `true`.
-* `particle_initial_state::String` : Initial state of the particles before noise is added. Possible options are
-  * "zero" : initialise height and velocity to 0 everywhere
-  * "true" : copy the true initial state
+* `use_peak_initial_state_mean::Bool`: Whether to set mean of initial height field to a wave peak (true) or to all zeros (false). 
+  In both cases the initial mean of the other state variables is zero.
 * `absorber_thickness_fraction::Float` : Thickness of absorber for sponge absorbing boundary conditions, fraction of grid size
 * `boundary_damping::Float` : damping for boundaries
 * `cutoff_depth::Float` : Shallowest water depth
 * `obs_noise_std::Vector`: Standard deviations of noise added to observations of the true state
-* `observed_indices::Vector`: Vector containing the indices of the observed values in the state vector
+* `observed_state_var_indices::Vector`: Vector containing the indices of the observed state variables (1: height, 2: velocity x-component, 3: velocity y-component)
 """
 Base.@kwdef struct ModelParameters{T<:AbstractFloat}
 
@@ -92,7 +91,7 @@ Base.@kwdef struct ModelParameters{T<:AbstractFloat}
     padding::Int = 100
     primes::Bool = true
 
-    particle_initial_state::String = "zero"
+    use_peak_initial_state_mean::Bool = false
 
     absorber_thickness_fraction::T = 0.1
     boundary_damping::T = 0.015
@@ -216,8 +215,7 @@ function ParticleDA.sample_initial_state!(
     rng::Random.AbstractRNG,
 ) where T
     state_fields = flat_state_to_fields(state, model_data.model_params)
-    if model_data.model_params.particle_initial_state == "true"
-        # Set true initial state
+    if model_data.model_params.use_peak_initial_state_mean
         LLW2d.initheight!(
             @view(state_fields[:, :, 1]), 
             model_data.model_matrices, 
