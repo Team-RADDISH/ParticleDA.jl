@@ -858,8 +858,6 @@ function resample!(
     nprt_inv = 1.0 / nprt
     k = 1
 
-    #TODO: Do we need to sort state by weight here?
-
     weight_cdf = cumsum(weights)
     u0 = nprt_inv * rand(rng, T)
 

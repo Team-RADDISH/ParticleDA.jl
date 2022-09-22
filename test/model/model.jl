@@ -198,7 +198,6 @@ function sample_gaussian_random_field!(field::AbstractMatrix{T},
 
 end
 
-# Add a gaussian random field to the height in the state vector of all particles
 function add_random_field!(
     state_fields::AbstractArray{T, 3},
     field_buffer::AbstractMatrix{T},
