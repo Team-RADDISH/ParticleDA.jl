@@ -311,22 +311,36 @@ ParticleDA.get_observation_eltype(::Type{<:ModelData{T, U, G}}) where {T, U, G} 
 ParticleDA.get_observation_eltype(d::ModelData) = ParticleDA.get_observation_eltype(typeof(d))
 
 function ParticleDA.get_covariance_observation_noise(
-    d::ModelData, state_index_1::CartesianIndex, state_index_2::CartesianIndex
+    model_data::ModelData, state_index_1::CartesianIndex, state_index_2::CartesianIndex
 )
     x_index_1, y_index_1, var_index_1 = state_index_1.I
     x_index_2, y_index_2, var_index_2 = state_index_2.I
 
-    if (x_index_1 == x_index_2 && y_index_1 == y_index_2)
-        return (d.model_params.obs_noise_std[var_index_1]^2)
+    if (x_index_1 == x_index_2 && y_index_1 == y_index_2 && var_index_1 == var_index_2)
+        return (model_data.model_params.obs_noise_std[var_index_1]^2)
     else
         return 0.
     end
 end
 
-function ParticleDA.get_covariance_observation_noise(d::ModelData)
+function ParticleDA.get_covariance_observation_noise(
+    model_data::ModelData, state_index_1::Int, state_index_2::Int
+)
+    return ParticleDA.get_covariance_observation_noise(
+        model_data,
+        flat_state_index_to_cartesian_index(model_data.model_params, state_index_1),
+        flat_state_index_to_cartesian_index(model_data.model_params, state_index_2),
+    )
+end
+
+function ParticleDA.get_covariance_observation_noise(model_data::ModelData)
+    observation_dimension = ParticleDA.get_observation_dimension(model_data)
     return PDiagMat(
-        ParticleDA.get_observation_dimension(d), 
-        repeat(d.model_params.obs_noise_std.^2, inner=ParticleDA.get_observation_dimension(d))
+        observation_dimension,
+        [
+            ParticleDA.get_covariance_observation_noise(model_data, i, i) 
+            for i in 1:observation_dimension
+        ]
     )
 end
 
