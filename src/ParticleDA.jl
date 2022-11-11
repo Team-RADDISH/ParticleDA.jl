@@ -275,11 +275,11 @@ function get_covariance_observation_noise(model_data)
 end
 
 """
-    ParticleDA.get_covariance_observation_state_given_previous_state(
+    ParticleDA.get_covariance_state_observation_given_previous_state(
         model_data
     ) -> AbstractMatrix
     
-Return the covariance matrix `cov(X[i], Y)` between the state vector `X = F(x) + U` and 
+Return the covariance matrix `cov(X, Y)` between the state vector `X = F(x) + U` and 
 observation vector `Y = H * X + V` where `H` is the linear  observation operator, `F` 
 the (potentially non-linear) forward operator describing the  deterministic 
 state dynamics, `U` is a zero-mean Gaussian state noise vector, `V` is a 
@@ -288,7 +288,7 @@ observation time. The indices `i` here are those returned by
 [`get_state_indices_correlated_to_observations`](@ref) which can be used to avoid
 computing and storing blocks of `cov(X, Y)` which will always be zero. 
 """
-function get_covariance_observation_state_given_previous_state(model_data)
+function get_covariance_state_observation_given_previous_state(model_data)
     state_indices = get_state_indices_correlated_to_observations(model_data)
     observation_dimension = get_observation_dimension(model_data)
     cov = Matrix{get_state_eltype(model_data)}(
@@ -694,7 +694,7 @@ end
 # Allocate and compute matrices that do not depend on time-dependent variables
 function init_offline_matrices(model_data)
     return OfflineMatrices(
-        get_covariance_observation_state_given_previous_state(model_data), 
+        get_covariance_state_observation_given_previous_state(model_data), 
         get_covariance_observation_observation_given_previous_state(model_data),
     )
 end
