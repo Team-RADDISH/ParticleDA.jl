@@ -52,8 +52,8 @@ Parameters for the linear long wave two-dimensional (LLW2d) model. Keyword argum
 """
 Base.@kwdef struct ModelParameters{T<:AbstractFloat}
 
-    nx::Int = 200
-    ny::Int = 200
+    nx::Int = 41
+    ny::Int = 41
     x_length::T = 400.0e3
     y_length::T = 400.0e3
     dx::T = x_length / (nx - 1)
