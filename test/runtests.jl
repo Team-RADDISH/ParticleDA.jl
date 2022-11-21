@@ -133,11 +133,45 @@ function run_unit_tests_for_generic_model_interface(model_data, seed)
         observation, state, model_data
     )
     
-    # As write_model_metadata could be a no-op we just test it runs without error
-    h5open(tempname(), "cw") do file 
+    # Tests for model IO functions
+    
+    output_filename = tempname()
+    h5open(output_filename, "cw") do file 
+        # As write_model_metadata could be a no-op we just test it runs without error
         ParticleDA.write_model_metadata(file, model_data)
+        ParticleDA.write_observation(file, observation, 0, model_data)
+        @test haskey(file, "observations")
+        state_group_name = "state"
+        ParticleDA.write_state(file, state, 0, state_group_name, model_data)
+        @test haskey(file, state_group_name)
+        ParticleDA.write_weights(file, [1, 1, 1], 0, model_data)
+        @test haskey(file, "weights")
     end
-
+    
+    n_particle = 2
+    filter_data = (
+        weights=ones(n_particle), 
+        unpacked_statistics=Dict(
+            "avg" => zeros(state_dimension), "var" => zeros(state_dimension)
+        )
+    )
+    states = zeros(state_dimension, n_particle)
+    for save_states in (true, false)
+        output_filename = tempname()
+        ParticleDA.write_snapshot(
+            output_filename, model_data, filter_data, states, 0, save_states
+        )
+        h5open(output_filename, "r") do file
+            for key in keys(filter_data.unpacked_statistics)
+                @test haskey(file, "state_$key")
+            end
+            @test haskey(file, "weights")
+            for i in 1:n_particle
+                key = "state_particle_$i"
+                @test save_states ? haskey(file, key) : !haskey(file, key)
+            end
+        end
+    end
 end
 
 function check_mean_function(
@@ -413,6 +447,63 @@ function run_tests_for_optimal_proposal_model_interface(
         (state_eltype, observation_eltype)         
     )
 
+end
+
+function check_hdf5_group_valid(parent, group, group_name)
+    @test haskey(parent, group_name)
+    @test isa(group, HDF5.Group)
+    @test occursin(group_name, HDF5.name(group))
+end
+
+@testset "ParticleDA generic IO unit tests" begin
+    output_filename = tempname()
+    group_name = "test_group"
+    subgroup_name = "test_subgroup"
+    dataset_name = "test_dataset"
+    test_array = [1, 2, 3]
+    test_attributes = Dict("string_attribute" => "value", "int_attribute" => 1)
+    # test create group in empty file and write array
+    h5open(output_filename, "cw") do file
+        group, subgroup = ParticleDA.create_or_open_group(file, group_name)
+        check_hdf5_group_valid(file, group, group_name)
+        @test isnothing(subgroup)
+        ParticleDA.write_array(group, dataset_name, test_array, test_attributes)
+    end
+    h5open(output_filename, "cw") do file
+        @test haskey(file, group_name)
+        # test opening existing group in file and array written previously matches
+        group, _ = ParticleDA.create_or_open_group(file, group_name)
+        check_hdf5_group_valid(file, group, group_name)
+        @test read(group, dataset_name) == test_array
+        @test all([
+            read_attribute(group[dataset_name], k) == test_attributes[k] 
+            for k in keys(test_attributes)
+        ])
+        # test writing to existing dataset name results in warning and does not update
+        @test_logs (:warn, r"already exists") ParticleDA.write_array(
+            group, dataset_name, []
+        )
+        @test read(group, dataset_name) == test_array
+        # test opening subgroup
+        _, subgroup = ParticleDA.create_or_open_group(file, group_name, subgroup_name)
+        check_hdf5_group_valid(group, subgroup, subgroup_name)
+    end
+    # test writing timer data
+    timer_strings = ["ab", "cde", "fg", "hij"]
+    ParticleDA.write_timers(
+        map(length, timer_strings), 
+        length(timer_strings), 
+        codeunits(join(timer_strings)), 
+        output_filename
+    )
+    h5open(output_filename, "cw") do file
+        @test haskey(file, "timer")
+        for (i, timer_string) in enumerate(timer_strings)
+            timer_dataset_name = "rank$(i-1)"
+            @test haskey(file["timer"], timer_dataset_name)
+            @test read(file["timer"], timer_dataset_name) == timer_string
+        end
+    end
 end
 
 @testset "ParticleDA model interface unit tests" begin
