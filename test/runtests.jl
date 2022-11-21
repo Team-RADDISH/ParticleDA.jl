@@ -521,6 +521,41 @@ end
     )
 end
 
+@testset "ParticleDA summary statistics unit tests" begin
+    MPI.Init()
+    seed = 5678
+    dimension = 100
+    state_eltype = Float64
+    n_particle = 5
+    master_rank = 0
+    rng = StableRNG(seed)
+    states = randn(rng, (dimension, n_particle))
+    reference_statistics = (
+        avg=mean(states; dims=2), var=var(states, corrected=true; dims=2)
+    )
+    for statistics_type in (
+        ParticleDA.NaiveMeanSummaryStat, 
+        ParticleDA.NaiveMeanAndVarSummaryStat,
+        ParticleDA.MeanSummaryStat,
+        ParticleDA.MeanAndVarSummaryStat
+    )
+        names = ParticleDA.statistic_names(statistics_type)
+        @test isa(names, Tuple)
+        @test eltype(names) == Symbol
+        statistics = ParticleDA.init_statistics(
+            statistics_type, state_eltype, dimension
+        )
+        ParticleDA.update_statistics!(statistics, states, master_rank)
+        unpacked_statistics = (;
+            (name => Array{state_eltype}(undef, dimension) for name in names)...
+        )
+        ParticleDA.unpack_statistics!(unpacked_statistics, statistics)
+        for name in names
+            @test all(unpacked_statistics[name] .≈ reference_statistics[name])
+        end
+    end
+end
+
 @testset "ParticleDA unit tests" begin
     dx = dy = 2e3
 
