@@ -556,6 +556,69 @@ end
     end
 end
 
+@testset "ParticleDA filter unit tests" begin
+    seed = 1357
+    rng = StableRNG(seed)
+    summary_stat_type = ParticleDA.MeanAndVarSummaryStat
+    model_data = Model.init(Dict())
+    filter_params = ParticleDA.get_params()
+    nprt_per_rank = filter_params.nprt
+    states = ParticleDA.init_states(model_data, nprt_per_rank, rng)
+    @test size(states) == (ParticleDA.get_state_dimension(model_data), nprt_per_rank)
+    @test eltype(states) == ParticleDA.get_state_eltype(model_data)
+    # Sample an observation from model to use for testing filter update
+    time_index = 0
+    particle_index = 1
+    state = copy(states[:, 1])
+    ParticleDA.update_state_deterministic!(state, model_data, time_index)
+    ParticleDA.update_state_stochastic!(state, model_data, rng)
+    observation = Vector{ParticleDA.get_observation_eltype(model_data)}(
+        undef, ParticleDA.get_observation_dimension(model_data)
+    )
+    ParticleDA.sample_observation_given_state!(observation, state, model_data, rng)
+    log_weights = Vector{Float64}(undef, nprt_per_rank)
+    log_weights .= NaN
+    for filter_type in (BootstrapFilter, OptimalFilter)
+        filter_data = ParticleDA.init_filter(
+            filter_params, model_data, nprt_per_rank, filter_type, summary_stat_type
+        )
+        @test isa(filter_data, NamedTuple)
+        new_states = copy(states)
+        rng_2 = copy(rng)
+        ParticleDA.sample_proposal_and_compute_log_weights!(
+            new_states, 
+            log_weights, 
+            observation, 
+            time_index, 
+            model_data, 
+            filter_data, 
+            filter_type,
+            rng
+        )
+        @test all(new_states != states)
+        @test !any(isnan.(log_weights))
+        # Test that log weight for particle used to simulate observation is greater
+        # than for other particles: this is not guaranteed to be the case, but should be
+        # with high probability if the initial particles are widely dispersed
+        @test all(log_weights[1] .> log_weights[2:end])
+        new_states_2 = copy(states)
+        log_weights_2 = Vector{Float64}(undef, nprt_per_rank)
+        # Check filter update gives deterministic updates when rng state is fixed
+        ParticleDA.sample_proposal_and_compute_log_weights!(
+            new_states_2, 
+            log_weights_2, 
+            observation, 
+            time_index, 
+            model_data, 
+            filter_data, 
+            filter_type,
+            rng_2
+        )
+        @test all(log_weights .== log_weights_2)
+        @test all(new_states .== new_states_2)
+    end
+end
+
 @testset "ParticleDA unit tests" begin
     dx = dy = 2e3
 
