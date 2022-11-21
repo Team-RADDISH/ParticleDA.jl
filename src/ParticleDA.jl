@@ -353,7 +353,7 @@ function write_array(
             end
         end
     else
-        @warn "Write failed, dataset $dataset_name already exists in $group!"
+        @warn "Write failed, dataset $dataset_name already exists in $group"
     end
 end
 
