@@ -14,7 +14,6 @@ n_particle = n_particle_per_rank * my_size
 
 my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
 master_rank = 0
-verbose = "-v" in ARGS || "--verbose" in ARGS
 
 input_file_path = tempname()
 output_file_path = tempname()
@@ -54,30 +53,12 @@ for filter_type in (ParticleDA.BootstrapFilter, ParticleDA.OptimalFilter),
     states, statistics = run_particle_filter(
         Model.init, input_file_path, observation_file_path, filter_type, stat_type
     )
-    if verbose
-        for i = 1:my_size
-            if i == my_rank + 1
-                println("rank ", my_rank, " states")
-                for state in eachcol(states)
-                    println(state[1:5])
-                end
-            end
-            MPI.Barrier(MPI.COMM_WORLD)
-        end
-    end
     if my_rank == master_rank
         @test !any(isnan.(states))
         reference_statistics = (
             avg=mean(states; dims=2), var=var(states, corrected=true; dims=2)
         )
         for name in ParticleDA.statistic_names(stat_type)
-            verbose && println(
-                name, 
-                ", locally computed: ",
-                statistics[name][1:5], 
-                ", globally computed: ", 
-                reference_statistics[name][1:5]
-            )
             @test size(statistics[name]) == size(states[:, 1])
             @test !any(isnan.(statistics[name]))
             @test all(

@@ -689,7 +689,9 @@ end
 
 end
 
-@testset "MPI -- $(file)" for file in ("mpi.jl", "copy_states.jl", "mean_and_var.jl")
+@testset "MPI -- $(file)" for file in (
+    "mpi_filtering.jl", "mpi_copy_states.jl", "mpi_summary_statistics.jl"
+)
     julia = joinpath(Sys.BINDIR, Base.julia_exename())
     flags = ["--startup-file=no", "-q", "-t$(Base.Threads.nthreads())"]
     script = joinpath(@__DIR__, file)
