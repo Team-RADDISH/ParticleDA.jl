@@ -600,6 +600,10 @@ function unpack_statistics!(
     end     
 end
 
+init_unpacked_statistics(S::Type{<:AbstractSummaryStat}, T::Type, dimension::Int) = (;
+    (name => Array{T}(undef, dimension) for name in statistic_names(S))...
+)
+
 """
     ParticleFilter
 
@@ -659,17 +663,16 @@ function init_filter(
     state_eltype = get_state_eltype(model_data)
     if MPI.Comm_rank(MPI.COMM_WORLD) == filter_params.master_rank
         weights = Vector{state_eltype}(undef, filter_params.nprt)
+        unpacked_statistics = init_unpacked_statistics(
+            summary_stat_type, state_eltype, state_dimension
+        )
     else
         weights = Vector{state_eltype}(undef, nprt_per_rank)
+        unpacked_statistics = nothing
     end
     resampling_indices = Vector{Int}(undef, filter_params.nprt)
     statistics = init_statistics(summary_stat_type, state_eltype, state_dimension)
-    unpacked_statistics = (;
-        (
-            name => Array{state_eltype}(undef, state_dimension) 
-            for name in statistic_names(summary_stat_type)
-        )...
-    )
+
     # Memory buffer used during copy of the states
     copy_buffer = Array{state_eltype, 2}(undef, state_dimension, nprt_per_rank)
     return (; weights, resampling_indices, statistics, unpacked_statistics, copy_buffer)
