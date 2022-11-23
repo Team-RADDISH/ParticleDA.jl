@@ -1,19 +1,12 @@
 using ParticleDA
-using LinearAlgebra, Test, HDF5, Random, YAML
-using MPI
-using StableRNGs
-using GaussianRandomFields: Matern
-using Statistics
-using PDMats
-
-using ParticleDA: FilterParameters
+using HDF5, LinearAlgebra, MPI, PDMats, Random, StableRNGs, Statistics, Test, YAML 
 
 include(joinpath(@__DIR__, "model", "model.jl"))
 
 using .Model, .Model.LLW2d
 using .Model: ModelParameters
 
-@testset "LLW2d" begin
+@testset "LLW2d model unit tests" begin
     dx = dy = 2e3
 
     ### get_station_grid_indices
@@ -68,6 +61,63 @@ using .Model: ModelParameters
     # setup.  TODO: add real tests.  So far we're just making sure code won't
     # crash
     LLW2d.setup(n, n, 3e4, 0.1, 0.015, 10.0)
+end
+
+function check_hdf5_group_valid(parent, group, group_name)
+    @test haskey(parent, group_name)
+    @test isa(group, HDF5.Group)
+    @test occursin(group_name, HDF5.name(group))
+end
+
+@testset "File IO unit tests" begin
+    output_filename = tempname()
+    group_name = "test_group"
+    subgroup_name = "test_subgroup"
+    dataset_name = "test_dataset"
+    test_array = [1, 2, 3]
+    test_attributes = Dict("string_attribute" => "value", "int_attribute" => 1)
+    # test create group in empty file and write array
+    h5open(output_filename, "cw") do file
+        group, subgroup = ParticleDA.create_or_open_group(file, group_name)
+        check_hdf5_group_valid(file, group, group_name)
+        @test isnothing(subgroup)
+        ParticleDA.write_array(group, dataset_name, test_array, test_attributes)
+    end
+    h5open(output_filename, "cw") do file
+        @test haskey(file, group_name)
+        # test opening existing group in file and array written previously matches
+        group, _ = ParticleDA.create_or_open_group(file, group_name)
+        check_hdf5_group_valid(file, group, group_name)
+        @test read(group, dataset_name) == test_array
+        @test all([
+            read_attribute(group[dataset_name], k) == test_attributes[k] 
+            for k in keys(test_attributes)
+        ])
+        # test writing to existing dataset name results in warning and does not update
+        @test_logs (:warn, r"already exists") ParticleDA.write_array(
+            group, dataset_name, []
+        )
+        @test read(group, dataset_name) == test_array
+        # test opening subgroup
+        _, subgroup = ParticleDA.create_or_open_group(file, group_name, subgroup_name)
+        check_hdf5_group_valid(group, subgroup, subgroup_name)
+    end
+    # test writing timer data
+    timer_strings = ["ab", "cde", "fg", "hij"]
+    ParticleDA.write_timers(
+        map(length, timer_strings), 
+        length(timer_strings), 
+        codeunits(join(timer_strings)), 
+        output_filename
+    )
+    h5open(output_filename, "cw") do file
+        @test haskey(file, "timer")
+        for (i, timer_string) in enumerate(timer_strings)
+            timer_dataset_name = "rank$(i-1)"
+            @test haskey(file["timer"], timer_dataset_name)
+            @test read(file["timer"], timer_dataset_name) == timer_string
+        end
+    end
 end
 
 function run_unit_tests_for_generic_model_interface(model_data, seed)
@@ -172,6 +222,12 @@ function run_unit_tests_for_generic_model_interface(model_data, seed)
             end
         end
     end
+end
+
+@testset "Generic model interface unit tests" begin
+    seed = 1234
+    model_data = Model.init(Dict())
+    run_unit_tests_for_generic_model_interface(model_data, seed)
 end
 
 function check_mean_function(
@@ -322,7 +378,6 @@ function check_cross_covariance_function(
     
 end
 
-
 function run_tests_for_optimal_proposal_model_interface(
     model_data, seed, estimate_bound_constant, estimate_n_samples
 )
@@ -449,67 +504,9 @@ function run_tests_for_optimal_proposal_model_interface(
 
 end
 
-function check_hdf5_group_valid(parent, group, group_name)
-    @test haskey(parent, group_name)
-    @test isa(group, HDF5.Group)
-    @test occursin(group_name, HDF5.name(group))
-end
-
-@testset "ParticleDA generic IO unit tests" begin
-    output_filename = tempname()
-    group_name = "test_group"
-    subgroup_name = "test_subgroup"
-    dataset_name = "test_dataset"
-    test_array = [1, 2, 3]
-    test_attributes = Dict("string_attribute" => "value", "int_attribute" => 1)
-    # test create group in empty file and write array
-    h5open(output_filename, "cw") do file
-        group, subgroup = ParticleDA.create_or_open_group(file, group_name)
-        check_hdf5_group_valid(file, group, group_name)
-        @test isnothing(subgroup)
-        ParticleDA.write_array(group, dataset_name, test_array, test_attributes)
-    end
-    h5open(output_filename, "cw") do file
-        @test haskey(file, group_name)
-        # test opening existing group in file and array written previously matches
-        group, _ = ParticleDA.create_or_open_group(file, group_name)
-        check_hdf5_group_valid(file, group, group_name)
-        @test read(group, dataset_name) == test_array
-        @test all([
-            read_attribute(group[dataset_name], k) == test_attributes[k] 
-            for k in keys(test_attributes)
-        ])
-        # test writing to existing dataset name results in warning and does not update
-        @test_logs (:warn, r"already exists") ParticleDA.write_array(
-            group, dataset_name, []
-        )
-        @test read(group, dataset_name) == test_array
-        # test opening subgroup
-        _, subgroup = ParticleDA.create_or_open_group(file, group_name, subgroup_name)
-        check_hdf5_group_valid(group, subgroup, subgroup_name)
-    end
-    # test writing timer data
-    timer_strings = ["ab", "cde", "fg", "hij"]
-    ParticleDA.write_timers(
-        map(length, timer_strings), 
-        length(timer_strings), 
-        codeunits(join(timer_strings)), 
-        output_filename
-    )
-    h5open(output_filename, "cw") do file
-        @test haskey(file, "timer")
-        for (i, timer_string) in enumerate(timer_strings)
-            timer_dataset_name = "rank$(i-1)"
-            @test haskey(file["timer"], timer_dataset_name)
-            @test read(file["timer"], timer_dataset_name) == timer_string
-        end
-    end
-end
-
-@testset "ParticleDA model interface unit tests" begin
+@testset "Optimal proposal model interface unit tests" begin
     seed = 1234
     model_data = Model.init(Dict())
-    run_unit_tests_for_generic_model_interface(model_data, seed)
     # Number of samples to use in convergence tests of Monte Carlo estimates
     estimate_n_samples = [10, 100, 1000]
     # Constant factor used in Monte Carlo estimate convergence tests. Set based on some
@@ -521,7 +518,7 @@ end
     )
 end
 
-@testset "ParticleDA summary statistics unit tests" begin
+@testset "Summary statistics unit tests" begin
     MPI.Init()
     seed = 5678
     dimension = 100
@@ -557,7 +554,7 @@ end
     end
 end
 
-@testset "ParticleDA filter unit tests" begin
+@testset "Generic filter unit tests" begin
     seed = 1357
     rng = StableRNG(seed)
     summary_stat_type = ParticleDA.MeanAndVarSummaryStat
@@ -620,88 +617,8 @@ end
     end
 end
 
-@testset "ParticleDA resampling tests" begin
+@testset "Optimal proposal filter specific unit tests" begin
     rng = StableRNG(2468)
-    for n_particle in (4, 8, 20, 50)
-        log_weights = randn(rng, n_particle)
-        weights = copy(log_weights)
-        ParticleDA.normalized_exp!(weights)
-        @test all(weights .>= 0)
-        @test all(weights .<= 1)
-        @test sum(weights) ≈ 1
-        @test all(weights .≈ (exp.(log_weights) ./ sum(exp.(log_weights))))
-        for n_sample in (100, 10000)
-            counts = zeros(Int64, n_particle)
-            for _ in 1:n_sample
-                resampled_indices = Vector{Int64}(undef, n_particle)
-                ParticleDA.resample!(resampled_indices, weights, rng)
-                for i in resampled_indices
-                    counts[i] = counts[i] + 1
-                end
-            end
-            proportions = counts ./ (n_sample * n_particle)
-            @test norm(proportions - weights, Inf) < 0.2 / sqrt(n_sample)
-        end
-    end
-    # weight of 1.0 on first particle returns only copies of that particle
-    weights = [1., 0., 0., 0., 0.]
-    resampled_indices = Vector{Int64}(undef, length(weights))
-    ParticleDA.resample!(resampled_indices, weights)
-    @test all(resampled_indices .== 1)
-    # weight of 1.0 on last particle returns only copies of that particle
-    weights = [0., 0., 0., 0., 1.]
-    resampled_indices = Vector{Int64}(undef, length(weights))
-    ParticleDA.resample!(resampled_indices, weights)
-    @test all(resampled_indices .== 5)
-end
-
-
-@testset "Integration test -- $(input_file) with $(filter_type) and $(stat_type)" for 
-        filter_type in (ParticleDA.BootstrapFilter, ParticleDA.OptimalFilter),
-        stat_type in (ParticleDA.MeanSummaryStat, ParticleDA.MeanAndVarSummaryStat),
-        input_file in ["integration_test_$i.yaml" for i in 1:6]
-    observation_file_path = tempname()
-    ParticleDA.simulate_observations_from_model(
-        Model.init, 
-        joinpath(@__DIR__, input_file),  
-        observation_file_path
-    )
-    observation_sequence = h5open(
-        ParticleDA.read_observation_sequence, observation_file_path, "r"
-    )
-    @test !any(isnan.(observation_sequence))
-    states, statistics = ParticleDA.run_particle_filter(
-        Model.init, 
-        joinpath(@__DIR__, input_file), 
-        observation_file_path, 
-        filter_type,
-        stat_type,
-    )
-    @test !any(isnan.(states))
-    reference_statistics = (
-        avg=mean(states; dims=2), var=var(states, corrected=true; dims=2)
-    )
-    for name in ParticleDA.statistic_names(stat_type)
-        @test size(statistics[name]) == size(states[:, 1])
-        @test !any(isnan.(statistics[name]))
-        @test all(statistics[name] .≈ reference_statistics[name])
-    end
-
-end
-
-@testset "MPI -- $(file)" for file in (
-    "mpi_filtering.jl", "mpi_copy_states.jl", "mpi_summary_statistics.jl"
-)
-    julia = joinpath(Sys.BINDIR, Base.julia_exename())
-    flags = ["--startup-file=no", "-q", "-t$(Base.Threads.nthreads())"]
-    script = joinpath(@__DIR__, file)
-    mpiexec() do mpiexec
-        @test success(run(ignorestatus(`$(mpiexec) -n 3 $(julia) $(flags) $(script)`)))
-    end
-end
-
-@testset "Optimal proposal filter unit tests" begin
-    rng = StableRNG(1689017430981346891)
     model_params_dict = Dict(
         "llw2d" => Dict(
             "nx" => 32, 
@@ -789,7 +706,9 @@ end
     # init_filter assumes MPI.Init() has been called
     MPI.Init()
     for nprt in [25, 100, 400, 2500, 10000]
-        filter_params = ParticleDA.get_params(FilterParameters, Dict("nprt" => nprt))
+        filter_params = ParticleDA.get_params(
+           ParticleDA.FilterParameters, Dict("nprt" => nprt)
+        )
         filter_data = ParticleDA.init_filter(
             filter_params, model_data, nprt, OptimalFilter, ParticleDA.MeanSummaryStat
         )
@@ -826,5 +745,85 @@ end
         # expected O(1/√N) rate.
         @test maximum(abs.(updated_mean .- analytic_mean)) < (10. / sqrt(nprt))
         @test maximum(abs.(updated_cov .- analytic_cov)) < (10. / sqrt(nprt))
+    end
+end
+
+@testset "Resampling unit tests" begin
+    rng = StableRNG(4321)
+    for n_particle in (4, 8, 20, 50)
+        log_weights = randn(rng, n_particle)
+        weights = copy(log_weights)
+        ParticleDA.normalized_exp!(weights)
+        @test all(weights .>= 0)
+        @test all(weights .<= 1)
+        @test sum(weights) ≈ 1
+        @test all(weights .≈ (exp.(log_weights) ./ sum(exp.(log_weights))))
+        for n_sample in (100, 10000)
+            counts = zeros(Int64, n_particle)
+            for _ in 1:n_sample
+                resampled_indices = Vector{Int64}(undef, n_particle)
+                ParticleDA.resample!(resampled_indices, weights, rng)
+                for i in resampled_indices
+                    counts[i] = counts[i] + 1
+                end
+            end
+            proportions = counts ./ (n_sample * n_particle)
+            @test norm(proportions - weights, Inf) < 0.5 / sqrt(n_sample)
+        end
+    end
+    # weight of 1.0 on first particle returns only copies of that particle
+    weights = [1., 0., 0., 0., 0.]
+    resampled_indices = Vector{Int64}(undef, length(weights))
+    ParticleDA.resample!(resampled_indices, weights)
+    @test all(resampled_indices .== 1)
+    # weight of 1.0 on last particle returns only copies of that particle
+    weights = [0., 0., 0., 0., 1.]
+    resampled_indices = Vector{Int64}(undef, length(weights))
+    ParticleDA.resample!(resampled_indices, weights)
+    @test all(resampled_indices .== 5)
+end
+
+
+@testset "Integration test -- $(input_file) with $(filter_type) and $(stat_type)" for 
+        filter_type in (ParticleDA.BootstrapFilter, ParticleDA.OptimalFilter),
+        stat_type in (ParticleDA.MeanSummaryStat, ParticleDA.MeanAndVarSummaryStat),
+        input_file in ["integration_test_$i.yaml" for i in 1:6]
+    observation_file_path = tempname()
+    ParticleDA.simulate_observations_from_model(
+        Model.init, 
+        joinpath(@__DIR__, input_file),  
+        observation_file_path
+    )
+    observation_sequence = h5open(
+        ParticleDA.read_observation_sequence, observation_file_path, "r"
+    )
+    @test !any(isnan.(observation_sequence))
+    states, statistics = ParticleDA.run_particle_filter(
+        Model.init, 
+        joinpath(@__DIR__, input_file), 
+        observation_file_path, 
+        filter_type,
+        stat_type,
+    )
+    @test !any(isnan.(states))
+    reference_statistics = (
+        avg=mean(states; dims=2), var=var(states, corrected=true; dims=2)
+    )
+    for name in ParticleDA.statistic_names(stat_type)
+        @test size(statistics[name]) == size(states[:, 1])
+        @test !any(isnan.(statistics[name]))
+        @test all(statistics[name] .≈ reference_statistics[name])
+    end
+
+end
+
+@testset "MPI test -- $(file)" for file in (
+    "mpi_filtering.jl", "mpi_copy_states.jl", "mpi_summary_statistics.jl"
+)
+    julia = joinpath(Sys.BINDIR, Base.julia_exename())
+    flags = ["--startup-file=no", "-q", "-t$(Base.Threads.nthreads())"]
+    script = joinpath(@__DIR__, file)
+    mpiexec() do mpiexec
+        @test success(run(ignorestatus(`$(mpiexec) -n 3 $(julia) $(flags) $(script)`)))
     end
 end
