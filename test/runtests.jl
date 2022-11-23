@@ -546,9 +546,10 @@ end
             statistics_type, state_eltype, dimension
         )
         ParticleDA.update_statistics!(statistics, states, master_rank)
-        unpacked_statistics = (;
-            (name => Array{state_eltype}(undef, dimension) for name in names)...
+        unpacked_statistics = ParticleDA.init_unpacked_statistics(
+            statistics_type, state_eltype, dimension
         )
+        @test keys(unpacked_statistics) == names
         ParticleDA.unpack_statistics!(unpacked_statistics, statistics)
         for name in names
             @test all(unpacked_statistics[name] .≈ reference_statistics[name])
