@@ -937,23 +937,35 @@ function copy_states!(particles::AbstractArray{T},
 end
 
 """
-    simulate_observations_from_model(
-        init_model, num_time_step, input_file_path, output_file_path
-    )
+    simulate_observations_from_model(init_model, input_file_path, output_file_path)
+    
+Simulate observations from the state space model initialised by the `init_model`
+function with parameters specified by the `model` key in the input YAML file at 
+`input_file_path` and save the simulated observation and state sequences to a HDF5 file
+at `output_file_path`.
+
+The input YAML file at `input_file_path` should have a `simulate_observations` key
+with value a dictionary with keys `seed` and `n_time_step` corresponding to respectively
+the number of time steps to generate observations for from the model and the seed to
+use to initialise the state of the random number generator used to simulate the
+observations. 
 """
 function simulate_observations_from_model(
     init_model,
-    num_time_step::Integer,
     input_file_path::String,
-    output_file_path::String;
+    output_file_path::String; 
     rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
+    input_dict = read_input_file(input_file_path)
+    model_dict = get(input_dict, "model", Dict())
+    model_data = init_model(model_dict)
+    simulate_observations_dict = get(input_dict, "simulate_observations", Dict())
+    n_time_step = get(simulate_observations_dict, "n_time_step", 1)
+    seed = get(simulate_observations_dict, "seed", nothing)
+    Random.seed!(rng, seed)
     h5open(output_file_path, "cw") do output_file
         return simulate_observations_from_model(
-            init_model(get(read_input_file(input_file_path), "model", Dict())),
-            num_time_step;
-            output_file,
-            rng
+            model_data, n_time_step; output_file, rng
         )
     end
 end
