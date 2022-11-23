@@ -1195,9 +1195,8 @@ function read_input_file(path_to_input_file::String)
 
 end
 
-function read_observation_sequence(observation_file_path::String)
-    file = h5open(observation_file_path, "r")
-    observation_group = file["observations"]
+function read_observation_sequence(observation_file::HDF5.File)
+    observation_group = observation_file["observations"]
     time_keys = sort(keys(observation_group), by=hdf5_key_to_time_index)
     @assert Set(map(hdf5_key_to_time_index, time_keys)) == Set(
         hdf5_key_to_time_index(time_keys[1]):hdf5_key_to_time_index(time_keys[end])
@@ -1210,17 +1209,25 @@ function read_observation_sequence(observation_file_path::String)
     for (time_index, key) in enumerate(time_keys)
         observation_sequence[:, time_index] .= read(observation_group[key])
     end
-    close(file)
     return observation_sequence
 end 
 
 """
-    run_particle_filter(init_model, path_to_input_file::String, filter_type)
+    run_particle_filter(
+        init_model,
+        input_file_path,
+        observation_file_path,
+        filter_type,
+        summary_stat_type;
+        rng
+    )
 
-Run the particle filter. `init_model` is the function which initialise the model,
-`path_to_input_file` is the path to the YAML file with the input parameters.
-`filter_type` is the particle filter type to use.  See [`ParticleFilter`](@ref) for
-the possible values.
+Run particle filter. `init_model` is the function which initialise the model,
+`input_file_path` is the path to the YAML file with the input parameters.
+`observation_file_path` is the path to the HDF5 file containing the observation
+sequence to perform filtering for. `filter_type` is the particle filter type to use.  
+See [`ParticleFilter`](@ref) for the possible values. `summary_stat_type` is a type 
+specifying the summary statistics of the particles to compute at each time step.
 """
 function run_particle_filter(
     init_model,
@@ -1232,43 +1239,31 @@ function run_particle_filter(
 )
     MPI.Init()
     # Do I/O on rank 0 only and then broadcast
-    if MPI.Comm_rank(MPI.COMM_WORLD) == 0
-        user_input_dict = read_input_file(input_file_path)
-        observation_sequence = read_observation_sequence(observation_file_path)
+    my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
+    if my_rank == 0
+        input_dict = read_input_file(input_file_path)
+        observation_sequence = h5open(
+            read_observation_sequence, observation_file_path, "r"
+        )
     else
-        user_input_dict = nothing
+        input_dict = nothing
         observation_sequence = nothing
     end
-    user_input_dict = MPI.bcast(user_input_dict, 0, MPI.COMM_WORLD)
+    input_dict = MPI.bcast(input_dict, 0, MPI.COMM_WORLD)
     observation_sequence = MPI.bcast(observation_sequence, 0, MPI.COMM_WORLD)
-    return run_particle_filter(
-        init_model, 
-        user_input_dict, 
-        observation_sequence,
-        filter_type,
-        summary_stat_type;
-        rng
-    )
-end
-
-"""
-    run_particle_filter(init_model, user_input_dict::Dict, filter_type::ParticleFilter)
-
-Run the particle filter. `init_model` is the function which initialise the model,
-`user_input_dict` is the list of input parameters, as a `Dict`.  `filter_type`
-is the particle filter to use.  See [`ParticleFilter`](@ref) for the possible
-values.
-"""
-function run_particle_filter(
-    init_model, 
-    user_input_dict::Dict,
-    observation_sequence::AbstractMatrix,
-    filter_type::Type{<:ParticleFilter},
-    summary_stat_type::Type{<:AbstractSummaryStat};
-    rng::Random.AbstractRNG=Random.TaskLocalRNG()
-)
-    filter_params = get_params(FilterParameters, get(user_input_dict, "filter", Dict()))
-    model_params_dict = get(user_input_dict, "model", Dict())
+    filter_params = get_params(FilterParameters, get(input_dict, "filter", Dict()))
+    if !isnothing(filter_params.seed)
+        # Use a linear congruential generator to generate different seeds for each rank
+        seed = UInt64(filter_params.seed)
+        multiplier, increment = 0x5851f42d4c957f2d, 0x14057b7ef767814f
+        for _ in 1:my_rank
+            # As seed is UInt64 operations will be modulo 2^64
+            seed = multiplier * seed + increment  
+        end
+        # Seed per-rank random number generator
+        Random.seed!(rng, seed)
+    end
+    model_params_dict = get(input_dict, "model", Dict())
     return run_particle_filter(
         init_model, 
         filter_params, 
