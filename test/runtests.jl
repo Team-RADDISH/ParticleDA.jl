@@ -689,18 +689,12 @@ end
 
 end
 
-end
-
 @testset "MPI -- $(file)" for file in ("mpi.jl", "copy_states.jl", "mean_and_var.jl")
     julia = joinpath(Sys.BINDIR, Base.julia_exename())
     flags = ["--startup-file=no", "-q", "-t$(Base.Threads.nthreads())"]
     script = joinpath(@__DIR__, file)
     mpiexec() do mpiexec
-        mktempdir() do dir
-            cd(dir) do
-                @test success(run(ignorestatus(`$(mpiexec) -n 3 $(julia) $(flags) $(script)`)))
-            end
-        end
+        @test success(run(ignorestatus(`$(mpiexec) -n 3 $(julia) $(flags) $(script)`)))
     end
 end
 

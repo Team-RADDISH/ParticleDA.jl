@@ -1,4 +1,4 @@
-using ParticleDA, MPI
+using ParticleDA, MPI, Statistics, Test, YAML
 
 include(joinpath(@__DIR__, "model", "model.jl"))
 using .Model
@@ -9,43 +9,81 @@ MPI.Init()
 # Get the number or ranks, so that we can set a number of particle as an integer
 # multiple of them.
 my_size = MPI.Comm_size(MPI.COMM_WORLD)
+n_particle_per_rank = 5
+n_particle = n_particle_per_rank * my_size
 
-params = Dict(
+my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
+master_rank = 0
+verbose = "-v" in ARGS || "--verbose" in ARGS
+
+input_file_path = tempname()
+output_file_path = tempname()
+observation_file_path = tempname()
+
+input_params = Dict(
     "filter" => Dict(
-        "nprt" => my_size,
+        "nprt" => n_particle,
         "enable_timers" => true,
         "verbose"=> false,
-        "n_time_step" => 5,
-        "output_filename" => "warmup.h5",
+        "output_filename" => output_file_path,
+        "seed" => 456,
     ),
     "model" => Dict(
         "llw2d" => Dict(
-            "nx" => 20,
-            "ny" => 20,
+            "nx" => 21,
+            "ny" => 21,
             "n_stations_x" => 2,
             "n_stations_y" => 2,
             "padding" => 0,
+            "obs_noise_std" => [10.],
         ),
     ),
+    "simulate_observations" => Dict(
+        "n_time_step" => 100,
+        "seed" => 123,
+    )
 )
 
-# Warmup
-run_particle_filter(Model.init, params, BootstrapFilter())
-# Flush a newline
-println()
+if my_rank == master_rank
+    YAML.write_file(input_file_path, input_params)
+    simulate_observations_from_model(Model.init, input_file_path, observation_file_path)
+end
 
-# Run the command
-params["filter"]["output_filename"] = "bootstrap_filter.h5"
-params["filter"]["verbose"] = true
-params["filter"]["nprt"] = 2 * my_size
-params["model"]["llw2d"]["n_stations_x"] = 6
-params["model"]["llw2d"]["n_stations_y"] = 6
-run_particle_filter(Model.init, params, BootstrapFilter())
-# Flush a newline
-println()
-
-# Run the command
-params["filter"]["output_filename"] = "optimal_filter.h5"
-run_particle_filter(Model.init, params, OptimalFilter())
-# Flush a newline
-println()
+for filter_type in (ParticleDA.BootstrapFilter, ParticleDA.OptimalFilter),
+        stat_type in (ParticleDA.NaiveMeanSummaryStat, ParticleDA.MeanAndVarSummaryStat)
+    states, statistics = run_particle_filter(
+        Model.init, input_file_path, observation_file_path, filter_type, stat_type
+    )
+    if verbose
+        for i = 1:my_size
+            if i == my_rank + 1
+                println("rank ", my_rank, " states")
+                for state in eachcol(states)
+                    println(state[1:5])
+                end
+            end
+            MPI.Barrier(MPI.COMM_WORLD)
+        end
+    end
+    if my_rank == master_rank
+        @test !any(isnan.(states))
+        reference_statistics = (
+            avg=mean(states; dims=2), var=var(states, corrected=true; dims=2)
+        )
+        for name in ParticleDA.statistic_names(stat_type)
+            verbose && println(
+                name, 
+                ", locally computed: ",
+                statistics[name][1:5], 
+                ", globally computed: ", 
+                reference_statistics[name][1:5]
+            )
+            @test size(statistics[name]) == size(states[:, 1])
+            @test !any(isnan.(statistics[name]))
+            @test all(
+                (statistics[name] .≈ reference_statistics[name])
+                .| isapprox.(reference_statistics[name], 0; atol=1e-15)
+            )
+        end
+    end
+end
