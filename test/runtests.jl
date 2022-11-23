@@ -654,190 +654,39 @@ end
     @test all(resampled_indices .== 5)
 end
 
-@testset "ParticleDA unit tests" begin
-    dx = dy = 2e3
 
-    x = collect(reshape(1.0:9.0, 3, 3, 1))
-    # stations at (1,1) (2,2) and (3,3) return diagonal of x[3,3]
-    station_grid_indices = [1 1; 2 2; 3 3]
-    obs = Vector{Float64}(undef, 3)
-    Model.get_obs!(obs, x, [1], station_grid_indices)
-    @test obs ≈ [1.,5.,9.]
-
-    y = [1.0, 2.0]
-    cov_obs = ScalMat(2, 1)
-    weights = Vector{Float64}(undef, 3)
-    # model observations with equal distance from true observation return equal weights
-    hx = [0.5 0.9 1.5; 2.1 2.5 1.9]
-    ParticleDA.get_log_weights!(weights, y, hx, (cov_observation_noise=cov_obs,), BootstrapFilter())
-    @test diff(weights) ≈ zeros(2)
-    ParticleDA.normalized_exp!(weights)
-    @test weights ≈ ones(3) / 3
-    # model observations with decreasing distance from true observation return decreasing weights
-    hx = [0.9 0.5 1.5; 2.1 2.5 3.5]
-    ParticleDA.get_log_weights!(weights, y, hx, (cov_observation_noise=cov_obs,), BootstrapFilter())
-    ParticleDA.normalized_exp!(weights)
-    @test weights[1] > weights[2] > weights[3]
-
-    id = zeros(Int, 5)
-    # equal weights return the same particles
-    w = ones(5) * .2
-    ParticleDA.resample!(id,w)
-    @test sort(id) == [1,2,3,4,5]
-    # weight of 1.0 on first particle returns only copies of that particle
-    w = zeros(5)
-    w[1] = 1.0
-    ParticleDA.resample!(id,w)
-    @test id == [1,1,1,1,1]
-    # weight of 1.0 on last particle returns only copies of that particle
-    w = zeros(5)
-    w[end] = 1.0
-    ParticleDA.resample!(id,w)
-    @test id == [5,5,5,5,5]
-    # weights of .4 and .6 on particles 2 and 4 return a 40/60 mix of those particles
-    w = zeros(5)
-    w[2] = .4
-    w[4] = .6
-    ParticleDA.resample!(id,w)
-    @test sort(id) == [2,2,4,4,4]
-
-    nx = 10
-    ny = 10
-    dt = 1.0
-    nt = 1
-    # 0 input gives 0 output
-    x0 = x = zeros(nx, ny, 3)
-    model_matrices = LLW2d.setup(nx,ny,3.0e4, 0.1, 0.015, 10.0)
-    @test size(model_matrices.absorbing_boundary) ==
-        size(model_matrices.ocean_depth) ==
-        size(model_matrices.x_averaged_depth) ==
-        size(model_matrices.land_filter_m) ==
-        size(model_matrices.land_filter_n) ==
-        size(model_matrices.land_filter_e) == (nx, ny)
-    dxeta = Matrix{Float64}(undef, nx, ny)
-    dyeta = Matrix{Float64}(undef, nx, ny)
-    Model.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, model_matrices)
-    @test x ≈ x0
-
-    # Initialise and update a tsunami on a small grid
-    s = 4e3
-    peak_position = [floor(Int, nx/4) * dx, floor(Int, ny/4) * dy]
-    eta = @view(x[:,:,1])
-    LLW2d.initheight!(eta, model_matrices, dx, dy, s, 1.0, peak_position)
-    @test eta[2,2] ≈ 1.0
-    @test sum(eta) ≈ 4.0
-    Model.tsunami_update!(dxeta, dyeta, x, nt, dx, dy, dt, model_matrices)
-    @test sum(eta, dims=1) ≈ [0.98161253125 1.8161253125 0.98161253125 0.073549875 0.0 0.0 0.0 0.0 0.0 0.0]
-    @test sum(eta, dims=2) ≈ [0.98161253125 1.8161253125 0.98161253125 0.073549875 0.0 0.0 0.0 0.0 0.0 0.0]'
-
-    # Test gaussian random field sampling
-    x = 1.:2.
-    y = 1.:2.
-    sigma = lambda = nu = fill(1.0,3)
-    grf = Model.init_gaussian_random_field_generator(lambda, nu, sigma,x,y,0,false)
-    f = zeros(2, 2)
-    rnn = [9.,9.,9.,9.]
-    Model.sample_gaussian_random_field!(f,grf[1],rnn)
-    @test f ≈ [16.2387054353321 5.115956753643808; 5.115956753643809 2.8210669567042155]
-
-    # Test IO
-    params_dict = YAML.load_file(joinpath(@__DIR__, "io_unit_test.yaml"))
-    filter_params = ParticleDA.get_params(FilterParameters, params_dict["filter"])
-    model_params = ParticleDA.get_params(ModelParameters, params_dict["model"]["llw2d"])
-    rm(filter_params.output_filename, force=true)
-    data1 = collect(reshape(1.0:(model_params.nx * model_params.ny), model_params.nx, model_params.ny, 1))
-    data2 = randn(model_params.nx, model_params.ny, 1)
-    tstep = 0
-    h5open(filter_params.output_filename, "cw") do file
-        Model.write_field(file, @view(data1[:,:,1]), tstep, "m", model_params.title_syn, "height", "unit test", model_params)
-        Model.write_field(file, @view(data2[:,:,1]), tstep, "inch", model_params.title_avg,  "height", "unit test", model_params)
+@testset "Integration test -- $(input_file) with $(filter_type) and $(stat_type)" for 
+        filter_type in (ParticleDA.BootstrapFilter, ParticleDA.OptimalFilter),
+        stat_type in (ParticleDA.MeanSummaryStat, ParticleDA.MeanAndVarSummaryStat),
+        input_file in ["integration_test_$i.yaml" for i in 1:6]
+    observation_file_path = tempname()
+    ParticleDA.simulate_observations_from_model(
+        Model.init, 
+        joinpath(@__DIR__, input_file),  
+        observation_file_path
+    )
+    observation_sequence = h5open(
+        ParticleDA.read_observation_sequence, observation_file_path, "r"
+    )
+    @test !any(isnan.(observation_sequence))
+    states, statistics = ParticleDA.run_particle_filter(
+        Model.init, 
+        joinpath(@__DIR__, input_file), 
+        observation_file_path, 
+        filter_type,
+        stat_type,
+    )
+    @test !any(isnan.(states))
+    reference_statistics = (
+        avg=mean(states; dims=2), var=var(states, corrected=true; dims=2)
+    )
+    for name in ParticleDA.statistic_names(stat_type)
+        @test size(statistics[name]) == size(states[:, 1])
+        @test !any(isnan.(statistics[name]))
+        @test all(statistics[name] .≈ reference_statistics[name])
     end
-    @test h5read(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_syn * "/t0000/height") ≈ data1
-    @test h5read(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_avg * "/t0000/height") ≈ data2
-    attr = h5readattr(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_syn * "/t0000/height")
-    @test attr["Unit"] == "m"
-    @test attr["Time step"] == tstep
-    attr = h5readattr(filter_params.output_filename, model_params.state_prefix * "_" * model_params.title_avg * "/t0000/height")
-    @test attr["Unit"] == "inch"
-    @test attr["Time step"] == tstep
-    Model.write_params(filter_params.output_filename, model_params)
-    attr = h5readattr(filter_params.output_filename, model_params.title_params)
-    @test attr["nx"] == model_params.nx
-    @test attr["ny"] == model_params.ny
-    @test attr["dx"] == model_params.dx
-    @test attr["dy"] == model_params.dy
-    @test attr["title_avg"] == model_params.title_avg
-    @test attr["title_syn"] == model_params.title_syn
-    Model.write_grid(filter_params.output_filename, model_params)
-    attr = h5readattr(filter_params.output_filename, model_params.title_grid * "/x")
-    @test attr["Unit"] == "m"
-    attr = h5readattr(filter_params.output_filename, model_params.title_grid * "/y")
-    @test attr["Unit"] == "m"
 
-    station_grid_indices = Model.get_station_grid_indices(model_params)
-    @test station_grid_indices[:, 1] == [5, 5, 10, 10]
-    @test sstation_grid_indices[:, 2] == [5, 10, 5, 10]
-    Model.write_stations(filter_params.output_filename, stations.ist, stations.jst, model_params)
-    @test h5read(filter_params.output_filename, model_params.title_stations * "/x") ≈ (
-        (station_grid_indices[:, 1] .- 1) .* model_params.dx
-    )
-    @test h5read(filter_params.output_filename, model_params.title_stations * "/y") ≈ (
-        (station_grid_indices[:, 2] .- 1) .* model_params.dy
-    )
-    attr = h5readattr(filter_params.output_filename, model_params.title_stations * "/x")
-    @test attr["Unit"] == "m"
-    attr = h5readattr(filter_params.output_filename, model_params.title_stations * "/y")
-    @test attr["Unit"] == "m"
-
-    rm(filter_params.output_filename, force=true)
-
-    # Model data and get particles
-    input_file = joinpath(dirname(pathof(ParticleDA)), "..", "test", "integration_test_1.yaml")
-    model_params_dict = get(ParticleDA.read_input_file(input_file), "model", Dict())
-    nprt_per_rank = 1
-    my_rank = 0
-    model_data = Model.init(model_params_dict, nprt_per_rank, my_rank, Random.TaskLocalRNG())
-    # Make sure `get_particles` always returns the same array
-    @test pointer(ParticleDA.get_particles(model_data)) == pointer(ParticleDA.get_particles(model_data))
 end
-
-@testset "ParticleDA integration tests" begin
-
-    # Test true state with standard parameters
-    x_true,x_avg,x_var = ParticleDA.run_particle_filter(Model.init, joinpath(@__DIR__, "integration_test_1.yaml"), BootstrapFilter())
-    data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_1")
-    @test all(x_true .≈ data_true)
-
-    # Test true state with different parameters
-    x_true,x_avg,x_var = ParticleDA.run_particle_filter(Model.init, joinpath(@__DIR__, "integration_test_2.yaml"), BootstrapFilter())
-    data_true = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_2")
-    @test all(x_true .≈ data_true)
-
-    # Test particle state with ~zero noise
-    x_true,x_avg,x_var = ParticleDA.run_particle_filter(Model.init, joinpath(@__DIR__, "integration_test_3.yaml"), BootstrapFilter())
-    @test x_true ≈ x_avg
-    @test x_var .+ 1.0 ≈ ones(size(x_var))
-
-    if Threads.nthreads() == 1
-
-        avg_ref = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_4")
-        # Test particle state with noise
-        rng = StableRNG(123)
-        x_true,x_avg,x_var = ParticleDA.run_particle_filter(Model.init, joinpath(@__DIR__, "integration_test_4.yaml"), BootstrapFilter(); rng)
-        @test all(x_avg .≈ avg_ref)
-
-        # Test that different seed gives different result
-        rng = StableRNG(124)
-        x_true,x_avg,x_var = ParticleDA.run_particle_filter(Model.init, joinpath(@__DIR__, "integration_test_4.yaml"), BootstrapFilter(); rng)
-        @test !all(x_avg .≈ avg_ref)
-
-        # Test optimal filter
-        avg_ref = h5read(joinpath(@__DIR__, "reference_data.h5"), "integration_test_6")
-        rng = StableRNG(123)
-        x_true,x_avg,x_var = ParticleDA.run_particle_filter(Model.init, joinpath(@__DIR__, "optimal_filter_test_1.yaml"), OptimalFilter(); rng)
-        @test all(x_avg .≈ avg_ref)
-
-    end
 
 end
 

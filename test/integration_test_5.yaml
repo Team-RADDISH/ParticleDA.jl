@@ -1,6 +1,5 @@
 filter:
-  nprt: 4
-  n_time_step: 20
+  nprt: 10
 
 model:
   llw2d:
@@ -9,3 +8,7 @@ model:
     n_stations_x: 8
     n_stations_y: 8
     padding: 0
+    
+simulate_observations:
+  seed: 123
+  n_time_step: 20

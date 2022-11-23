@@ -1,6 +1,5 @@
 filter:
-  nprt: 1
-  n_time_step: 1
+  nprt: 10
 
 model:
   llw2d:
@@ -12,3 +11,7 @@ model:
     ny: 50
     x_length: 1.0e6
     y_length: 1.0e6
+
+simulate_observations:
+  seed: 123
+  n_time_step: 1
