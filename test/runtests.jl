@@ -700,21 +700,13 @@ end
     end
 end
 
-@testset "Optimal Filter unit tests" begin
-    
-    MPI.Init()
+@testset "Optimal proposal filter unit tests" begin
 
     seed = 2897353985732341261
     rng = Random.seed!(seed)
-    input_file = joinpath(
-        dirname(pathof(ParticleDA)), "..", "test", "optimal_filter_test_1.yaml"
-    )
-    model_params_dict = get(ParticleDA.read_input_file(input_file), "model", Dict())
-    nprt_per_rank = 1
-    my_rank = 0
-    model_data = Model.init(model_params_dict, nprt_per_rank, my_rank, rng)
+    model_data = Model.init(Dict())
     
-    cov_X_Y = ParticleDA.get_covariance_observation_state_given_previous_state(model_data)
+    cov_X_Y = ParticleDA.get_covariance_state_observation_given_previous_state(model_data)
     @test all(isfinite, cov_X_Y)
     cov_Y_Y = ParticleDA.get_covariance_observation_observation_given_previous_state(
         model_data
@@ -738,26 +730,11 @@ end
     
     # online_matrices struct fields should all be AbstractMatrix subtypes but may be
     # unintialised so cannot say anything about values
-    online_matrices = ParticleDA.init_online_matrices(model_data, nprt_per_rank)
+    online_matrices = ParticleDA.init_online_matrices(model_data, 1)
     for f in nfields(online_matrices)
         matrix = getfield(online_matrices, f)
         @test isa(matrix, AbstractMatrix) 
     end    
-    
-    # update_particles_given_observations should change at least some elements in
-    # particle state arrays
-    filter_params = FilterParameters()
-    filter_data = ParticleDA.init_filter(
-        filter_params, model_data, nprt_per_rank, rng, Float64, OptimalFilter()
-    )
-    observations = ParticleDA.update_truth!(model_data)
-    old_particles = copy(ParticleDA.get_particles(model_data))
-    ParticleDA.update_particles_given_observations!(
-        model_data, filter_data, observations, nprt_per_rank
-    )
-    new_particles = ParticleDA.get_particles(model_data)
-    @test all(isfinite, new_particles)
-    @test any(old_particles .!= new_particles)
 
 end
 
