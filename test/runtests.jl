@@ -619,6 +619,41 @@ end
     end
 end
 
+@testset "ParticleDA resampling tests" begin
+    rng = StableRNG(2468)
+    for n_particle in (4, 8, 20, 50)
+        log_weights = randn(rng, n_particle)
+        weights = copy(log_weights)
+        ParticleDA.normalized_exp!(weights)
+        @test all(weights .>= 0)
+        @test all(weights .<= 1)
+        @test sum(weights) ≈ 1
+        @test all(weights .≈ (exp.(log_weights) ./ sum(exp.(log_weights))))
+        for n_sample in (100, 10000)
+            counts = zeros(Int64, n_particle)
+            for _ in 1:n_sample
+                resampled_indices = Vector{Int64}(undef, n_particle)
+                ParticleDA.resample!(resampled_indices, weights, rng)
+                for i in resampled_indices
+                    counts[i] = counts[i] + 1
+                end
+            end
+            proportions = counts ./ (n_sample * n_particle)
+            @test norm(proportions - weights, Inf) < 0.2 / sqrt(n_sample)
+        end
+    end
+    # weight of 1.0 on first particle returns only copies of that particle
+    weights = [1., 0., 0., 0., 0.]
+    resampled_indices = Vector{Int64}(undef, length(weights))
+    ParticleDA.resample!(resampled_indices, weights)
+    @test all(resampled_indices .== 1)
+    # weight of 1.0 on last particle returns only copies of that particle
+    weights = [0., 0., 0., 0., 1.]
+    resampled_indices = Vector{Int64}(undef, length(weights))
+    ParticleDA.resample!(resampled_indices, weights)
+    @test all(resampled_indices .== 5)
+end
+
 @testset "ParticleDA unit tests" begin
     dx = dy = 2e3
 
