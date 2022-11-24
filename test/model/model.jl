@@ -3,7 +3,6 @@ module Model
 using ParticleDA
 
 using LinearAlgebra, Random, Distributions, Base.Threads, GaussianRandomFields, HDF5
-using ParticleDA.Default_params
 using DelimitedFiles
 using PDMats
 
