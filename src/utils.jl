@@ -41,8 +41,8 @@ function init_states(model_data, nprt_per_rank::Int, rng::AbstractRNG)
 end
 
 function copy_states!(
-    particles::AbstractArray{T},
-    buffer::AbstractArray{T},
+    particles::AbstractMatrix{T},
+    buffer::AbstractMatrix{T},
     resampling_indices::Vector{Int},
     my_rank::Int,
     nprt_per_rank::Int
@@ -66,7 +66,7 @@ function copy_states!(
         rank_wants = floor(Int, (k - 1) / nprt_per_rank)
         if id in particles_have && rank_wants != my_rank
             local_id = id - my_rank * nprt_per_rank
-            req = MPI.Isend(@view(particles[..,local_id]), rank_wants, id, MPI.COMM_WORLD)
+            req = MPI.Isend(view(particles, :, local_id), rank_wants, id, MPI.COMM_WORLD)
             push!(reqs, req)
         end
     end
@@ -77,9 +77,9 @@ function copy_states!(
     for (k,proc,id) in zip(1:nprt_per_rank, rank_has, particles_want)
         if proc == my_rank
             local_id = id - my_rank * nprt_per_rank
-            @view(buffer[..,k]) .= @view(particles[..,local_id])
+            buffer[:, k] .= view(particles, :, local_id)
         else
-            req = MPI.Irecv!(@view(buffer[..,k]), proc, id, MPI.COMM_WORLD)
+            req = MPI.Irecv!(view(buffer, :, k), proc, id, MPI.COMM_WORLD)
             push!(reqs,req)
         end
     end
