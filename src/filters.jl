@@ -199,7 +199,7 @@ function update_states_given_observations!(
     update_indices = get_state_indices_correlated_to_observations(model_data)
     # Update particles to account for observations, X = X - QHᵀ(HQHᵀ + R)⁻¹(Y − y)
     # The following lines are equivalent to the single statement version
-    #     particles[update_indices..., :] .-= (
+    #     states[update_indices..., :] .-= (
     #         cov_X_Y * (cov_Y_Y  \ (observation_buffer .- observation))
     #     )
     # but we stage across multiple statements to allow using in-place operations to
@@ -207,7 +207,7 @@ function update_states_given_observations!(
     observation_buffer .-= observation
     ldiv!(cov_Y_Y, observation_buffer)
     mul!(state_buffer, cov_X_Y, observation_buffer)
-    states[update_indices, :] .-= state_buffer
+    @view(states[update_indices, :]) .-= state_buffer
 end
 
 function sample_proposal_and_compute_log_weights!(

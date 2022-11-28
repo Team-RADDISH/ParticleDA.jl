@@ -701,7 +701,7 @@ end
     #   = F(x) + cov(X, Y) @ cov(Y, Y)⁻¹ (y − HF(x)) 
     # and C = Q − QHᵀ(HQHᵀ + R)⁻¹HQ = cov(X, X) - cov(X, Y) cov(Y, Y)⁻¹ cov(X, Y)ᵀ
     analytic_mean = copy(state)
-    analytic_mean[updated_indices] .+= (
+    @view(analytic_mean[updated_indices]) .+= (
         cov_X_Y * (cov_Y_Y \ (observation .- observation_mean_given_state))
     )
     analytic_cov = copy(cov_X_X)
