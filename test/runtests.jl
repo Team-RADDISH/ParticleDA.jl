@@ -555,8 +555,10 @@ end
 end
 
 @testset "Generic filter unit tests" begin
+    MPI.Init()
     seed = 1357
-    rng = StableRNG(seed)
+    rng = Random.TaskLocalRNG()
+    Random.seed!(rng, seed)
     summary_stat_type = ParticleDA.MeanAndVarSummaryStat
     model_data = Model.init(Dict())
     filter_params = ParticleDA.get_params()
@@ -582,7 +584,7 @@ end
         )
         @test isa(filter_data, NamedTuple)
         new_states = copy(states)
-        rng_2 = copy(rng)
+        Random.seed!(rng, seed)
         ParticleDA.sample_proposal_and_compute_log_weights!(
             new_states, 
             log_weights, 
@@ -602,6 +604,7 @@ end
         new_states_2 = copy(states)
         log_weights_2 = Vector{Float64}(undef, nprt_per_rank)
         # Check filter update gives deterministic updates when rng state is fixed
+        Random.seed!(rng, seed)
         ParticleDA.sample_proposal_and_compute_log_weights!(
             new_states_2, 
             log_weights_2, 
@@ -610,7 +613,7 @@ end
             model_data, 
             filter_data, 
             filter_type,
-            rng_2
+            rng
         )
         @test all(log_weights .== log_weights_2)
         @test all(new_states .== new_states_2)
