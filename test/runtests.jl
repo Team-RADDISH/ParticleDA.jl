@@ -648,15 +648,11 @@ end
         matrix = getfield(online_matrices, f)
         @test isa(matrix, AbstractMatrix) 
     end    
-    # Compute state noise covariance matrix
     state_dimension = ParticleDA.get_state_dimension(model_data)
     updated_indices = ParticleDA.get_state_indices_correlated_to_observations(
         model_data
     )
-    cov_X_X = [
-        ParticleDA.get_covariance_state_noise(model_data, i, j)
-        for i in 1:state_dimension, j in 1:state_dimension
-    ]
+    cov_X_X = ParticleDA.get_covariance_state_noise(model_data)
     # State noise covariance should be positive definite and so symmetric and
     # satisfying the trace inequality tr(C) > 0
     @test all(isfinite, cov_X_X) && issymmetric(cov_X_X) && tr(cov_X_X) > 0
@@ -669,9 +665,7 @@ end
     )
     @test all(isfinite, cov_X_Y) && issymmetric(cov_Y_Y) && tr(cov_Y_Y) > 0
     # Generate simulated observation
-    obs_state = Vector{ParticleDA.get_state_eltype(model_data)}(
-        undef, ParticleDA.get_state_dimension(model_data)
-    )
+    obs_state = Vector{ParticleDA.get_state_eltype(model_data)}(undef, state_dimension)
     ParticleDA.sample_initial_state!(obs_state, model_data, rng)
     ParticleDA.update_state_deterministic!(obs_state, model_data, 0)
     observation = Vector{ParticleDA.get_observation_eltype(model_data)}(
@@ -679,9 +673,7 @@ end
     )
     ParticleDA.sample_observation_given_state!(observation, obs_state, model_data, rng)
     # Sample new initial state and apply deterministic state update
-    state = Vector{ParticleDA.get_state_eltype(model_data)}(
-        undef, ParticleDA.get_state_dimension(model_data)
-    )
+    state = Vector{ParticleDA.get_state_eltype(model_data)}(undef, state_dimension)
     ParticleDA.sample_initial_state!(state, model_data, rng)
     ParticleDA.update_state_deterministic!(state, model_data, 0)
     # Get observation mean given updated state
@@ -717,7 +709,7 @@ end
         )
         # Create set of state 'particles' all equal to propagated state
         states = Matrix{ParticleDA.get_state_eltype(model_data)}(
-            undef, (ParticleDA.get_state_dimension(model_data), nprt)
+            undef, (state_dimension, nprt)
         )        
         states .= state
         updated_states = copy(states)
