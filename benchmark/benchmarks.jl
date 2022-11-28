@@ -3,6 +3,7 @@ using ParticleDA
 using MPI
 using Random
 using Base.Threads
+using HDF5
 
 include(joinpath(joinpath(@__DIR__, "..", "test"), "model", "model.jl"))
 using .Model
@@ -15,53 +16,168 @@ const SUITE = BenchmarkGroup()
 const my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
 const my_size = MPI.Comm_size(MPI.COMM_WORLD)
 
-SUITE["base"] = BenchmarkGroup()
-SUITE["BootstrapFilter"] = BenchmarkGroup()
-SUITE["OptimalFilter"] = BenchmarkGroup()
-
 const params = Dict(
     "filter" => Dict(
         "nprt" => 32,
         "enable_timers" => true,
         "verbose" => true,
-        "n_time_step" => 20,
     ),
     "model" => Dict(
         "llw2d" => Dict(
             "nx" => 200,
             "ny" => 200,
-            "nobs" => 64,
+            "n_stations_x" => 8,
+            "n_stations_y" => 8,
             "padding" => 0,
         ),
     ),
 )
 
+const n_time_step = 20
 const nprt_per_rank = Int(params["filter"]["nprt"] / my_size)
 const rng = Random.TaskLocalRNG()
-const model_data = Model.init(params["model"]["llw2d"], nprt_per_rank, my_rank, rng)
-const bootstrap_filter_data = ParticleDA.init_filter(ParticleDA.get_params(ParticleDA.FilterParameters, params["filter"]), model_data, nprt_per_rank, rng, Float64, BootstrapFilter())
+Random.seed!(rng, 1234)
+const model_data = Model.init(params["model"])
 const filter_params = ParticleDA.get_params(ParticleDA.FilterParameters, params["filter"])
-
-SUITE["base"]["get_particles"] = @benchmarkable ParticleDA.get_particles($(model_data))
-SUITE["base"]["get_mean_and_var!"] = @benchmarkable ParticleDA.get_mean_and_var!(statistics, $(ParticleDA.get_particles(model_data)), $(filter_params.master_rank)) setup=(statistics=similar(bootstrap_filter_data.statistics))
-SUITE["base"]["update_truth!"] = @benchmarkable ParticleDA.update_truth!($(model_data))
-SUITE["base"]["update_particle_dynamics!"] = @benchmarkable ParticleDA.update_particle_dynamics!($(model_data), $(nprt_per_rank))
-SUITE["base"]["update_particle_noise!"] = @benchmarkable ParticleDA.update_particle_noise!($(model_data), $(nprt_per_rank))
-SUITE["base"]["get_log_weights!"] = @benchmarkable ParticleDA.get_log_weights!(
-    weights, truth_observations,  model_observations, filter_data, filter_type
-) setup=(
-    weights = Vector{Float64}(undef, nprt_per_rank); 
-    truth_observations=ParticleDA.update_truth!(model_data, nprt_per_rank); 
-    model_observations = ParticleDA.get_particle_observations!(model_data, nprt_per_rank);
-    filter_data = bootstrap_filter_data;
-    filter_type = BootstrapFilter();
+const state = Vector{ParticleDA.get_state_eltype(model_data)}(
+    undef, ParticleDA.get_state_dimension(model_data)
 )
-SUITE["base"]["normalized_exp!"] = @benchmarkable ParticleDA.normalized_exp!(weights) setup=(weights = rand(filter_params.nprt))
-SUITE["base"]["resample!"] = @benchmarkable ParticleDA.resample!(resampling_indices, weights) setup=(resampling_indices = Vector{Int}(undef, filter_params.nprt); weights = rand(filter_params.nprt))
-# SUITE["base"]["copy_states!"] = @benchmarkable ParticleDA.copy_states!($(ParticleDA.get_particles(model_data)), $(bootstrap_filter_data.copy_buffer), $(bootstrap_filter_data.resampling_indices), $(my_rank), $(nprt_per_rank))
+const observation = Vector{ParticleDA.get_observation_eltype(model_data)}(
+    undef, ParticleDA.get_observation_dimension(model_data)
+)
+const observation_sequence = ParticleDA.simulate_observations_from_model(
+    model_data, n_time_step
+)
 
-SUITE["BootstrapFilter"]["init_filter"] = @benchmarkable ParticleDA.init_filter($(filter_params), $(model_data), $(nprt_per_rank), $(rng), Float64, $(BootstrapFilter()))
-SUITE["BootstrapFilter"]["run_particle_filter"] = @benchmarkable ParticleDA.run_particle_filter($(Model.init), $(params), $(BootstrapFilter())) seconds=30 setup=(cd(mktempdir()))
 
-SUITE["OptimalFilter"]["init_filter"] = @benchmarkable ParticleDA.init_filter($(filter_params), $(model_data), $(nprt_per_rank), $(rng), Float64, $(OptimalFilter()))
-SUITE["OptimalFilter"]["run_particle_filter"] = @benchmarkable ParticleDA.run_particle_filter($(Model.init), $(params), $(OptimalFilter())) seconds=30 setup=(cd(mktempdir()))
+SUITE["Model interface"] = BenchmarkGroup()
+
+SUITE["Model interface"]["sample_initial_state!"] = @benchmarkable ParticleDA.sample_initial_state!(
+    local_state, $(model_data), local_rng
+) setup=(
+    local_state = copy($(state)); 
+    local_rng = copy($(rng));
+)
+SUITE["Model interface"]["update_state_deterministic!"] = @benchmarkable ParticleDA.update_state_deterministic!(
+    local_state, $(model_data), 0
+) setup=(
+    local_state = copy($(state));
+    local_rng = copy($(rng));
+    ParticleDA.sample_initial_state!(local_state, $(model_data), local_rng);
+)
+SUITE["Model interface"]["update_state_stochastic!"] = @benchmarkable ParticleDA.update_state_stochastic!(
+    local_state, $(model_data), local_rng
+) setup=(
+    local_state = copy($(state));
+    local_rng = copy($(rng));
+    ParticleDA.sample_initial_state!(local_state, $(model_data), local_rng);
+    ParticleDA.update_state_deterministic!(local_state, $(model_data), 0);
+)
+SUITE["Model interface"]["sample_observation_given_state!"] = @benchmarkable ParticleDA.sample_observation_given_state!(
+    local_observation, local_state, $(model_data), local_rng
+) setup=(
+    local_state = copy($(state));
+    local_observation = copy($(observation));
+    local_rng = copy($(rng));
+    ParticleDA.sample_initial_state!(local_state, $(model_data), local_rng);
+)
+SUITE["Model interface"]["get_log_density_observation_given_state!"] = @benchmarkable ParticleDA.get_log_density_observation_given_state(
+    local_observation, local_state, $(model_data)
+) setup=(
+    local_state = copy($(state));
+    local_observation = copy($(observation));
+    local_rng = copy($(rng));
+    ParticleDA.sample_initial_state!(local_state, $(model_data), local_rng);
+    ParticleDA.sample_observation_given_state!(
+        local_observation, local_state, $(model_data), local_rng
+    );
+)
+SUITE["Model interface"]["write_model_metadata"] = @benchmarkable ParticleDA.write_model_metadata(
+    file, $(model_data)
+) setup=(file_path = tempname(); file = h5open(file_path, "w")) teardown=(close(file))
+
+
+SUITE["Model interface"]["get_observation_mean_given_state!"] = @benchmarkable ParticleDA.get_observation_mean_given_state!(
+    observation_mean, local_state, $(model_data)
+) setup=(
+    local_state = copy($(state));
+    observation_mean = copy($(observation));
+    local_rng = copy($(rng));
+    ParticleDA.sample_initial_state!(local_state, $(model_data), local_rng);
+)
+SUITE["Model interface"]["get_covariance_observation_noise"] = (
+    @benchmarkable ParticleDA.get_covariance_observation_noise($(model_data))
+)
+SUITE["Model interface"]["get_covariance_state_observation_given_previous_state"] = (
+    @benchmarkable ParticleDA.get_covariance_state_observation_given_previous_state(
+        $(model_data)
+    )
+)
+SUITE["Model interface"]["get_covariance_observation_observation_given_previous_state"] = (
+    @benchmarkable ParticleDA.get_covariance_observation_observation_given_previous_state(
+        $(model_data)
+    )
+)
+
+SUITE["Model interface"]["simulate_observations_from_model"] = @benchmarkable (
+    ParticleDA.simulate_observations_from_model($(model_data), $(n_time_step))
+)
+
+for filter_type in (BootstrapFilter, OptimalFilter), statistics_type in (
+    ParticleDA.NaiveMeanSummaryStat, 
+    ParticleDA.NaiveMeanAndVarSummaryStat,
+    ParticleDA.MeanSummaryStat,
+    ParticleDA.MeanAndVarSummaryStat
+)
+    group = SUITE["Filtering ($(filter_type), $(statistics_type))"] = BenchmarkGroup()
+    group["init_filter"] = @benchmarkable (
+        ParticleDA.init_filter(
+            $(filter_params),
+            $(model_data),
+            $(nprt_per_rank),
+            $(filter_type),
+            $(statistics_type)
+        )
+    )
+    group["sample_proposal_and_compute_log_weights!"] = @benchmarkable (
+        ParticleDA.sample_proposal_and_compute_log_weights!(
+            states, 
+            log_weights, 
+            local_observation, 
+            0, 
+            $(model_data), 
+            filter_data, 
+            $(filter_type),
+            local_rng
+        )
+    ) setup=(
+        local_rng=copy($(rng));
+        states=ParticleDA.init_states($(model_data), $(nprt_per_rank), local_rng);
+        log_weights=Vector{Float64}(undef, $(nprt_per_rank));
+        local_state = copy($(state));
+        local_observation = copy($(observation));
+        ParticleDA.sample_initial_state!(local_state, $(model_data), local_rng);
+        ParticleDA.sample_observation_given_state!(
+            local_observation, local_state, $(model_data), local_rng
+        );
+        filter_data = ParticleDA.init_filter(
+            $(filter_params),
+            $(model_data),
+            $(nprt_per_rank),
+            $(filter_type),
+            $(statistics_type)
+        )
+        
+    )
+    group["run_particle_filter"] = @benchmarkable ( 
+        ParticleDA.run_particle_filter(
+            Model.init,
+            $(filter_params),
+            $(params["model"]),
+            $(observation_sequence),
+            $(filter_type),
+            $(statistics_type);
+            rng=local_rng
+        ) 
+    ) seconds=30 setup=(local_rng=copy($(rng)); cd(mktempdir()))
+end
