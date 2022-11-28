@@ -649,7 +649,7 @@ function ParticleDA.write_state(
             dataset_attributes["Time index"] = time_index
             dataset_attributes["Time (s)"] = time_index * model_params.time_step
         else
-            @warn "Write failed, dataset $(metadata.name) already exists in $(group)!"
+            @warn "Write failed, dataset $(metadata.name) already exists in $(subgroup)!"
         end
     end
 end
