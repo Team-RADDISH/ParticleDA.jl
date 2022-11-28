@@ -178,11 +178,13 @@ for filter_type in (BootstrapFilter, OptimalFilter), statistics_type in (
             $(filter_type),
             $(statistics_type);
             rng=local_rng
-        ) 
-    ) seconds=30 setup=(
-        local_rng=copy($(rng)); 
+        );
+        rm(output_filename);
+    ) seconds=30 evals=1 setup=(
+        local_rng=copy($(rng));
+        output_filename = tempname();
         local_filter_params = ParticleDA.FilterParameters(;
-            output_filename=tempname(), 
+            output_filename=output_filename, 
             (; (Symbol(k) => v for (k, v) in $(params["filter"]))...)...
         );
     )
