@@ -1,6 +1,6 @@
 name = "ParticleDA"
 uuid = "61cd1fb4-f4c4-4bc8-80c6-ea5639a6ca2e"
-authors = ["Mosè Giordano and Tuomas Koskela"]
+authors = ["Mosè Giordano and Tuomas Koskela and Dan Giles and Matt Graham"]
 version = "0.1.0"
 
 [deps]
