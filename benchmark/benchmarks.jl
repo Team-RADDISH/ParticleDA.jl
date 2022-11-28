@@ -172,12 +172,18 @@ for filter_type in (BootstrapFilter, OptimalFilter), statistics_type in (
     group["run_particle_filter"] = @benchmarkable ( 
         ParticleDA.run_particle_filter(
             Model.init,
-            $(filter_params),
+            local_filter_params,
             $(params["model"]),
             $(observation_sequence),
             $(filter_type),
             $(statistics_type);
             rng=local_rng
         ) 
-    ) seconds=30 setup=(local_rng=copy($(rng)); cd(mktempdir()))
+    ) seconds=30 setup=(
+        local_rng=copy($(rng)); 
+        local_filter_params = ParticleDA.FilterParameters(;
+            output_filename=tempname(), 
+            (; (Symbol(k) => v for (k, v) in $(params["filter"]))...)...
+        );
+    )
 end
