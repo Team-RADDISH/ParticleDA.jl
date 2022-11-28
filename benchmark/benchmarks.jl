@@ -92,9 +92,6 @@ SUITE["Model interface"]["get_log_density_observation_given_state!"] = @benchmar
         local_observation, local_state, $(model_data), local_rng
     );
 )
-SUITE["Model interface"]["write_model_metadata"] = @benchmarkable ParticleDA.write_model_metadata(
-    file, $(model_data)
-) setup=(file_path = tempname(); file = h5open(file_path, "w")) teardown=(close(file))
 
 
 SUITE["Model interface"]["get_observation_mean_given_state!"] = @benchmarkable ParticleDA.get_observation_mean_given_state!(
