@@ -1,14 +1,12 @@
 module ParticleDA
 
 using Random
-using Distributions
 using Statistics
 using MPI
 using Base.Threads
 using YAML
 using HDF5
 using TimerOutputs
-using EllipsisNotation
 using LinearAlgebra
 using PDMats
 using StructArrays
