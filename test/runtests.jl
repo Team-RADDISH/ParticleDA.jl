@@ -2,8 +2,10 @@ using ParticleDA
 using HDF5, LinearAlgebra, MPI, PDMats, Random, StableRNGs, Statistics, Test, YAML 
 
 include(joinpath(@__DIR__, "models", "llw2d.jl"))
+include(joinpath(@__DIR__, "models", "lorenz63.jl"))
 
 using .LLW2d
+using .Lorenz63
 
 @testset "LLW2d model unit tests" begin
     dx = dy = 2e3
@@ -223,9 +225,11 @@ function run_unit_tests_for_generic_model_interface(model, seed)
     end
 end
 
-@testset "Generic model interface unit tests" begin
+@testset (
+    "Generic model interface unit tests - $model_module"   
+) for model_module in (LLW2d, Lorenz63)
     seed = 1234
-    model = LLW2d.init(Dict())
+    model = model_module.init(Dict())
     run_unit_tests_for_generic_model_interface(model, seed)
 end
 
@@ -503,9 +507,11 @@ function run_tests_for_optimal_proposal_model_interface(
 
 end
 
-@testset "Optimal proposal model interface unit tests" begin
+@testset (
+    "Optimal proposal model interface unit tests - $(model_module)"
+) for model_module in (LLW2d, Lorenz63)
     seed = 1234
-    model = LLW2d.init(Dict())
+    model = model_module.init(Dict())
     # Number of samples to use in convergence tests of Monte Carlo estimates
     estimate_n_samples = [10, 100, 1000]
     # Constant factor used in Monte Carlo estimate convergence tests. Set based on some
