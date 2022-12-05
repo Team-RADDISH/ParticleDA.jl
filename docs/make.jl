@@ -2,7 +2,7 @@ using Documenter, ParticleDA
 
 # Load the `Model` module from the tests to show the docstring of the parameters
 test_dir = joinpath(dirname(pathof(ParticleDA)), "..", "test")
-module_src = joinpath(test_dir, "models", "ll2wd.jl")
+module_src = joinpath(test_dir, "models", "llw2d.jl")
 include(module_src)
 using .LLW2d
 
