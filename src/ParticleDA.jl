@@ -42,39 +42,39 @@ function simulate_observations_from_model(
 )
     input_dict = read_input_file(input_file_path)
     model_dict = get(input_dict, "model", Dict())
-    model_data = init_model(model_dict)
+    model = init_model(model_dict)
     simulate_observations_dict = get(input_dict, "simulate_observations", Dict())
     n_time_step = get(simulate_observations_dict, "n_time_step", 1)
     seed = get(simulate_observations_dict, "seed", nothing)
     Random.seed!(rng, seed)
     h5open(output_file_path, "cw") do output_file
         return simulate_observations_from_model(
-            model_data, n_time_step; output_file, rng
+            model, n_time_step; output_file, rng
         )
     end
 end
 
 function simulate_observations_from_model(
-    model_data, 
+    model, 
     num_time_step::Integer;
     output_file::Union{Nothing, HDF5.File}=nothing,
     rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
-    state = Vector{get_state_eltype(model_data)}(undef, get_state_dimension(model_data))
-    observation_sequence = Matrix{get_observation_eltype(model_data)}(
-        undef, get_observation_dimension(model_data), num_time_step
+    state = Vector{get_state_eltype(model)}(undef, get_state_dimension(model))
+    observation_sequence = Matrix{get_observation_eltype(model)}(
+        undef, get_observation_dimension(model), num_time_step
     )
-    sample_initial_state!(state, model_data, rng)
+    sample_initial_state!(state, model, rng)
     if !isnothing(output_file)
-        write_state(output_file, state, 0, "state", model_data)
+        write_state(output_file, state, 0, "state", model)
     end
     for (time_index, observation) in enumerate(eachcol(observation_sequence))
-        update_state_deterministic!(state, model_data, time_index)
-        update_state_stochastic!(state, model_data, rng)
-        sample_observation_given_state!(observation, state, model_data, rng)
+        update_state_deterministic!(state, model, time_index)
+        update_state_stochastic!(state, model, rng)
+        sample_observation_given_state!(observation, state, model, rng)
         if !isnothing(output_file)
-            write_state(output_file, state, time_index, "state", model_data)
-            write_observation(output_file, observation, time_index, model_data)
+            write_state(output_file, state, time_index, "state", model)
+            write_observation(output_file, observation, time_index, model)
         end
     end
     return observation_sequence
@@ -171,14 +171,14 @@ function run_particle_filter(
     nprt_per_rank = Int(filter_params.nprt / MPI.Comm_size(MPI.COMM_WORLD))
 
     # Do memory allocations
-    @timeit_debug timer "Model initialization" model_data = init_model(model_params_dict)
+    @timeit_debug timer "Model initialization" model = init_model(model_params_dict)
     
     @timeit_debug timer "State initialization" states = init_states(
-        model_data, nprt_per_rank, rng
+        model, nprt_per_rank, rng
     )
 
     @timeit_debug timer "Filter initialization" filter_data = init_filter(
-        filter_params, model_data, nprt_per_rank, filter_type, summary_stat_type
+        filter_params, model, nprt_per_rank, filter_type, summary_stat_type
     )
 
     @timeit_debug timer "Summary statistics" update_statistics!(
@@ -192,7 +192,7 @@ function run_particle_filter(
         )
         @timeit_debug timer "Write snapshot" write_snapshot(
             filter_params.output_filename,
-            model_data,
+            model,
             filter_data,
             states,
             0,
@@ -210,7 +210,7 @@ function run_particle_filter(
             @view(filter_data.weights[1:nprt_per_rank]),
             observation,
             time_index,
-            model_data, 
+            model, 
             filter_data, 
             filter_type, 
             rng
@@ -262,7 +262,7 @@ function run_particle_filter(
             )
             @timeit_debug timer "Write snapshot" write_snapshot(
                 filter_params.output_filename,
-                model_data,
+                model,
                 filter_data,
                 states,
                 time_index,

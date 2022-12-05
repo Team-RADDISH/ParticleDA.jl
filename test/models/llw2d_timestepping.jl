@@ -1,5 +1,3 @@
-module LLW2d
-
 # Linear Long Wave (LLW) tsunami in 2D Cartesian Coordinate
 
 struct Matrices{T,M<:AbstractMatrix{T}}
@@ -222,5 +220,3 @@ function initheight!(height::AbstractMatrix{T},
     # Unpack the relevant field of `matrices`
     initheight!(height, matrices.ocean_depth, dx, dy, cutoff_distance, peak_height, peak_position)
 end
-
-end # module

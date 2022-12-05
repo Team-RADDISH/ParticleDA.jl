@@ -1,7 +1,7 @@
 using ParticleDA, MPI, Statistics, Test, YAML
 
-include(joinpath(@__DIR__, "model", "model.jl"))
-using .Model
+include(joinpath(@__DIR__, "models", "llw2d.jl"))
+using .LLW2d
 
 # Initialise MPI
 MPI.Init()
@@ -45,13 +45,13 @@ input_params = Dict(
 
 if my_rank == master_rank
     YAML.write_file(input_file_path, input_params)
-    simulate_observations_from_model(Model.init, input_file_path, observation_file_path)
+    simulate_observations_from_model(LLW2d.init, input_file_path, observation_file_path)
 end
 
 for filter_type in (ParticleDA.BootstrapFilter, ParticleDA.OptimalFilter),
         stat_type in (ParticleDA.NaiveMeanSummaryStat, ParticleDA.MeanAndVarSummaryStat)
     states, statistics = run_particle_filter(
-        Model.init, input_file_path, observation_file_path, filter_type, stat_type
+        LLW2d.init, input_file_path, observation_file_path, filter_type, stat_type
     )
     if my_rank == master_rank
         @test !any(isnan.(states))

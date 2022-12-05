@@ -1,22 +1,21 @@
 using ParticleDA
 using HDF5, LinearAlgebra, MPI, PDMats, Random, StableRNGs, Statistics, Test, YAML 
 
-include(joinpath(@__DIR__, "model", "model.jl"))
+include(joinpath(@__DIR__, "models", "llw2d.jl"))
 
-using .Model, .Model.LLW2d
-using .Model: ModelParameters
+using .LLW2d
 
 @testset "LLW2d model unit tests" begin
     dx = dy = 2e3
 
     ### get_station_grid_indices
-    station_grid_indices = Model.get_station_grid_indices(
+    station_grid_indices = LLW2d.get_station_grid_indices(
         2, 2, 20e3, 20e3, 150e3, 150e3, dx, dy
     )
     @test station_grid_indices[:, 1] == [76, 76, 86, 86]
     @test station_grid_indices[:, 2] == [76, 86, 76, 86]
 
-    station_grid_indices = Model.get_station_grid_indices(
+    station_grid_indices = LLW2d.get_station_grid_indices(
         3, 3, 20e3, 20e3, 150e3, 150e3, dx, dy
     )
     @test station_grid_indices[:, 1] == [76, 76, 76, 86, 86, 86, 96, 96, 96]
@@ -120,42 +119,42 @@ end
     end
 end
 
-function run_unit_tests_for_generic_model_interface(model_data, seed)
+function run_unit_tests_for_generic_model_interface(model, seed)
     
-    state_dimension = ParticleDA.get_state_dimension(model_data)
+    state_dimension = ParticleDA.get_state_dimension(model)
     @test isa(state_dimension, Integer)
     @test state_dimension > 0
     
-    observation_dimension = ParticleDA.get_observation_dimension(model_data)
+    observation_dimension = ParticleDA.get_observation_dimension(model)
     @test isa(observation_dimension, Integer)
     @test observation_dimension > 0
     
-    state_eltype = ParticleDA.get_state_eltype(model_data)
+    state_eltype = ParticleDA.get_state_eltype(model)
     @test isa(state_eltype, DataType)
     
-    observation_eltype = ParticleDA.get_observation_eltype(model_data)
+    observation_eltype = ParticleDA.get_observation_eltype(model)
     @test isa(observation_eltype, DataType)
     
     state = Vector{state_eltype}(undef, state_dimension)
     state .= NaN
     
-    ParticleDA.sample_initial_state!(state, model_data, StableRNG(seed))
+    ParticleDA.sample_initial_state!(state, model, StableRNG(seed))
     @test !any(isnan.(state))
     # sample_initial_state! should generate same state when passed random number
     # generator with same state / seed
     state_copy = copy(state)
-    ParticleDA.sample_initial_state!(state, model_data, StableRNG(seed))
+    ParticleDA.sample_initial_state!(state, model, StableRNG(seed))
     @test all(state .== state_copy)
     
     # update_state_deterministic! should give same updated state for same input state
-    ParticleDA.update_state_deterministic!(state, model_data, 1)
-    ParticleDA.update_state_deterministic!(state_copy, model_data, 1)
+    ParticleDA.update_state_deterministic!(state, model, 1)
+    ParticleDA.update_state_deterministic!(state_copy, model, 1)
     @test !any(isnan.(state))
     @test all(state .== state_copy)
     
     # update_state_stochastic! should give same updated state for same input + rng state
-    ParticleDA.update_state_stochastic!(state, model_data, StableRNG(seed))
-    ParticleDA.update_state_stochastic!(state_copy, model_data, StableRNG(seed))
+    ParticleDA.update_state_stochastic!(state, model, StableRNG(seed))
+    ParticleDA.update_state_stochastic!(state_copy, model, StableRNG(seed))
     @test !any(isnan.(state))
     @test all(state == state_copy)
     
@@ -165,22 +164,22 @@ function run_unit_tests_for_generic_model_interface(model_data, seed)
     # sample_observation_given_state! should give same observation for same input + 
     # rng state
     ParticleDA.sample_observation_given_state!(
-        observation, state, model_data, StableRNG(seed)
+        observation, state, model, StableRNG(seed)
     )
     ParticleDA.sample_observation_given_state!(
-        observation_copy, state, model_data, StableRNG(seed)
+        observation_copy, state, model, StableRNG(seed)
     )
     @test !any(isnan.(observation))
     @test all(observation .== observation_copy)
     
     log_density = ParticleDA.get_log_density_observation_given_state(
-        observation, state, model_data
+        observation, state, model
     )
     @test isa(log_density, Real)
     @test !isnan(log_density)
     # get_log_density_observation_given_state should give same output for same inputs
     @test log_density == ParticleDA.get_log_density_observation_given_state(
-        observation, state, model_data
+        observation, state, model
     )
     
     # Tests for model IO functions
@@ -188,13 +187,13 @@ function run_unit_tests_for_generic_model_interface(model_data, seed)
     output_filename = tempname()
     h5open(output_filename, "cw") do file 
         # As write_model_metadata could be a no-op we just test it runs without error
-        ParticleDA.write_model_metadata(file, model_data)
-        ParticleDA.write_observation(file, observation, 0, model_data)
+        ParticleDA.write_model_metadata(file, model)
+        ParticleDA.write_observation(file, observation, 0, model)
         @test haskey(file, "observations")
         state_group_name = "state"
-        ParticleDA.write_state(file, state, 0, state_group_name, model_data)
+        ParticleDA.write_state(file, state, 0, state_group_name, model)
         @test haskey(file, state_group_name)
-        ParticleDA.write_weights(file, [1, 1, 1], 0, model_data)
+        ParticleDA.write_weights(file, [1, 1, 1], 0, model)
         @test haskey(file, "weights")
     end
     
@@ -209,7 +208,7 @@ function run_unit_tests_for_generic_model_interface(model_data, seed)
     for save_states in (true, false)
         output_filename = tempname()
         ParticleDA.write_snapshot(
-            output_filename, model_data, filter_data, states, 0, save_states
+            output_filename, model, filter_data, states, 0, save_states
         )
         h5open(output_filename, "r") do file
             for key in keys(filter_data.unpacked_statistics)
@@ -226,8 +225,8 @@ end
 
 @testset "Generic model interface unit tests" begin
     seed = 1234
-    model_data = Model.init(Dict())
-    run_unit_tests_for_generic_model_interface(model_data, seed)
+    model = LLW2d.init(Dict())
+    run_unit_tests_for_generic_model_interface(model, seed)
 end
 
 function check_mean_function(
@@ -379,19 +378,19 @@ function check_cross_covariance_function(
 end
 
 function run_tests_for_optimal_proposal_model_interface(
-    model_data, seed, estimate_bound_constant, estimate_n_samples
+    model, seed, estimate_bound_constant, estimate_n_samples
 )
-    state_dimension = ParticleDA.get_state_dimension(model_data)
-    observation_dimension = ParticleDA.get_observation_dimension(model_data)
-    state_eltype = ParticleDA.get_state_eltype(model_data)
-    observation_eltype = ParticleDA.get_observation_eltype(model_data)
+    state_dimension = ParticleDA.get_state_dimension(model)
+    observation_dimension = ParticleDA.get_observation_dimension(model)
+    state_eltype = ParticleDA.get_state_eltype(model)
+    observation_eltype = ParticleDA.get_observation_eltype(model)
 
     state = Vector{state_eltype}(undef, state_dimension)
-    ParticleDA.sample_initial_state!(state, model_data, StableRNG(seed))
+    ParticleDA.sample_initial_state!(state, model, StableRNG(seed))
 
     check_mean_function(
-        m -> ParticleDA.get_observation_mean_given_state!(m, state, model_data),
-        (s, r) -> ParticleDA.sample_observation_given_state!(s, state, model_data, r),
+        m -> ParticleDA.get_observation_mean_given_state!(m, state, model),
+        (s, r) -> ParticleDA.sample_observation_given_state!(s, state, model, r),
         StableRNG(seed),
         estimate_bound_constant,
         estimate_n_samples,
@@ -401,13 +400,13 @@ function run_tests_for_optimal_proposal_model_interface(
 
     function state_transition_mean!(mean)
         mean[:] = state
-        ParticleDA.update_state_deterministic!(mean, model_data, 0)
+        ParticleDA.update_state_deterministic!(mean, model, 0)
     end
 
     function sample_state_transition(next_state, rng)
         next_state[:] = state
-        ParticleDA.update_state_deterministic!(next_state, model_data, 0)
-        ParticleDA.update_state_stochastic!(next_state, model_data, rng)
+        ParticleDA.update_state_deterministic!(next_state, model, 0)
+        ParticleDA.update_state_stochastic!(next_state, model, rng)
     end   
 
     check_mean_function(
@@ -421,9 +420,9 @@ function run_tests_for_optimal_proposal_model_interface(
     )
 
     check_covariance_function(
-        (i, j) -> ParticleDA.get_covariance_observation_noise(model_data, i, j),
-        m -> ParticleDA.get_observation_mean_given_state!(m, state, model_data),
-        (s, r) -> ParticleDA.sample_observation_given_state!(s, state, model_data, r),
+        (i, j) -> ParticleDA.get_covariance_observation_noise(model, i, j),
+        m -> ParticleDA.get_observation_mean_given_state!(m, state, model),
+        (s, r) -> ParticleDA.sample_observation_given_state!(s, state, model, r),
         StableRNG(seed),
         estimate_bound_constant,
         estimate_n_samples,
@@ -432,7 +431,7 @@ function run_tests_for_optimal_proposal_model_interface(
     )
 
     check_covariance_function(
-        (i, j) -> ParticleDA.get_covariance_state_noise(model_data, i, j),
+        (i, j) -> ParticleDA.get_covariance_state_noise(model, i, j),
         state_transition_mean!,
         sample_state_transition,
         StableRNG(seed),
@@ -446,22 +445,22 @@ function run_tests_for_optimal_proposal_model_interface(
     
     function sample_observation_given_previous_state!(observation, rng)
         state_buffer[:] = state
-        ParticleDA.update_state_deterministic!(state_buffer, model_data, 0)
-        ParticleDA.update_state_stochastic!(state_buffer, model_data, rng)
+        ParticleDA.update_state_deterministic!(state_buffer, model, 0)
+        ParticleDA.update_state_stochastic!(state_buffer, model, rng)
         ParticleDA.sample_observation_given_state!(
-            observation, state_buffer, model_data, rng
+            observation, state_buffer, model, rng
         )
     end
     
     function observation_given_previous_state_mean!(mean)
         state_buffer[:] = state
-        ParticleDA.update_state_deterministic!(state_buffer, model_data, 0)
-        ParticleDA.get_observation_mean_given_state!(mean, state_buffer, model_data)
+        ParticleDA.update_state_deterministic!(state_buffer, model, 0)
+        ParticleDA.get_observation_mean_given_state!(mean, state_buffer, model)
     end
     
     check_covariance_function(
         (i, j) -> ParticleDA.get_covariance_observation_observation_given_previous_state(
-            model_data, i, j
+            model, i, j
         ),
         observation_given_previous_state_mean!,
         sample_observation_given_previous_state!,
@@ -474,24 +473,24 @@ function run_tests_for_optimal_proposal_model_interface(
     
     function sample_state_observation_given_previous_state!(state_, observation, rng)
         state_[:] = state
-        ParticleDA.update_state_deterministic!(state_, model_data, 0)
-        ParticleDA.update_state_stochastic!(state_, model_data, rng)
+        ParticleDA.update_state_deterministic!(state_, model, 0)
+        ParticleDA.update_state_stochastic!(state_, model, rng)
         ParticleDA.sample_observation_given_state!(
-            observation, state_, model_data, rng
+            observation, state_, model, rng
         )
     end
     
     function state_observation_given_previous_state_mean!(state_mean, observation_mean)
         state_mean[:] = state
-        ParticleDA.update_state_deterministic!(state_mean, model_data, 0)
+        ParticleDA.update_state_deterministic!(state_mean, model, 0)
         ParticleDA.get_observation_mean_given_state!(
-            observation_mean, state_mean, model_data
+            observation_mean, state_mean, model
         )
     end
     
     check_cross_covariance_function(
         (i, j) -> ParticleDA.get_covariance_state_observation_given_previous_state(
-            model_data, i, j
+            model, i, j
         ),
         state_observation_given_previous_state_mean!,
         sample_state_observation_given_previous_state!,
@@ -506,7 +505,7 @@ end
 
 @testset "Optimal proposal model interface unit tests" begin
     seed = 1234
-    model_data = Model.init(Dict())
+    model = LLW2d.init(Dict())
     # Number of samples to use in convergence tests of Monte Carlo estimates
     estimate_n_samples = [10, 100, 1000]
     # Constant factor used in Monte Carlo estimate convergence tests. Set based on some
@@ -514,7 +513,7 @@ end
     # probability of false failures but may require tweaking for each model
     estimate_bound_constant = 12.5
     run_tests_for_optimal_proposal_model_interface(
-        model_data, seed, estimate_bound_constant, estimate_n_samples
+        model, seed, estimate_bound_constant, estimate_n_samples
     )
 end
 
@@ -560,27 +559,27 @@ end
     rng = Random.TaskLocalRNG()
     Random.seed!(rng, seed)
     summary_stat_type = ParticleDA.MeanAndVarSummaryStat
-    model_data = Model.init(Dict())
+    model = LLW2d.init(Dict())
     filter_params = ParticleDA.get_params()
     nprt_per_rank = filter_params.nprt
-    states = ParticleDA.init_states(model_data, nprt_per_rank, rng)
-    @test size(states) == (ParticleDA.get_state_dimension(model_data), nprt_per_rank)
-    @test eltype(states) == ParticleDA.get_state_eltype(model_data)
+    states = ParticleDA.init_states(model, nprt_per_rank, rng)
+    @test size(states) == (ParticleDA.get_state_dimension(model), nprt_per_rank)
+    @test eltype(states) == ParticleDA.get_state_eltype(model)
     # Sample an observation from model to use for testing filter update
     time_index = 0
     particle_index = 1
     state = copy(states[:, 1])
-    ParticleDA.update_state_deterministic!(state, model_data, time_index)
-    ParticleDA.update_state_stochastic!(state, model_data, rng)
-    observation = Vector{ParticleDA.get_observation_eltype(model_data)}(
-        undef, ParticleDA.get_observation_dimension(model_data)
+    ParticleDA.update_state_deterministic!(state, model, time_index)
+    ParticleDA.update_state_stochastic!(state, model, rng)
+    observation = Vector{ParticleDA.get_observation_eltype(model)}(
+        undef, ParticleDA.get_observation_dimension(model)
     )
-    ParticleDA.sample_observation_given_state!(observation, state, model_data, rng)
+    ParticleDA.sample_observation_given_state!(observation, state, model, rng)
     log_weights = Vector{Float64}(undef, nprt_per_rank)
     log_weights .= NaN
     for filter_type in (BootstrapFilter, OptimalFilter)
         filter_data = ParticleDA.init_filter(
-            filter_params, model_data, nprt_per_rank, filter_type, summary_stat_type
+            filter_params, model, nprt_per_rank, filter_type, summary_stat_type
         )
         @test isa(filter_data, NamedTuple)
         new_states = copy(states)
@@ -590,7 +589,7 @@ end
             log_weights, 
             observation, 
             time_index, 
-            model_data, 
+            model, 
             filter_data, 
             filter_type,
             rng
@@ -610,7 +609,7 @@ end
             log_weights_2, 
             observation, 
             time_index, 
-            model_data, 
+            model, 
             filter_data, 
             filter_type,
             rng
@@ -631,11 +630,11 @@ end
             "padding" => 0
         )
     )
-    model_data = Model.init(model_params_dict)
+    model = LLW2d.init(model_params_dict)
     # offline_matrices struct fields should all be matrix-like objects (either subtypes
     # of AbstractMatrix or Factorization) and should all be initialised to finite values
     # by init_offline_matrices
-    offline_matrices = ParticleDA.init_offline_matrices(model_data)
+    offline_matrices = ParticleDA.init_offline_matrices(model)
     for f in nfields(offline_matrices)
         matrix = getfield(offline_matrices, f)
         @test isa(matrix, AbstractMatrix) || isa(matrix, Factorization)
@@ -643,45 +642,45 @@ end
     end
     # online_matrices struct fields should all be AbstractMatrix subtypes but may be
     # unintialised so cannot say anything about values
-    online_matrices = ParticleDA.init_online_matrices(model_data, 1)
+    online_matrices = ParticleDA.init_online_matrices(model, 1)
     for f in nfields(online_matrices)
         matrix = getfield(online_matrices, f)
         @test isa(matrix, AbstractMatrix) 
     end    
-    state_dimension = ParticleDA.get_state_dimension(model_data)
+    state_dimension = ParticleDA.get_state_dimension(model)
     updated_indices = ParticleDA.get_state_indices_correlated_to_observations(
-        model_data
+        model
     )
-    cov_X_X = ParticleDA.get_covariance_state_noise(model_data)
+    cov_X_X = ParticleDA.get_covariance_state_noise(model)
     # State noise covariance should be positive definite and so symmetric and
     # satisfying the trace inequality tr(C) > 0
     @test all(isfinite, cov_X_X) && issymmetric(cov_X_X) && tr(cov_X_X) > 0
     cov_X_Y = ParticleDA.get_covariance_state_observation_given_previous_state(
-        model_data
+        model
     )
     @test all(isfinite, cov_X_Y)
     cov_Y_Y = ParticleDA.get_covariance_observation_observation_given_previous_state(
-        model_data
+        model
     )
     @test all(isfinite, cov_X_Y) && issymmetric(cov_Y_Y) && tr(cov_Y_Y) > 0
     # Generate simulated observation
-    obs_state = Vector{ParticleDA.get_state_eltype(model_data)}(undef, state_dimension)
-    ParticleDA.sample_initial_state!(obs_state, model_data, rng)
-    ParticleDA.update_state_deterministic!(obs_state, model_data, 0)
-    observation = Vector{ParticleDA.get_observation_eltype(model_data)}(
-        undef, ParticleDA.get_observation_dimension(model_data)
+    obs_state = Vector{ParticleDA.get_state_eltype(model)}(undef, state_dimension)
+    ParticleDA.sample_initial_state!(obs_state, model, rng)
+    ParticleDA.update_state_deterministic!(obs_state, model, 0)
+    observation = Vector{ParticleDA.get_observation_eltype(model)}(
+        undef, ParticleDA.get_observation_dimension(model)
     )
-    ParticleDA.sample_observation_given_state!(observation, obs_state, model_data, rng)
+    ParticleDA.sample_observation_given_state!(observation, obs_state, model, rng)
     # Sample new initial state and apply deterministic state update
-    state = Vector{ParticleDA.get_state_eltype(model_data)}(undef, state_dimension)
-    ParticleDA.sample_initial_state!(state, model_data, rng)
-    ParticleDA.update_state_deterministic!(state, model_data, 0)
+    state = Vector{ParticleDA.get_state_eltype(model)}(undef, state_dimension)
+    ParticleDA.sample_initial_state!(state, model, rng)
+    ParticleDA.update_state_deterministic!(state, model, 0)
     # Get observation mean given updated state
     observation_mean_given_state = Vector{
-        ParticleDA.get_observation_eltype(model_data)
-    }(undef, ParticleDA.get_observation_dimension(model_data))
+        ParticleDA.get_observation_eltype(model)
+    }(undef, ParticleDA.get_observation_dimension(model))
     ParticleDA.get_observation_mean_given_state!(
-        observation_mean_given_state, state, model_data
+        observation_mean_given_state, state, model
     )
     # Optimal proposal for conditionally Gaussian state-space model with updates
     # X = F(x) + U and Y = HX + V where x is the previous state value, F the forward
@@ -705,16 +704,16 @@ end
            ParticleDA.FilterParameters, Dict("nprt" => nprt)
         )
         filter_data = ParticleDA.init_filter(
-            filter_params, model_data, nprt, OptimalFilter, ParticleDA.MeanSummaryStat
+            filter_params, model, nprt, OptimalFilter, ParticleDA.MeanSummaryStat
         )
         # Create set of state 'particles' all equal to propagated state
-        states = Matrix{ParticleDA.get_state_eltype(model_data)}(
+        states = Matrix{ParticleDA.get_state_eltype(model)}(
             undef, (state_dimension, nprt)
         )        
         states .= state
         updated_states = copy(states)
         for state in eachcol(updated_states)
-            ParticleDA.update_state_stochastic!(state, model_data, rng)
+            ParticleDA.update_state_stochastic!(state, model, rng)
         end
         noise = updated_states .- states
         # Mean of noise added by update_particle_noise! should be zero in all components
@@ -730,7 +729,7 @@ end
         noise_cov = cov(noise, dims=2)
         @test maximum(abs.(noise_cov .- cov_X_X)) < (10. / sqrt(nprt))        
         ParticleDA.update_states_given_observations!(
-            updated_states, observation, model_data, filter_data, rng
+            updated_states, observation, model, filter_data, rng
         )
         updated_mean = mean(updated_states, dims=2)
         updated_cov = cov(updated_states, dims=2)
@@ -785,7 +784,7 @@ end
         input_file in ["integration_test_$i.yaml" for i in 1:6]
     observation_file_path = tempname()
     ParticleDA.simulate_observations_from_model(
-        Model.init, 
+        LLW2d.init, 
         joinpath(@__DIR__, input_file),  
         observation_file_path
     )
@@ -794,7 +793,7 @@ end
     )
     @test !any(isnan.(observation_sequence))
     states, statistics = ParticleDA.run_particle_filter(
-        Model.init, 
+        LLW2d.init, 
         joinpath(@__DIR__, input_file), 
         observation_file_path, 
         filter_type,

@@ -10,11 +10,11 @@ Abstract type for the particle filter to use.  Currently used subtypes are:
 abstract type ParticleFilter end
 
 """
-ParticleDA.init_filter(filter_params, model_data, nprt_per_rank, ::T) -> NamedTuple
+ParticleDA.init_filter(filter_params, model, nprt_per_rank, ::T) -> NamedTuple
 
 Initialise any data structures required by filter of type `T`, with filtering specific
 parameters specified by `filter_params`, state space model to perform filtering with
-described by `model_data` and `nprt_per_rank` particles per MPI rank.
+described by `model` and `nprt_per_rank` particles per MPI rank.
 
 New filter implementations should extend this method specifying `T` as the appropriate
 singleton type for the new filter.
@@ -23,13 +23,13 @@ function init_filter end
 
 """
 ParticleDA.sample_proposal_and_compute_log_weights!(
-    states, log_weights, observation, model_data, filter_data, ::T, rng
+    states, log_weights, observation, model, filter_data, ::T, rng
 )
 
 Sample new values for two-dimensional array of state vectors `states` from proposal
 distribution writing in-place to `states` array and compute logarithm of unnormalized 
 particle weights writing to `log_weights` given observation vector `observation`, with
-state space model described by `model_data`, named tuple of filter specific data
+state space model described by `model`, named tuple of filter specific data
 structures `filter_data`, filter type `T` and random number generator `rng` used to
 generate any random draws.
 
@@ -50,13 +50,13 @@ struct OptimalFilter <: ParticleFilter end
 # Initialize arrays used by the filter
 function init_filter(
     filter_params::FilterParameters, 
-    model_data, 
+    model, 
     nprt_per_rank::Int, 
     ::Type{BootstrapFilter}, 
     summary_stat_type::Type{<:AbstractSummaryStat}
 )
-    state_dimension = get_state_dimension(model_data)
-    state_eltype = get_state_eltype(model_data)
+    state_dimension = get_state_dimension(model)
+    state_eltype = get_state_eltype(model)
     if MPI.Comm_rank(MPI.COMM_WORLD) == filter_params.master_rank
         weights = Vector{state_eltype}(undef, filter_params.nprt)
         unpacked_statistics = init_unpacked_statistics(
@@ -91,24 +91,24 @@ struct OnlineMatrices{T<:AbstractMatrix}
 end
 
 # Allocate and compute matrices that do not depend on time-dependent variables
-function init_offline_matrices(model_data)
+function init_offline_matrices(model)
     return OfflineMatrices(
-        get_covariance_state_observation_given_previous_state(model_data), 
-        get_covariance_observation_observation_given_previous_state(model_data),
+        get_covariance_state_observation_given_previous_state(model), 
+        get_covariance_observation_observation_given_previous_state(model),
     )
 end
 
 # Allocate memory for matrices that will be updated during the time stepping loop.
-function init_online_matrices(model_data, nprt_per_rank::Int)
-    observation_dimension = get_observation_dimension(model_data)
+function init_online_matrices(model, nprt_per_rank::Int)
+    observation_dimension = get_observation_dimension(model)
     updated_state_dimension = length(
-        get_state_indices_correlated_to_observations(model_data)
+        get_state_indices_correlated_to_observations(model)
     )
     return OnlineMatrices(
-        Matrix{get_observation_eltype(model_data)}(
+        Matrix{get_observation_eltype(model)}(
             undef, observation_dimension, nprt_per_rank
         ),
-        Matrix{get_state_eltype(model_data)}(
+        Matrix{get_state_eltype(model)}(
             undef, updated_state_dimension, nprt_per_rank
         ),
     )
@@ -117,18 +117,18 @@ end
 # Initialize arrays used by the filter
 function init_filter(
     filter_params::FilterParameters, 
-    model_data, 
+    model, 
     nprt_per_rank::Int, 
     ::Type{OptimalFilter}, 
     summary_stat_type::Type{<:AbstractSummaryStat}
 )
     filter_data = init_filter(
-        filter_params, model_data, nprt_per_rank, BootstrapFilter, summary_stat_type
+        filter_params, model, nprt_per_rank, BootstrapFilter, summary_stat_type
     )
-    offline_matrices = init_offline_matrices(model_data)
-    online_matrices = init_online_matrices(model_data, nprt_per_rank)
-    observation_dimension = get_observation_dimension(model_data)
-    observation_eltype = get_observation_eltype(model_data)
+    offline_matrices = init_offline_matrices(model)
+    online_matrices = init_online_matrices(model, nprt_per_rank)
+    observation_dimension = get_observation_dimension(model)
+    observation_eltype = get_observation_eltype(model)
     observation_mean_buffer = Array{observation_eltype, 2}(
         undef, observation_dimension, nthreads()
     )
@@ -140,17 +140,17 @@ function sample_proposal_and_compute_log_weights!(
     log_weights::AbstractVector,
     observation::AbstractVector,
     time_index::Integer,
-    model_data,
+    model,
     ::NamedTuple,
     ::Type{BootstrapFilter},
     rng::Random.AbstractRNG,
 )
     num_particle = size(states, 2)
     Threads.@threads :static for p in 1:num_particle
-        update_state_deterministic!(selectdim(states, 2, p), model_data, time_index)
-        update_state_stochastic!(selectdim(states, 2, p), model_data, rng)
+        update_state_deterministic!(selectdim(states, 2, p), model, time_index)
+        update_state_stochastic!(selectdim(states, 2, p), model, rng)
         log_weights[p] = get_log_density_observation_given_state(
-            observation, selectdim(states, 2, p), model_data
+            observation, selectdim(states, 2, p), model
         )
     end
 end
@@ -158,11 +158,11 @@ end
 function get_log_density_observation_given_previous_state(
     observation::AbstractVector{T},
     pre_noise_state::AbstractVector{S},
-    model_data,
+    model,
     filter_data::NamedTuple,
 ) where {S, T}
     observation_mean = view(filter_data.observation_mean_buffer, :, threadid())
-    get_observation_mean_given_state!(observation_mean, pre_noise_state, model_data)
+    get_observation_mean_given_state!(observation_mean, pre_noise_state, model)
     return -invquad(
         filter_data.offline_matrices.cov_Y_Y, observation - observation_mean
     ) / 2 
@@ -174,7 +174,7 @@ LinearAlgebra.ldiv!(A::PDMat, B::AbstractMatrix) = ldiv!(A.chol, B)
 function update_states_given_observations!(
     states::AbstractMatrix, 
     observation::AbstractVector, 
-    model_data, 
+    model, 
     filter_data, 
     rng::Random.AbstractRNG
 )
@@ -188,7 +188,7 @@ function update_states_given_observations!(
         sample_observation_given_state!(
             selectdim(observation_buffer, 2, p),
             selectdim(states, 2, p),
-            model_data,
+            model,
             rng
         )
     end
@@ -196,7 +196,7 @@ function update_states_given_observations!(
     # (given previous state) and so needing to be updated as part of optimal proposal
     # the model can specify the relevant indices to update. This avoids computing a
     # zero update for such state components 
-    update_indices = get_state_indices_correlated_to_observations(model_data)
+    update_indices = get_state_indices_correlated_to_observations(model)
     # Update particles to account for observations, X = X - QHᵀ(HQHᵀ + R)⁻¹(Y − y)
     # The following lines are equivalent to the single statement version
     #     states[update_indices..., :] .-= (
@@ -215,24 +215,24 @@ function sample_proposal_and_compute_log_weights!(
     log_weights::AbstractVector,
     observation::AbstractVector,
     time_index::Integer,
-    model_data,
+    model,
     filter_data::NamedTuple,
     ::Type{OptimalFilter},
     rng::Random.AbstractRNG,
 )
     num_particle = size(states, 2)
     Threads.@threads :static for p in 1:num_particle
-        update_state_deterministic!(selectdim(states, 2, p), model_data, time_index)
+        update_state_deterministic!(selectdim(states, 2, p), model, time_index)
         # Particle weights for optimal proposal _do not_ depend on state noise values
         # therefore we calculate them using states after applying deterministic part of
         # time update but before adding state noise
         log_weights[p] = get_log_density_observation_given_previous_state(
-            observation, selectdim(states, 2, p), model_data, filter_data
+            observation, selectdim(states, 2, p), model, filter_data
         )
-        update_state_stochastic!(selectdim(states, 2, p), model_data, rng)
+        update_state_stochastic!(selectdim(states, 2, p), model, rng)
     end
     # Update to account for conditioning on observations can be performed using matrix-
     # matrix level 3 BLAS operations therefore perform outside of threaded loop over
     # particles 
-    update_states_given_observations!(states, observation, model_data, filter_data, rng)
+    update_states_given_observations!(states, observation, model, filter_data, rng)
 end
