@@ -57,7 +57,7 @@ Base.@kwdef struct LLW2dModelParameters{T<:AbstractFloat}
     dx::T = x_length / (nx - 1)
     dy::T = y_length / (ny - 1)
 
-    n_state_var::Int = 3
+  
 
     time_step::T = 50.0
     n_integration_step::Int = 50
@@ -97,6 +97,9 @@ Base.@kwdef struct LLW2dModelParameters{T<:AbstractFloat}
 
 end
 
+# Number of state variables in model
+const n_state_var = 3
+
 get_float_eltype(::Type{<:LLW2dModelParameters{T}}) where {T} = T
 get_float_eltype(p::LLW2dModelParameters) = get_float_eltype(typeof(p))
 
@@ -132,9 +135,9 @@ end
 
 function flat_state_to_fields(state::AbstractArray, params::LLW2dModelParameters)
     if ndims(state) == 1
-        return reshape(state, (params.nx, params.ny, params.n_state_var))
+        return reshape(state, (params.nx, params.ny, n_state_var))
     else
-        return reshape(state, (params.nx, params.ny, params.n_state_var, :))
+        return reshape(state, (params.nx, params.ny, n_state_var, :))
     end
 end
 
@@ -295,7 +298,7 @@ end
 
 
 ParticleDA.get_state_dimension(model::LLW2dModel) = (
-    model.parameters.nx * model.parameters.ny * model.parameters.n_state_var
+    model.parameters.nx * model.parameters.ny * n_state_var
 )
 
 ParticleDA.get_observation_dimension(model::LLW2dModel) = (
