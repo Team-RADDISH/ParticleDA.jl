@@ -21,7 +21,9 @@ include("filters.jl")
 include("utils.jl")
 
 """
-    simulate_observations_from_model(init_model, input_file_path, output_file_path)
+    simulate_observations_from_model(
+        init_model, input_file_path, output_file_path; rng
+    ) -> Matrix
     
 Simulate observations from the state space model initialised by the `init_model`
 function with parameters specified by the `model` key in the input YAML file at 
@@ -32,7 +34,10 @@ The input YAML file at `input_file_path` should have a `simulate_observations` k
 with value a dictionary with keys `seed` and `n_time_step` corresponding to respectively
 the number of time steps to generate observations for from the model and the seed to
 use to initialise the state of the random number generator used to simulate the
-observations. 
+observations.
+
+The simulated observation sequence is returned as a matrix with columns corresponding to
+the observation vectors at each time step.
 """
 function simulate_observations_from_model(
     init_model,
@@ -88,14 +93,18 @@ end
         filter_type,
         summary_stat_type;
         rng
-    )
+    ) -> Tuple{Matrix, NamedTuple}
 
 Run particle filter. `init_model` is the function which initialise the model,
 `input_file_path` is the path to the YAML file with the input parameters.
 `observation_file_path` is the path to the HDF5 file containing the observation
 sequence to perform filtering for. `filter_type` is the particle filter type to use.  
 See [`ParticleFilter`](@ref) for the possible values. `summary_stat_type` is a type 
-specifying the summary statistics of the particles to compute at each time step.
+specifying the summary statistics of the particles to compute at each time step. Returns
+a tuple containing the state particles representing the estimate of the filtering
+distribution at the final observation time (with each particle a column of the returned
+matrix) and a named tuple containing the estimated summary statistics of this final 
+filtering distribution.
 """
 function run_particle_filter(
     init_model,

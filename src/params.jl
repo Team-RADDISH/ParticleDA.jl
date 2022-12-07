@@ -8,7 +8,7 @@ Parameters for ParticleDA run. Keyword arguments:
 * `output_filename::String` : Name of output file
 * `nprt::Int` : Number of particles for particle filter
 * `enable_timers::Bool` : Flag to control run time measurements
-* `particle_save_time_indices: Set of time indices to save particles at
+* `particle_save_time_indices`: Set of time indices to save particles at
 * `seed`: Seed to initialise state of random number generator used for filtering
 """
 Base.@kwdef struct FilterParameters{V<:Union{AbstractSet, AbstractVector}}

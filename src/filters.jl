@@ -1,16 +1,14 @@
-
-
 """
-ParticleFilter
+    ParticleFilter
 
-Abstract type for the particle filter to use.  Currently used subtypes are:
+Abstract type for particle filters.  Currently implemented subtypes are:
 * [`BootstrapFilter`](@ref)
 * [`OptimalFilter`](@ref)
 """
 abstract type ParticleFilter end
 
 """
-ParticleDA.init_filter(filter_params, model, nprt_per_rank, ::T) -> NamedTuple
+    ParticleDA.init_filter(filter_params, model, nprt_per_rank, ::T) -> NamedTuple
 
 Initialise any data structures required by filter of type `T`, with filtering specific
 parameters specified by `filter_params`, state space model to perform filtering with
@@ -22,9 +20,9 @@ singleton type for the new filter.
 function init_filter end
 
 """
-ParticleDA.sample_proposal_and_compute_log_weights!(
-    states, log_weights, observation, model, filter_data, ::T, rng
-)
+    ParticleDA.sample_proposal_and_compute_log_weights!(
+        states, log_weights, observation, model, filter_data, ::T, rng
+    )
 
 Sample new values for two-dimensional array of state vectors `states` from proposal
 distribution writing in-place to `states` array and compute logarithm of unnormalized 
@@ -39,12 +37,20 @@ singleton type for the new filter.
 function sample_proposal_and_compute_log_weights! end
 
 """
-BootstrapFilter()
+    BootstrapFilter
 
-Instantiate the singleton type `BootstrapFilter`.  This can be used as argument
-of [`run_particle_filter`](@ref) to select the bootstrap filter.
+Singleton type `BootstrapFilter`.  This can be used as argument of 
+[`run_particle_filter`](@ref) to select the bootstrap filter.
 """
 struct BootstrapFilter <: ParticleFilter end
+
+"""
+    OptimalFilter
+
+Singleton type `OptimalFilter`.  This can be used as argument of 
+[`run_particle_filter`](@ref) to select the optimal proposal filter (for conditionally
+linear-Gaussian models).
+"""
 struct OptimalFilter <: ParticleFilter end
 
 # Initialize arrays used by the filter

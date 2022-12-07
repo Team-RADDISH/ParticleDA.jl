@@ -15,23 +15,23 @@ Parameters for the linear long wave two-dimensional (LLW2d) model. Keyword argum
 
 * `nx::Int` : Number of grid points in the x direction
 * `ny::Int` : Number of grid points in the y direction
-* `x_length::AbstractFloat` : Domain size (m) in the x direction
-* `y_length::AbstractFloat` : Domain size (m) in the y direction
-* `dx::AbstractFloat` : Distance (m) between grid points in the x direction
-* `dy::AbstractFloat` : Distance (m) between grid points in the y direction
-* `n_state_var::Int`: Number of variables in the state vector
-* `nobs::Int` : Number of observation stations
+* `x_length::AbstractFloat` : Domain size in metres in the x direction
+* `y_length::AbstractFloat` : Domain size in metres in the y direction
+* `dx::AbstractFloat` : Distance in metres between grid points in the x direction
+* `dy::AbstractFloat` : Distance in metrtes between grid points in the y direction
 * `station_filename::String` : Name of input file for station coordinates
-* `station_distance_x::Float` : Distance between stations in the x direction [m]
-* `station_distance_y::Float` : Distance between stations in the y direction [m]
-* `station_boundary_x::Float` : Distance between bottom left edge of box and first station in the x direction [m]
-* `station_boundary_y::Float` : Distance between bottom left edge of box and first station in the y direction [m]
-* `n_integration_step::Int` : Number of sub-steps to integrate the forward model per time step.
-* `time_step::AbstractFloat` : Time step length (s)
-* `peak_position::Vector{AbstractFloat}` : The [x,y] coordinates (m) of the initial wave peak
-* `peak_height::AbstractFloat` : The height (m) of the initial wave peak
-* `source_size::AbstractFloat` : Cutoff distance (m) from the peak for the initial wave
-* `bathymetry_setup::AbstractFloat` : Bathymetry set-up.
+* `n_stations_x::Int` : Number of observation stations in the x direction (if using regular grid)
+* `n_stations_y::Int` : Number of observation stations in the y direction (if using regular grid)
+* `station_distance_x::Float` : Distance in metres between stations in the x direction (if using regular grid)
+* `station_distance_y::Float` : Distance in metres between stations in the y direction (if using regular grid)
+* `station_boundary_x::Float` : Distance in metres between bottom left edge of box and first station in the x direction (if using regular grid)
+* `station_boundary_y::Float` : Distance in metres between bottom left edge of box and first station in the y direction (if using regular grid)
+* `n_integration_step::Int` : Number of sub-steps to integrate the forward model per time step
+* `time_step::AbstractFloat` : Time step length in seconds
+* `peak_position::Vector{AbstractFloat}` : The `[x, y] coordinates in metres of the initial wave peak
+* `peak_height::AbstractFloat` : The height in metres of the initial wave peak
+* `source_size::AbstractFloat` : Cutoff distance in metres from the peak for the initial wave
+* `bathymetry_setup::AbstractFloat` : Bathymetry set-up
 * `lambda::AbstractFloat` : Length scale for Matérn covariance kernel in background noise
 * `nu::AbstractFloat` : Smoothess parameter for Matérn covariance kernel in background noise
 * `sigma::AbstractFloat` : Marginal standard deviation for Matérn covariance kernel in background noise
@@ -43,7 +43,7 @@ Parameters for the linear long wave two-dimensional (LLW2d) model. Keyword argum
 * `use_peak_initial_state_mean::Bool`: Whether to set mean of initial height field to a wave peak (true) or to all zeros (false). 
   In both cases the initial mean of the other state variables is zero.
 * `absorber_thickness_fraction::Float` : Thickness of absorber for sponge absorbing boundary conditions, fraction of grid size
-* `boundary_damping::Float` : damping for boundaries
+* `boundary_damping::Float` : Damping for boundaries
 * `cutoff_depth::Float` : Shallowest water depth
 * `obs_noise_std::Vector`: Standard deviations of noise added to observations of the true state
 * `observed_state_var_indices::Vector`: Vector containing the indices of the observed state variables (1: height, 2: velocity x-component, 3: velocity y-component)
