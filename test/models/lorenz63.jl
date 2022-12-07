@@ -131,8 +131,11 @@ function ParticleDA.write_model_metadata(file::HDF5.File, model::Lorenz63Model)
     group_name = "parameters"
     if !haskey(file, group_name)
         group = create_group(file, group_name)
-        for field in fieldnames(typeof(params))
-            attributes(group)[string(field)] = getfield(params, field)
+        for field in fieldnames(typeof(model.parameters))
+            value = getfield(model.parameters, field)
+            attributes(group)[string(field)] = (
+                isa(value, AbstractVector) ? collect(value) : value
+            )
         end
     else
         @warn "Write failed, group $group_name already exists in  $(file.filename)!"
