@@ -53,10 +53,14 @@ for filter_type in (ParticleDA.BootstrapFilter, ParticleDA.OptimalFilter),
     states, statistics = run_particle_filter(
         LLW2d.init, input_file_path, observation_file_path, filter_type, stat_type
     )
+    @test !any(isnan.(states))
+    # Gather final states from all MPI ranks to master
+    flat_global_states = MPI.Gather(vec(states), master_rank, MPI.COMM_WORLD)
     if my_rank == master_rank
-        @test !any(isnan.(states))
+        global_states = reshape(flat_global_states, (size(states, 1), n_particle))
         reference_statistics = (
-            avg=mean(states; dims=2), var=var(states, corrected=true; dims=2)
+            avg=mean(global_states; dims=2),
+            var=var(global_states, corrected=true; dims=2)
         )
         for name in ParticleDA.statistic_names(stat_type)
             @test size(statistics[name]) == size(states[:, 1])
@@ -66,5 +70,7 @@ for filter_type in (ParticleDA.BootstrapFilter, ParticleDA.OptimalFilter),
                 .| isapprox.(reference_statistics[name], 0; atol=1e-15)
             )
         end
+    else
+        @test isnothing(statistics)
     end
 end

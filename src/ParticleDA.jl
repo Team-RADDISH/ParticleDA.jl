@@ -93,7 +93,7 @@ end
         filter_type,
         summary_stat_type;
         rng
-    ) -> Tuple{Matrix, NamedTuple}
+    ) -> Tuple{Matrix, Union{NamedTuple, Nothing}}
 
 Run particle filter. `init_model` is the function which initialise the model,
 `input_file_path` is the path to the YAML file with the input parameters.
@@ -104,7 +104,10 @@ specifying the summary statistics of the particles to compute at each time step.
 a tuple containing the state particles representing the estimate of the filtering
 distribution at the final observation time (with each particle a column of the returned
 matrix) and a named tuple containing the estimated summary statistics of this final 
-filtering distribution.
+filtering distribution. If running on multiple ranks using MPI, the returned states
+array will correspond only to the particles local to this rank and the summary
+statistics will be returned only on the master rank with all other ranks returning
+`nothing` for their second return value.
 """
 function run_particle_filter(
     init_model,
@@ -292,14 +295,6 @@ function run_particle_filter(
                 filter_data.unpacked_statistics, filter_data.statistics
             )
         end
-    end
-    
-    # Gather final states from all MPI ranks to master
-    @timeit_debug timer "Gather states" flat_global_states = MPI.Gather(
-        vec(states), filter_params.master_rank, MPI.COMM_WORLD
-    )
-    if my_rank == filter_params.master_rank
-        states = reshape(flat_global_states, (size(states, 1), filter_params.nprt))
     end
 
     if filter_params.enable_timers
