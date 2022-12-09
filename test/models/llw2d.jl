@@ -210,15 +210,14 @@ function add_random_field!(
     end
 end
 
-function ParticleDA.sample_initial_state!(
-    state::AbstractVector{T},
-    model::LLW2dModel, 
-    rng::Random.AbstractRNG,
-) where T
-    state_fields = flat_state_to_fields(state, model.parameters)
+function ParticleDA.get_initial_state_mean!(
+    state_mean::AbstractVector{T},
+    model::LLW2dModel,
+) where {T <: Real}
+    state_mean_fields = flat_state_to_fields(state_mean, model.parameters)
     if model.parameters.use_peak_initial_state_mean
         initheight!(
-            @view(state_fields[:, :, 1]), 
+            @view(state_mean_fields[:, :, 1]), 
             model.model_matrices, 
             model.parameters.dx, 
             model.parameters.dy,
@@ -226,13 +225,22 @@ function ParticleDA.sample_initial_state!(
             model.parameters.peak_height, 
             model.parameters.peak_position
         )
-        state_fields[:, :, 2:3] .= 0
+        state_mean_fields[:, :, 2:3] .= 0
     else
-        state_fields .= 0
+        state_mean_fields .= 0
     end
+    return state_mean
+end
+
+function ParticleDA.sample_initial_state!(
+    state::AbstractVector{T},
+    model::LLW2dModel, 
+    rng::Random.AbstractRNG,
+) where T
+    ParticleDA.get_initial_state_mean!(state, model)
     # Add samples of the initial random field to all particles
     add_random_field!(
-        state_fields, 
+        flat_state_to_fields(state, model.parameters), 
         view(model.field_buffer, :, :, 1, threadid()), 
         model.initial_state_grf, 
         rng,
@@ -372,35 +380,50 @@ function observation_index_to_cartesian_state_index(
     )
 end
 
-function ParticleDA.get_covariance_state_noise(
-    model::LLW2dModel, state_index_1::Integer, state_index_2::Integer
-)
-    return ParticleDA.get_covariance_state_noise(
-        model, 
-        flat_state_index_to_cartesian_index(model.parameters, state_index_1),
-        flat_state_index_to_cartesian_index(model.parameters, state_index_2),
-    )
-end
-
-function ParticleDA.get_covariance_state_noise(
-    model::LLW2dModel, state_index_1::CartesianIndex, state_index_2::CartesianIndex
-)
+function get_covariance_gaussian_random_fields(
+    gaussian_random_fields::Vector{RandomField{T, G}},
+    model_parameters::LLW2dModelParameters,
+    state_index_1::CartesianIndex,
+    state_index_2::CartesianIndex
+) where {T <: Real, G <: GaussianRandomField}
     x_index_1, y_index_1, var_index_1 = state_index_1.I
     x_index_2, y_index_2, var_index_2 = state_index_2.I
     if var_index_1 == var_index_2
         grid_point_1 = grid_index_to_grid_point(
-            model.parameters, (x_index_1, y_index_1)
+            model_parameters, (x_index_1, y_index_1)
         )
         grid_point_2 = grid_index_to_grid_point(
-            model.parameters, (x_index_2, y_index_2)
+            model_parameters, (x_index_2, y_index_2)
         )
-        covariance_structure = model.state_noise_grf[var_index_1].grf.cov.cov
+        covariance_structure = gaussian_random_fields[var_index_1].grf.cov.cov
         return covariance_structure.σ^2 * apply(
             covariance_structure, abs.(grid_point_1 .- grid_point_2)
         )
     else
         return 0.
     end
+end
+
+function ParticleDA.get_covariance_state_noise(
+    model::LLW2dModel, state_index_1::Integer, state_index_2::Integer
+)
+    return get_covariance_gaussian_random_fields(
+        model.state_noise_grf,
+        model.parameters,
+        flat_state_index_to_cartesian_index(model.parameters, state_index_1),
+        flat_state_index_to_cartesian_index(model.parameters, state_index_2),
+    )
+end
+
+function ParticleDA.get_covariance_initial_state(
+    model::LLW2dModel, state_index_1::Integer, state_index_2::Integer
+)
+    return get_covariance_gaussian_random_fields(
+        model.initial_state_grf,
+        model.parameters,
+        flat_state_index_to_cartesian_index(model.parameters, state_index_1),
+        flat_state_index_to_cartesian_index(model.parameters, state_index_2),
+    )
 end
 
 function ParticleDA.get_covariance_observation_observation_given_previous_state(

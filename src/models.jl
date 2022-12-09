@@ -188,6 +188,31 @@ the optimal proposal filter implementation in [`OptimalFilter`](@ref).
 """
 function get_covariance_observation_observation_given_previous_state end
 
+# Functions to extend in the model - required only for Kalman filter tests
+
+"""
+    ParticleDA.get_initial_state_mean!(state_mean, model)
+    
+Compute the mean of the multivariate normal distribution on the initial state and write
+to the first argument.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model`. Only required for filtering linear-Gaussian models with the
+Kalman filter for testing.
+"""
+function get_initial_state_mean! end
+
+"""
+    ParticleDA.get_covariance_initial_state(model, i, j) -> Real
+
+Return covariance `cov(X[i], X[j])` between components of the initial state vector `X`.
+
+This method is intended to be extended by the user with the above signature, specifying
+the type of `model`. Only required for filtering linear-Gaussian models with the
+Kalman filter for testing.
+"""
+function get_covariance_initial_state end
+
 # Additional methods for models. These may be optionally extended by the user for a 
 # specific `model` type, for example to provide more efficient implementations, 
 # however the versions below will work providing methods for the generic functions
@@ -210,6 +235,18 @@ function get_state_indices_correlated_to_observations(model)
     return 1:get_state_dimension(model)
 end
 
+function construct_dense_covariance_matrix(
+    model, get_covariance, dimension::Int, eltype::Type{<:Real}
+)
+    cov = Matrix{eltype}(undef, dimension, dimension)
+    for i in 1:dimension
+        for j in 1:i
+            cov[i, j] = get_covariance(model, i, j) 
+        end
+    end
+    return PDMat(Symmetric(cov, :L))
+end
+
 """
     ParticleDA.get_covariance_state_noise(model) -> AbstractPDMat
 
@@ -218,17 +255,13 @@ Defaults to computing dense matrix using index-based
 `ParticleDA.get_covariance_state_noise` method. Models may extend to exploit any 
 sparsity structure in covariance matrix.
 """
-function ParticleDA.get_covariance_state_noise(model)
-    state_dimension = get_state_dimension(model)
-    cov = Matrix{get_state_eltype(model)}(
-        undef, state_dimension, state_dimension
+function get_covariance_state_noise(model)
+    return construct_dense_covariance_matrix(
+        model,
+        get_covariance_state_noise,
+        get_state_dimension(model),
+        get_state_eltype(model)
     )
-    for i in 1:state_dimension
-        for j in 1:i
-            cov[i, j] = get_covariance_state_noise(model, i, j) 
-        end
-    end
-    return PDMat(Symmetric(cov, :L))
 end
 
 """
@@ -240,16 +273,12 @@ Defaults to computing dense matrix using index-based
 sparsity structure in covariance matrix.
 """
 function get_covariance_observation_noise(model)
-    observation_dimension = get_observation_dimension(model)
-    cov = Matrix{get_observation_eltype(model)}(
-        undef, observation_dimension, observation_dimension
+    return construct_dense_covariance_matrix(
+        model,
+        get_covariance_observation_noise,
+        get_observation_dimension(model),
+        get_observation_eltype(model)
     )
-    for i in 1:observation_dimension
-        for j in 1:i
-            cov[i, j] = get_covariance_observation_noise(model, i, j)
-        end
-    end
-    return PDMat(Symmetric(cov, :L))
 end
 
 """
@@ -297,18 +326,40 @@ extend to exploit any sparsity structure in covariance matrix.
 function get_covariance_observation_observation_given_previous_state(
     model
 )
-    observation_dimension = get_observation_dimension(model)
-    cov = Matrix{get_observation_eltype(model)}(
-        undef, observation_dimension, observation_dimension
+    return construct_dense_covariance_matrix(
+        model,
+        get_covariance_observation_observation_given_previous_state,
+        get_observation_dimension(model),
+        get_observation_eltype(model)
     )
-    for i in 1:observation_dimension
-        for j in 1:i
-            cov[i, j] = get_covariance_observation_observation_given_previous_state(
-                model, i, j
-            )
-        end
-    end
-    return PDMat(Symmetric(cov, :L))
+end
+
+"""
+    ParticleDA.get_initial_state_mean(model)
+    
+Compute the mean of the multivariate normal distribution on the initial state.
+"""
+function get_initial_state_mean(model)
+    state_mean = Vector{get_state_eltype(model)}(undef, get_state_dimension(model))
+    get_initial_state_mean!(state_mean, model)
+    return state_mean
+end
+
+"""
+    ParticleDA.get_covariance_initial_state(model) -> AbstractPDMat
+
+Return covariance matrix `cov(X, X)` of the initial state vector `X`. 
+Defaults to computing dense matrix using index-based 
+`ParticleDA.get_covariance_initial_state` method. Models may extend to exploit any 
+sparsity structure in covariance matrix.
+"""
+function get_covariance_initial_state(model)
+    return construct_dense_covariance_matrix(
+        model,
+        get_covariance_initial_state,
+        get_state_dimension(model),
+        get_state_eltype(model)
+    )
 end
 
 # Additional IO methods for models. These may be optionally extended by the user for a 
