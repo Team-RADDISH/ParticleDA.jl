@@ -405,6 +405,14 @@ function get_covariance_gaussian_random_fields(
 end
 
 function ParticleDA.get_covariance_state_noise(
+    model::LLW2dModel, state_index_1::CartesianIndex, state_index_2::CartesianIndex
+)
+    return get_covariance_gaussian_random_fields(
+        model.state_noise_grf, model.parameters, state_index_1, state_index_2,
+    )
+end
+
+function ParticleDA.get_covariance_state_noise(
     model::LLW2dModel, state_index_1::Integer, state_index_2::Integer
 )
     return get_covariance_gaussian_random_fields(
