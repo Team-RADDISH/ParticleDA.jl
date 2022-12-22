@@ -1,7 +1,44 @@
+"""
+    AbstractSummaryStat
+    
+Abstract type for summary statistics of particle ensemble. Concrete subtypes can be
+passed as the `filter_type` argument to [`run_particle_filter`](@ref) to specify which
+summary statistics to record and how they are computed.
+
+See also: [`AbstractSumReductionSummaryStat`](@ref), 
+[`AbstractCustomReductionSummaryStat`](@ref).
+"""
 abstract type AbstractSummaryStat{T} end
+
+"""
+    AbstractSumReductionSummaryStat <: AbstractSummaryStat
+
+Abstract type for summary statistics computed using standard MPI sum reductions. 
+Compatible with a wider range of CPU architectures but may require less numerically
+stable implementations.
+"""
 abstract type AbstractSumReductionSummaryStat{T} <: AbstractSummaryStat{T} end
+
+"""
+    AbstractCustomReductionSummaryStat <: AbstractSummaryStat
+
+Abstract type for summary statistics computed using custom MPI reductions. Allows
+greater flexibility in computing statistics which can support more numerically stable
+implementations, but at a cost of not being compatible with all CPU architectures. In
+particular, `MPI.jl` does not currently support custom operators 
+[on Power PC and ARM architecures](https://github.com/JuliaParallel/MPI.jl/issues/404).
+"""
 abstract type AbstractCustomReductionSummaryStat{T} <: AbstractSummaryStat{T} end
 
+"""
+    NaiveMeanSummaryStat <: AbstractSumReductionSummaryStat
+    
+Sum reduction based summary statistic type which computes the means of the particle
+ensemble for each state dimension. The mean is computed by directly accumulating the 
+sums of the particle values and number of particles on each rank. If custom reductions 
+are supported by the CPU architecture in use the more numerically stable 
+[`MeanSummaryStat`](@ref) should be used instead.
+"""
 struct NaiveMeanSummaryStat{T} <: AbstractSumReductionSummaryStat{T}
     sum::T
     n::Int
@@ -15,6 +52,20 @@ statistic_names(::Type{<:NaiveMeanSummaryStat}) = (:avg,)
 
 unpack(S::NaiveMeanSummaryStat) = (; avg=S.sum / S.n)
 
+
+"""
+    NaiveMeanAndVarSummaryStat <: AbstractSumReductionSummaryStat
+    
+Sum reduction based summary statistic type which computes the means and variances of the
+particle ensemble for each state dimension. The mean and variance are computed by
+directly accumulating the  sums of the particle values, the squared particle values and
+number of particles on each rank, with the variance computed as the scaled difference
+between the sum of the squares and square of the sums. This 'naive' implementation
+avoids custom MPI reductions but can be numerically unstable for large ensembles or
+state components with large values. If custom reductions are supported by the CPU
+architecture in use the more numerically stable [`MeanAndVarSummaryStat`](@ref) should
+be used instead.
+"""
 struct NaiveMeanAndVarSummaryStat{T} <: AbstractSumReductionSummaryStat{T}
     sum::T
     sum_sq::T
@@ -58,6 +109,14 @@ function unpack_statistics!(
     end     
 end
 
+
+"""
+    MeanSummaryStat <: AbstractCustomReductionSummaryStat
+    
+Custom reduction based summary statistic type which computes the means of the particle
+ensemble for each state dimension. On CPU architectures which do not support custom
+reductions [`NaiveMeanSummaryStat`](@ref) can be used instead.
+"""
 struct MeanSummaryStat{T} <: AbstractCustomReductionSummaryStat{T}
     avg::T
     n::Int
@@ -75,6 +134,13 @@ function combine_statistics(s1::MeanSummaryStat, s2::MeanSummaryStat)
     MeanSummaryStat(m, n)
 end
 
+"""
+    MeanAndVarSummaryStat <: AbstractCustomReductionSummaryStat
+    
+Custom reduction based summary statistic type which computes the means and variances o
+the particle ensemble for each state dimension. On CPU architectures which do not
+support custom reductions [`NaiveMeanAndVarSummaryStat`](@ref) can be used instead.
+"""
 struct MeanAndVarSummaryStat{T} <: AbstractCustomReductionSummaryStat{T}
     avg::T
     var::T

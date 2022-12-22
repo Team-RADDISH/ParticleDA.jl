@@ -11,7 +11,9 @@ using LinearAlgebra
 using PDMats
 using StructArrays
 
-export run_particle_filter, simulate_observations_from_model, BootstrapFilter, OptimalFilter
+export run_particle_filter, simulate_observations_from_model
+export BootstrapFilter, OptimalFilter
+export MeanSummaryStat, MeanAndVarSummaryStat, NaiveMeanSummaryStat, NaiveMeanAndVarSummaryStat
 
 include("params.jl")
 include("io.jl")
@@ -22,13 +24,15 @@ include("utils.jl")
 
 """
     simulate_observations_from_model(
-        init_model, input_file_path, output_file_path; rng
+        init_model, input_file_path, output_file_path; rng=Random.TaskLocalRNG()
     ) -> Matrix
     
 Simulate observations from the state space model initialised by the `init_model`
 function with parameters specified by the `model` key in the input YAML file at 
 `input_file_path` and save the simulated observation and state sequences to a HDF5 file
-at `output_file_path`.
+at `output_file_path`. `rng` is a random number generator to use to generate random
+variates while simulating from the model - a seeded random number generator may be
+specified to ensure reproducible results.
 
 The input YAML file at `input_file_path` should have a `simulate_observations` key
 with value a dictionary with keys `seed` and `n_time_step` corresponding to respectively
@@ -90,9 +94,9 @@ end
         init_model,
         input_file_path,
         observation_file_path,
-        filter_type,
-        summary_stat_type;
-        rng
+        filter_type=BootstrapFilter,
+        summary_stat_type=MeanAndVarSummaryStat;
+        rng=Random.TaskLocalRNG()
     ) -> Tuple{Matrix, Union{NamedTuple, Nothing}}
 
 Run particle filter. `init_model` is the function which initialise the model,
@@ -100,8 +104,14 @@ Run particle filter. `init_model` is the function which initialise the model,
 `observation_file_path` is the path to the HDF5 file containing the observation
 sequence to perform filtering for. `filter_type` is the particle filter type to use.  
 See [`ParticleFilter`](@ref) for the possible values. `summary_stat_type` is a type 
-specifying the summary statistics of the particles to compute at each time step. Returns
-a tuple containing the state particles representing the estimate of the filtering
+specifying the summary statistics of the particles to compute at each time step. See 
+[`AbstractSummaryStat`](@ref) for the possible values. `rng` is a random number
+generator to use to generate random variates while filtering - a seeded random 
+number generator may be specified to ensure reproducible results. If running with
+multiple threads a thread-safe generator such as `Random.TaskLocalRNG` (the default)
+must be used.
+
+Returns a tuple containing the state particles representing an estimate of the filtering
 distribution at the final observation time (with each particle a column of the returned
 matrix) and a named tuple containing the estimated summary statistics of this final 
 filtering distribution. If running on multiple ranks using MPI, the returned states

@@ -37,7 +37,7 @@ singleton type for the new filter.
 function sample_proposal_and_compute_log_weights! end
 
 """
-    BootstrapFilter
+    BootstrapFilter <: ParticleFilter
 
 Singleton type `BootstrapFilter`.  This can be used as argument of 
 [`run_particle_filter`](@ref) to select the bootstrap filter.
@@ -45,7 +45,7 @@ Singleton type `BootstrapFilter`.  This can be used as argument of
 struct BootstrapFilter <: ParticleFilter end
 
 """
-    OptimalFilter
+    OptimalFilter <: ParticleFilter
 
 Singleton type `OptimalFilter`.  This can be used as argument of 
 [`run_particle_filter`](@ref) to select the optimal proposal filter (for conditionally

@@ -55,6 +55,19 @@ BootstrapFilter
 OptimalFilter
 ```
 
+The `summary_stat_type` argument to [`run_particle_filter`](@ref) should be a concrete
+subtype of the `AbstractSummaryStat` abstract type.
+
+```@docs
+ParticleDA.AbstractSummaryStat
+ParticleDA.AbstractCustomReductionSummaryStat
+ParticleDA.AbstractSumReductionSummaryStat
+ParticleDA.MeanAndVarSummaryStat
+ParticleDA.MeanSummaryStat
+ParticleDA.NaiveMeanAndVarSummaryStat
+ParticleDA.NaiveMeanSummaryStat
+```
+
 The next section details how to write the interface between the model and the
 particle filter.
 
@@ -148,9 +161,11 @@ using .LLW2d
 # Simulate observations from the model to use 
 simulate_observations_from_model(LLW2d.init, input_file, observation_file)
 
-# Run the (optimal proposal) particle filter with simulated observations
+# Run the (optimal proposal) particle filter with simulated observations computing the
+# mean and variance of the particle ensemble. On non-Intel architectures you may need
+# to use NaiveMeanAndVarSummaryStat instead
 final_states, final_statistics = run_particle_filter(
-  LLW2d.init, input_file, observation_file, OptimalFilter
+  LLW2d.init, input_file, observation_file, OptimalFilter, MeanAndVarSummaryStat
 )
 ```
 
