@@ -1,13 +1,12 @@
 using Documenter, ParticleDA
 
-# Load the `Model` module from the tests to show the docstring of the parameters
+# Load the `LLW2d` module from the test/models to show the docstring of the parameters
 test_dir = joinpath(dirname(pathof(ParticleDA)), "..", "test")
-module_src = joinpath(test_dir, "model", "model.jl")
-include(module_src)
-using .Model
+include(joinpath(test_dir, "models", "llw2d.jl"))
+using .LLW2d
 
 makedocs(
-    modules = [ParticleDA, Model],
+    modules = [ParticleDA, LLW2d],
     sitename = "ParticleDA",
 )
 

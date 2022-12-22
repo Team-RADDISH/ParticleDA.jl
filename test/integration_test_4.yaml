@@ -1,20 +1,24 @@
 filter:
   nprt: 100
-  n_time_step: 5
 
 model:
   llw2d:
     time_step: 50.0
     n_integration_step: 50
 
-    nobs: 256
+    n_stations_x: 16
+    n_stations_y: 16
     nx: 50
     ny: 50
     x_length: 1.0e6
     y_length: 1.0e6
 
-    particle_initial_state: "true"
+    use_peak_initial_state_mean: true
     sigma: 1.0e-5
     sigma_initial_state: 1.0e-5
 
-    obs_noise_std: 1.0e-16
+    obs_noise_std: [1.0e-16]
+    
+simulate_observations:
+  seed: 123
+  n_time_step: 5

@@ -1,7 +1,0 @@
-# Coordinates for observation stations.
-# One station per row in the format "x, y"
-# Coordinates are in metres
-1.0e4, 1.0e4
-1.0e4, 2.0e4
-2.0e4, 1.0e4
-2.0e4, 2.0e4

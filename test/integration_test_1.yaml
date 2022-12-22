@@ -1,10 +1,13 @@
 filter:
-  nprt: 1
-  n_time_step: 1
+  nprt: 10
 
 model:
   llw2d:
     time_step: 251.0
     n_integration_step: 251
+    n_stations_x: 2
+    n_stations_y: 2
 
-    nobs: 4
+simulate_observations:
+  seed: 123
+  n_time_step: 1
