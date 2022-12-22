@@ -181,7 +181,7 @@ The coordinates of the observation stations can be set in two different ways.
 2. Provide parameters for an equispaced rectilinear grid of observation stations. The values of these parameters should then be set:
 
    * `n_stations_x` : Number of observation stations in the x direction
-   * `n_stations_y` : Number of observation stations in the x direction
+   * `n_stations_y` : Number of observation stations in the y direction
    * `station_distance_x` : Distance between stations in the x direction (m)
    * `station_distance_y` : Distance between stations in the y direction (m)
    * `station_boundary_x` : Distance between bottom left edge of box and first station in the x direction (m)
@@ -191,7 +191,7 @@ The coordinates of the observation stations can be set in two different ways.
 
    ```julia
    n_stations_x=2,
-   n_stations_x=4,
+   n_stations_y=2,
    station_distance_x=1.0e3,
    station_distance_y=1.0e3,
    station_boundary_x=10.0e3,
