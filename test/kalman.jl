@@ -3,6 +3,7 @@ module Kalman
 using LinearAlgebra
 using PDMats
 using ParticleDA
+using HDF5
 
 """Compute `matrix = state_transition_matrix * matrix`."""
 function lmult_by_state_transition_matrix!(
@@ -110,7 +111,31 @@ function pre_and_postmultiply_by_observation_matrix!(
 )
     mul!(state_observation_covar, state_covar, filter.observation_matrix')
     mul!(observation_covar, filter.observation_matrix, state_observation_covar)
-end    
+end  
+
+
+function write_mean_and_var(
+    output_filename::AbstractString,
+    model,
+    states_mean::AbstractArray{T},
+    state_covar::AbstractArray{T},
+    time_index::Int,
+) where T
+    println("Writing output at timestep = ", time_index)
+    unpacked_statistics=Dict("avg" => states_mean, "var" => state_covar)
+    h5open(output_filename, "cw") do file
+        time_index == 0 && write_model_metadata(file, model)
+        for name in keys(unpacked_statistics)
+            ParticleDA.write_state(
+                file, 
+                unpacked_statistics[name],
+                time_index,
+                "state_$name",
+                model
+            )
+        end
+    end
+end
 
 """
     run_kalman_filter(
@@ -122,10 +147,15 @@ Run Kalman filter on a linear-Gaussian state space model `model` with observatio
 used for the filtering updates.
 """
 function run_kalman_filter(
-	model, 
+    init_model,
+	input_file_path::String,
+    output_file_path::String,
     observation_sequence::Matrix , 
     filter_type::Type{<:AbstractKalmanFilter}=KalmanFilter
 )
+    input_dict = ParticleDA.read_input_file(input_file_path)
+    model_params_dict = get(input_dict, "model", Dict())
+    model = init_model(model_params_dict)
     state_mean = ParticleDA.get_initial_state_mean(model)
     state_covar = Matrix(ParticleDA.get_covariance_initial_state(model))
     state_mean_sequence = Matrix{ParticleDA.get_state_eltype(model)}(
@@ -178,6 +208,7 @@ function run_kalman_filter(
                 chol_observation_covar \ state_observation_covar'
             )
         )
+        write_mean_and_var(output_file_path, model, state_mean, diag(state_covar), time_index)
         state_mean_sequence[:, time_index] = state_mean
         state_var_sequence[:, time_index] = diag(state_covar)
     end
