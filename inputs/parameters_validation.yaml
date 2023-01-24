@@ -1,12 +1,12 @@
-# Parameter file for ParticleDA using TDAC model with Optimal Filter.
-# Developer: Dan Giles, Aug 2022
+# Parameter file for ParticleDA using TDAC model with Kalman Filter.
+# Developer: Dan Giles, Jan 2023
 model:
   llw2d:
     x_length: 200.0e3
     y_length: 200.0e3
     nx: 51
     ny: 51
-    station_filename: "/Users/dangiles/.julia/dev/ParticleDA/inputs/stationsW1.txt"
+    station_filename: "../inputs/stationsW1.txt"
     obs_noise_std: [0.1]
 
     nu: 2.5
@@ -30,5 +30,3 @@ model:
 simulate_observations:
   seed: 123
   n_time_step: 640
-
-
