@@ -1,7 +1,0 @@
-filter:
-  output_filename: unit_test.h5
-  verbose: false
-
-model:
-  llw2d:
-    station_filename: station_test.txt

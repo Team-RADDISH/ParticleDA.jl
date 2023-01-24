@@ -1,0 +1,14 @@
+filter:
+  nprt: 10
+
+model:
+  llw2d:
+    nx: 101
+    ny: 101
+    n_stations_x: 8
+    n_stations_y: 8
+    padding: 0
+    
+simulate_observations:
+  seed: 123
+  n_time_step: 20
