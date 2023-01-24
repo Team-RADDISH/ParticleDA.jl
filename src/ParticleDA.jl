@@ -338,4 +338,65 @@ function run_particle_filter(
     return states, filter_data.unpacked_statistics
 end
 
+"""
+    run_particle_filter(init, user_input_dict::Dict, filter_type::ParticleFilter)
+Run the particle filter.  `init` is the function which initialise the model,
+`user_input_dict` is the list of input parameters, as a `Dict`.  `filter_type`
+is the particle filter to use.  See [`ParticleFilter`](@ref) for the possible
+values.
+"""
+function run_particle_filter(init, user_input_dict::Dict, filter_type::ParticleFilter; rng::Random.AbstractRNG=Random.TaskLocalRNG())
+
+    filter_params = get_params(FilterParameters, get(user_input_dict, "filter", Dict()))
+    model_params_dict = get(user_input_dict, "model", Dict())
+
+    return run_particle_filter(init, filter_params, model_params_dict, filter_type; rng)
+
+end
+
+function run_particle_filter(
+    init_model,
+    user_input_dict::Dict,
+    observation_file_path::String,
+    filter_type::Type{<:ParticleFilter}=BootstrapFilter,
+    summary_stat_type::Type{<:AbstractSummaryStat}=MeanAndVarSummaryStat;
+    rng::Random.AbstractRNG=Random.TaskLocalRNG()
+)
+    MPI.Init()
+    # Do I/O on rank 0 only and then broadcast
+    my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
+    if my_rank == 0
+        observation_sequence = h5open(
+            read_observation_sequence, observation_file_path, "r"
+        )
+    else
+        observation_sequence = nothing
+    end
+    user_input_dict = MPI.bcast(user_input_dict, 0, MPI.COMM_WORLD)
+    observation_sequence = MPI.bcast(observation_sequence, 0, MPI.COMM_WORLD)
+    filter_params = get_params(FilterParameters, get(user_input_dict, "filter", Dict()))
+
+    if !isnothing(filter_params.seed)
+        # Use a linear congruential generator to generate different seeds for each rank
+        seed = UInt64(filter_params.seed)
+        multiplier, increment = 0x5851f42d4c957f2d, 0x14057b7ef767814f
+        for _ in 1:my_rank
+            # As seed is UInt64 operations will be modulo 2^64
+            seed = multiplier * seed + increment  
+        end
+        # Seed per-rank random number generator
+        Random.seed!(rng, seed)
+    end
+    model_params_dict = get(user_input_dict, "model", Dict())
+    return run_particle_filter(
+        init_model, 
+        filter_params, 
+        model_params_dict,
+        observation_sequence,
+        filter_type,
+        summary_stat_type; 
+        rng
+    )
+end
+
 end # module
