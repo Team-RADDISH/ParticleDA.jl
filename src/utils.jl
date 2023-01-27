@@ -85,7 +85,7 @@ function copy_states!(
     end
 
     # Wait for all comms to complete
-    MPI.Waitall(reqs, MPI.Status)
+    MPI.Waitall(reqs)
 
     particles .= buffer
 
