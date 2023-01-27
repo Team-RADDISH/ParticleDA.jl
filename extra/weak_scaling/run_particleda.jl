@@ -1,15 +1,34 @@
 using ParticleDA
 using TimerOutputs
 using MPI
+using ThreadPinning
 
 # Initialise MPI
 MPI.Init()
-mpi_size = MPI.Comm_size(MPI.COMM_WORLD)
+comm = MPI.COMM_WORLD
+mpi_size = MPI.Comm_size(comm)
+my_rank = MPI.Comm_rank(comm)
+
+cores_per_numa = 16
+threads_per_rank = Threads.nthreads()
+ranks_per_numa = div(cores_per_numa, threads_per_rank)
+
+# Pin threads so that threads of a MPI rank will be pinned to cores with
+# contiguous IDs. This will ensure that
+#  - When running 16 or less threads per rank, all threads will be pinned to the same
+#    NUMA region as their master (sharing a memory controller within Infinity fabric)
+#  - When running 8 or less threads per rank, all threads will be pinned to the same
+#    Core Complex Die
+#  - When running 4 or less threads per rank, all threads will be pinned to the same
+#    Core Complex (sharing a L3 cache)
+
+my_numa, my_id_in_numa = divrem(my_rank, ranks_per_numa) .+ (1, 0)
+pinthreads( numa( my_numa, 1:Threads.nthreads() ) .+ threads_per_rank .* my_id_in_numa )
 
 # Save some variables for later use
 test_dir = joinpath(dirname(pathof(ParticleDA)), "..", "test")
 llw2d_src = joinpath(test_dir, "models", "llw2d.jl")
-observation_file = "observations.h5"
+observation_file = "test_observations.h5"
 
 # Instantiate the test environment
 using Pkg
