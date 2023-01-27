@@ -6,7 +6,7 @@ using FillArrays
 using HDF5
 using Random
 using PDMats
-using DifferentialEquations
+using OrdinaryDiffEq
 using SciMLBase
 using ParticleDA
 
@@ -47,7 +47,7 @@ function init(parameters_dict::Dict; S::Type{<:Real}=Float64, T::Type{<:Real}=Fl
     parameters = get_params(Lorenz63ModelParameters{S, T}, parameters_dict)
     time_span = (0, parameters.time_step)
     integrators = [
-        DifferentialEquations.init(
+        OrdinaryDiffEq.init(
             ODEProblem(update_time_derivative!, u, time_span, parameters), 
             Tsit5();
             save_everystep=false
