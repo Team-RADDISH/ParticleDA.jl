@@ -28,7 +28,7 @@ pinthreads( numa( my_numa, 1:Threads.nthreads() ) .+ threads_per_rank .* my_id_i
 # Save some variables for later use
 test_dir = joinpath(dirname(pathof(ParticleDA)), "..", "test")
 llw2d_src = joinpath(test_dir, "models", "llw2d.jl")
-observation_file = "test_observations.h5"
+observation_file = "observations.h5"
 
 # Instantiate the test environment
 using Pkg
