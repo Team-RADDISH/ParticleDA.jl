@@ -820,7 +820,7 @@ end
 @testset "MPI test -- $(file)" for file in (
     "mpi_filtering.jl", "mpi_copy_states.jl", "mpi_summary_statistics.jl"
 )
-    julia = joinpath(Sys.BINDIR, Base.julia_exename())
+    julia = Base.julia_cmd()
     flags = ["--startup-file=no", "-q", "-t$(Base.Threads.nthreads())"]
     script = joinpath(@__DIR__, file)
     mpiexec() do mpiexec
