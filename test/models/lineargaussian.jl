@@ -8,26 +8,26 @@ using PDMats
 using ParticleDA
 
 Base.@kwdef struct LinearGaussianModelParameters{
-	S <: Real,
-	T <: Real,
-	TM <: AbstractMatrix{S},
+    S <: Real,
+    T <: Real,
+    TM <: AbstractMatrix{S},
     OM <: AbstractMatrix{T},
-	IV <: AbstractVector{S},
-	ICM <: AbstractMatrix{S},
-	SCM <: AbstractMatrix{S},
-	OCM <: AbstractMatrix{T}
+    IV <: AbstractVector{S},
+    ICM <: AbstractMatrix{S},
+    SCM <: AbstractMatrix{S},
+    OCM <: AbstractMatrix{T}
 }
     state_transition_matrix::TM
-	observation_matrix::OM
-	initial_state_mean::IV
+    observation_matrix::OM
+    initial_state_mean::IV
     initial_state_covar::ICM
     state_noise_covar::SCM
     observation_noise_covar::OCM
 end
 
 struct LinearGaussianModel{S <: Real, T <: Real}
-	state_dimension::Int
-	observation_dimension::Int
+    state_dimension::Int
+    observation_dimension::Int
     parameters::LinearGaussianModelParameters{S, T}
     initial_state_distribution::MvNormal{S}
     state_noise_distribution::MvNormal{S}
@@ -35,13 +35,13 @@ struct LinearGaussianModel{S <: Real, T <: Real}
 end
 
 function init(parameters_dict::Dict)
-	parameters = LinearGaussianModelParameters(; parameters_dict...)
+    parameters = LinearGaussianModelParameters(; parameters_dict...)
     (observation_dimension, state_dimension) = size(
-		parameters.observation_matrix
-	)
+        parameters.observation_matrix
+    )
     return LinearGaussianModel(
-		state_dimension,
-		observation_dimension,
+        state_dimension,
+        observation_dimension,
         parameters,
         (
             MvNormal(m, c)
