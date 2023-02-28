@@ -1,6 +1,5 @@
 [deps]
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
-DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 FillArrays = "1a297f60-69ca-5386-bcde-b61e274b549b"
 GaussianRandomFields = "e4b2fa32-6e09-5554-b718-106ed5adafe9"
@@ -18,9 +17,13 @@ YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
 [compat]
 Distributions = "0.22, 0.23, 0.24, 0.25"
+FillArrays = "0.13"
 GaussianRandomFields = "2.1.1"
 HDF5 = "0.14, 0.15, 0.16"
 MPI = "0.20.8"
+OrdinaryDiffEq = "6.40"
+SciMLBase = "1.81"
+PDMats = "0.11"
 StableRNGs = "1"
 YAML = "0.4"
 julia = "1.7"
