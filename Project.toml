@@ -1,7 +1,7 @@
 name = "ParticleDA"
 uuid = "61cd1fb4-f4c4-4bc8-80c6-ea5639a6ca2e"
 authors = ["Mosè Giordano and Tuomas Koskela and Dan Giles and Matt Graham"]
-version = "0.1.0"
+version = "1.0.0"
 
 [deps]
 HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
@@ -17,6 +17,8 @@ YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 [compat]
 HDF5 = "0.14, 0.15, 0.16"
 MPI = "0.20.8"
+PDMats = "0.11.17"
+StructArrays = "0.6.15"
 TimerOutputs = "0.5"
 YAML = "0.4"
 julia = "1.7"
