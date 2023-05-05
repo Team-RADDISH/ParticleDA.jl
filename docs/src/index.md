@@ -5,18 +5,19 @@ package to perform data assimilation with particle filters, distributed using MP
 
 ## Installation
 
-To install the package, open [Julia's REPL](https://docs.julialang.org/en/v1/stdlib/REPL/), 
-enter the package manager with `]`, then run the command
+To install the latest stable version of the package, open the [Julia
+REPL](https://docs.julialang.org/en/v1/stdlib/REPL/), enter the package manager
+with `]`, then run the command
 
 ```
-add https://github.com/Team-RADDISH/ParticleDA.jl.git
+add ParticleDA.jl
 ```
 
 If you plan to develop the package (make changes, submit pull requests, etc), in
 the package manager mode run this command
 
 ```
-dev https://github.com/Team-RADDISH/ParticleDA.jl.git
+dev ParticleDA
 ```
 
 This will automatically clone the repository to your local directory

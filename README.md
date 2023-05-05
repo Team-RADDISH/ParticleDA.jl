@@ -8,25 +8,21 @@
 `ParticleDA.jl` is a Julia package to run data assimilation with particle filter
 distributed using MPI.
 
-## Disclaimer
-
-This repository is a work in progress and will be updated frequently. Use at your own risk!
-
 ## Installation
 
-To install the package, open the [Julia
+To install the latest stable version of the package, open the [Julia
 REPL](https://docs.julialang.org/en/v1/stdlib/REPL/), enter the package manager
 with `]`, then run the command
 
 ```
-add https://github.com/Team-RADDISH/ParticleDA.jl.git
+add ParticleDA
 ```
 
 If you plan to develop the package (make changes, submit pull requests, etc), in
 the package manager mode run this command
 
 ```
-dev https://github.com/Team-RADDISH/ParticleDA.jl.git
+dev ParticleDA
 ```
 
 This will automatically clone the repository to your local directory
