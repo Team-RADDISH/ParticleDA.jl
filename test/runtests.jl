@@ -598,7 +598,7 @@ end
 ) for filter_type in (BootstrapFilter, OptimalFilter)
     seed = 1234
     n_time_step = 100
-    n_particles = [10, 100, 1000]
+    n_particles = [30, 100, 300, 1000]
     # Constant factora used in Monte Carlo estimate convergence tests. Set based on some
     # trial and error to keep tests relatively sensitive while avoiding too high
     # probability of false failures
