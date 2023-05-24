@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.18
+# v0.19.22
 
 using Markdown
 using InteractiveUtils
@@ -195,35 +195,6 @@ function plot_filter_estimate_rmse_vs_n_particles(
     )
 end
 
-# ╔═╡ 159ed63c-5dac-4f9b-a0cc-a5c13b6978e0
-function diagonal_linear_gaussian_model_parameters(
-    state_dimension=3,
-    state_transition_coefficient=0.8,
-    observation_coefficient=1.0,
-    initial_state_std=1.0,
-    state_noise_std=0.6,
-    observation_noise_std=0.5,
-)
-    return Dict(
-        :state_transition_matrix => ScalMat(
-            state_dimension, state_transition_coefficient
-        ),
-        :observation_matrix => ScalMat(
-            state_dimension, observation_coefficient
-        ),
-        :initial_state_mean => Zeros(state_dimension),
-        :initial_state_covar => ScalMat(
-            state_dimension, initial_state_std^2
-        ),
-        :state_noise_covar => ScalMat(
-            state_dimension, state_noise_std^2
-        ),
-        :observation_noise_covar => ScalMat(
-            state_dimension, observation_noise_std^2
-        ),
-    )
-end
-
 # ╔═╡ 89dae12b-0010-4ea1-ae69-490137196662
 let
     n_time_step = 200
@@ -235,7 +206,7 @@ let
         n_particle,
         filter_type,
         LinearGaussian.init,
-        diagonal_linear_gaussian_model_parameters(),
+        LinearGaussian.diagonal_linear_gaussian_model_parameters(),
         seed
     )
 end
@@ -249,57 +220,10 @@ let
         n_time_step,
         n_particles,
         LinearGaussian.init,
-        diagonal_linear_gaussian_model_parameters(),
+        LinearGaussian.diagonal_linear_gaussian_model_parameters(),
         seed
     )
-    # savefig(figure, "diagonal_linear_gaussian_model_estimate_rmse_vs_n_particles.pdf")
     figure
-end
-
-# ╔═╡ db091a48-589f-4393-8951-aadc351588ff
-function stochastically_driven_dsho_model_parameters(
-    δ=0.2,
-    ω=1.,
-    Q=2.,
-    σ=0.5,
-)    
-    β = sqrt(Q^2 - 1 / 4)
-    return Dict(
-        :state_transition_matrix => exp(-ω * δ / 2Q) * [
-            [
-                cos(ω * β * δ / Q) + sin(ω * β * δ / Q) / 2β,
-                Q * sin(ω * β * δ / Q) / (ω * β)
-            ]';
-            [
-                -Q * ω * sin(ω * δ * β / Q) / β,
-                cos(ω * δ * β / Q) - sin(ω * δ * β / Q) / 2β
-            ]'
-        ],
-        :observation_matrix => ScalMat(2, 1.),
-        :initial_state_mean => Zeros(2),
-        :initial_state_covar => ScalMat(2, 1.),
-        :state_noise_covar => PDMat(
-            Q * exp(-ω * δ / Q) * [
-                [
-                    (
-                        (cos(2ω * δ * β / Q) - 1) 
-                        - 2β * sin(2ω * δ * β / Q) 
-                        + 4β^2 * (exp(ω * δ / Q) - 1)
-                    ) / (8ω^3 * β^2),
-                    Q * sin(ω * δ * β / Q)^2 / (2ω^2 * β^2)
-                ]';
-                [
-                    Q * sin(ω * δ * β / Q)^2 / (2ω^2 * β^2),
-                    (
-                        (cos(2ω * δ * β / Q) - 1) 
-                        + 2β * sin(2ω * δ * β / Q) 
-                        + 4β^2 * (exp(ω * δ / Q) - 1)
-                    ) / (8ω * β^2),                    
-                ]'
-            ]
-        ),
-        :observation_noise_covar => ScalMat(2, σ^2)    
-    )
 end
 
 # ╔═╡ 64a289be-75ce-42e2-9e43-8e0286f70a35
@@ -313,7 +237,7 @@ let
         n_particle,
         filter_type,
         LinearGaussian.init,
-        stochastically_driven_dsho_model_parameters(),
+        LinearGaussian.stochastically_driven_dsho_model_parameters(),
         seed
     )
 end
@@ -328,10 +252,9 @@ let
         n_time_step,
         n_particles,
         LinearGaussian.init,
-        stochastically_driven_dsho_model_parameters(),
+        LinearGaussian.stochastically_driven_dsho_model_parameters(),
         seed
     )
-    # savefig(figure, "dsho_linear_gaussian_model_estimate_rmse_vs_n_particles.pdf")
     figure
 end
 
@@ -341,9 +264,7 @@ end
 # ╠═4d2656ca-eacb-4d2b-91cb-bc82fdb49520
 # ╠═a64762bb-3a9f-4b1c-83db-f1a366f282eb
 # ╠═2ad564f3-48a2-4c2a-8d7d-384a84f7d6d2
-# ╠═159ed63c-5dac-4f9b-a0cc-a5c13b6978e0
 # ╠═89dae12b-0010-4ea1-ae69-490137196662
 # ╠═3e0abdfc-8668-431c-8ad3-61802e21d34e
-# ╠═db091a48-589f-4393-8951-aadc351588ff
 # ╠═64a289be-75ce-42e2-9e43-8e0286f70a35
 # ╠═b396f776-885b-437a-94c3-693f318d7ed2
