@@ -226,10 +226,12 @@ function run_unit_tests_for_generic_model_interface(model, seed)
 end
 
 @testset (
-    "Generic model interface unit tests - $model_module"   
-) for model_module in (LLW2d, Lorenz63)
+    "Generic model interface unit tests - $(parentmodule(typeof(model)))"   
+) for model in (
+    LLW2d.init(Dict()),
+    Lorenz63.init(Dict()),
+)
     seed = 1234
-    model = model_module.init(Dict())
     run_unit_tests_for_generic_model_interface(model, seed)
 end
 
@@ -508,10 +510,13 @@ function run_tests_for_optimal_proposal_model_interface(
 end
 
 @testset (
-    "Optimal proposal model interface unit tests - $(model_module)"
-) for model_module in (LLW2d, Lorenz63)
+    "Optimal proposal model interface unit tests - $(parentmodule(typeof(model)))"
+) for model in (
+    # Use sigma != 1. to test if covariance is being scaled by sigma correctly  
+    LLW2d.init(Dict("llw2d" => Dict("sigma" => [0.5, 1.5, 1.5]))), 
+    Lorenz63.init(Dict()),
+)
     seed = 1234
-    model = model_module.init(Dict())
     # Number of samples to use in convergence tests of Monte Carlo estimates
     estimate_n_samples = [10, 100, 1000]
     # Constant factor used in Monte Carlo estimate convergence tests. Set based on some
