@@ -1,0 +1,349 @@
+# Benchmark result
+
+* Pull request commit: [`aabb7c564a29b4f7199532d086f0b07c37d2af85`](https://github.com/Team-RADDISH/ParticleDA.jl/commit/aabb7c564a29b4f7199532d086f0b07c37d2af85)
+* Pull request: <https://github.com/Team-RADDISH/ParticleDA.jl/pull/244> (Update `GaussianRandomFields` version and add additional tests for linear Gaussian models)
+
+# Judge result
+# Benchmark Report for */home/runner/work/ParticleDA.jl/ParticleDA.jl*
+
+## Job Properties
+* Time of benchmarks:
+    - Target: 24 May 2023 - 17:29
+    - Baseline: 24 May 2023 - 17:40
+* Package commits:
+    - Target: 003056
+    - Baseline: 87c032
+* Julia commits:
+    - Target: 17cfb8
+    - Baseline: 17cfb8
+* Julia command flags:
+    - Target: None
+    - Baseline: None
+* Environment variables:
+    - Target: `JULIA_NUM_THREADS => 2`
+    - Baseline: `JULIA_NUM_THREADS => 2`
+
+## Results
+A ratio greater than `1.0` denotes a possible regression (marked with :x:), while a ratio less
+than `1.0` denotes a possible improvement (marked with :white_check_mark:). Only significant results - results
+that indicate possible regressions or improvements - are shown below (thus, an empty table means that all
+benchmark results remained invariant between builds).
+
+| ID                                                                                                        | time ratio                   | memory ratio                 |
+|-----------------------------------------------------------------------------------------------------------|------------------------------|------------------------------|
+| `["Filtering (BootstrapFilter, MeanSummaryStat)", "init_filter"]`                                         |                1.16 (5%) :x: |                   1.00 (1%)  |
+| `["Filtering (BootstrapFilter, NaiveMeanSummaryStat)", "run_particle_filter"]`                            | 0.95 (5%) :white_check_mark: |                   1.00 (1%)  |
+| `["Filtering (OptimalFilter, MeanAndVarSummaryStat)", "run_particle_filter"]`                             | 0.95 (5%) :white_check_mark: | 0.97 (1%) :white_check_mark: |
+| `["Filtering (OptimalFilter, MeanAndVarSummaryStat)", "sample_proposal_and_compute_log_weights!"]`        | 0.22 (5%) :white_check_mark: | 0.01 (1%) :white_check_mark: |
+| `["Filtering (OptimalFilter, MeanSummaryStat)", "sample_proposal_and_compute_log_weights!"]`              | 0.61 (5%) :white_check_mark: | 0.18 (1%) :white_check_mark: |
+| `["Filtering (OptimalFilter, NaiveMeanAndVarSummaryStat)", "init_filter"]`                                |                   0.98 (5%)  | 0.98 (1%) :white_check_mark: |
+| `["Filtering (OptimalFilter, NaiveMeanAndVarSummaryStat)", "run_particle_filter"]`                        |                   0.96 (5%)  | 0.98 (1%) :white_check_mark: |
+| `["Filtering (OptimalFilter, NaiveMeanAndVarSummaryStat)", "sample_proposal_and_compute_log_weights!"]`   | 0.58 (5%) :white_check_mark: | 0.18 (1%) :white_check_mark: |
+| `["Filtering (OptimalFilter, NaiveMeanSummaryStat)", "init_filter"]`                                      |                   0.97 (5%)  | 0.97 (1%) :white_check_mark: |
+| `["Filtering (OptimalFilter, NaiveMeanSummaryStat)", "run_particle_filter"]`                              |                1.07 (5%) :x: | 0.97 (1%) :white_check_mark: |
+| `["Filtering (OptimalFilter, NaiveMeanSummaryStat)", "sample_proposal_and_compute_log_weights!"]`         | 0.64 (5%) :white_check_mark: | 0.18 (1%) :white_check_mark: |
+| `["Model interface", "get_observation_mean_given_state!"]`                                                |                1.06 (5%) :x: |                   1.00 (1%)  |
+| `["Model interface", "sample_observation_given_state!"]`                                                  |                1.06 (5%) :x: |                   1.00 (1%)  |
+
+## Benchmark Group List
+Here's a list of all the benchmark groups executed by this job:
+
+- `["Filtering (BootstrapFilter, MeanAndVarSummaryStat)"]`
+- `["Filtering (BootstrapFilter, MeanSummaryStat)"]`
+- `["Filtering (BootstrapFilter, NaiveMeanAndVarSummaryStat)"]`
+- `["Filtering (BootstrapFilter, NaiveMeanSummaryStat)"]`
+- `["Filtering (OptimalFilter, MeanAndVarSummaryStat)"]`
+- `["Filtering (OptimalFilter, MeanSummaryStat)"]`
+- `["Filtering (OptimalFilter, NaiveMeanAndVarSummaryStat)"]`
+- `["Filtering (OptimalFilter, NaiveMeanSummaryStat)"]`
+- `["Model interface"]`
+
+## Julia versioninfo
+
+### Target
+```
+Julia Version 1.8.5
+Commit 17cfb8e65ea (2023-01-08 06:45 UTC)
+Platform Info:
+  OS: Linux (x86_64-linux-gnu)
+      Ubuntu 22.04.2 LTS
+  uname: Linux 5.15.0-1037-azure #44-Ubuntu SMP Thu Apr 20 13:19:31 UTC 2023 x86_64 x86_64
+  CPU: Intel(R) Xeon(R) Platinum 8272CL CPU @ 2.60GHz: 
+              speed         user         nice          sys         idle          irq
+       #1  2593 MHz      13407 s          0 s        396 s       6597 s          0 s
+       #2  2593 MHz      11390 s          0 s        368 s       8618 s          0 s
+  Memory: 6.781208038330078 GB (4227.19921875 MB free)
+  Uptime: 2047.15 sec
+  Load Avg:  1.68  1.38  1.2
+  WORD_SIZE: 64
+  LIBM: libopenlibm
+  LLVM: libLLVM-13.0.1 (ORCJIT, skylake-avx512)
+  Threads: 2 on 2 virtual cores
+```
+
+### Baseline
+```
+Julia Version 1.8.5
+Commit 17cfb8e65ea (2023-01-08 06:45 UTC)
+Platform Info:
+  OS: Linux (x86_64-linux-gnu)
+      Ubuntu 22.04.2 LTS
+  uname: Linux 5.15.0-1037-azure #44-Ubuntu SMP Thu Apr 20 13:19:31 UTC 2023 x86_64 x86_64
+  CPU: Intel(R) Xeon(R) Platinum 8272CL CPU @ 2.60GHz: 
+              speed         user         nice          sys         idle          irq
+       #1  2593 MHz      16958 s          0 s        459 s       9737 s          0 s
+       #2  2593 MHz      16203 s          0 s        476 s      10458 s          0 s
+  Memory: 6.781208038330078 GB (4362.96875 MB free)
+  Uptime: 2724.04 sec
+  Load Avg:  1.7  1.35  1.23
+  WORD_SIZE: 64
+  LIBM: libopenlibm
+  LLVM: libLLVM-13.0.1 (ORCJIT, skylake-avx512)
+  Threads: 2 on 2 virtual cores
+```
+
+---
+# Target result
+# Benchmark Report for */home/runner/work/ParticleDA.jl/ParticleDA.jl*
+
+## Job Properties
+* Time of benchmark: 24 May 2023 - 17:29
+* Package commit: 003056
+* Julia commit: 17cfb8
+* Julia command flags: None
+* Environment variables: `JULIA_NUM_THREADS => 2`
+
+## Results
+Below is a table of this job's results, obtained by running the benchmarks.
+The values listed in the `ID` column have the structure `[parent_group, child_group, ..., key]`, and can be used to
+index into the BaseBenchmarks suite to retrieve the corresponding benchmarks.
+The percentages accompanying time and memory values in the below table are noise tolerances. The "true"
+time/memory value for a given benchmark is expected to fall within this percentage of the reported value.
+An empty cell means that the value was zero.
+
+| ID                                                                                                        | time            | GC time    | memory          | allocations |
+|-----------------------------------------------------------------------------------------------------------|----------------:|-----------:|----------------:|------------:|
+| `["Filtering (BootstrapFilter, MeanAndVarSummaryStat)", "init_filter"]`                                   |   6.500 μs (5%) |            |  33.88 MiB (1%) |          52 |
+| `["Filtering (BootstrapFilter, MeanAndVarSummaryStat)", "run_particle_filter"]`                           |    9.722 s (5%) |  86.380 ms | 588.11 MiB (1%) |    16557034 |
+| `["Filtering (BootstrapFilter, MeanAndVarSummaryStat)", "sample_proposal_and_compute_log_weights!"]`      | 427.261 ms (5%) |            |   2.01 MiB (1%) |       20653 |
+| `["Filtering (BootstrapFilter, MeanSummaryStat)", "init_filter"]`                                         |   5.200 μs (5%) |            |  32.05 MiB (1%) |          41 |
+| `["Filtering (BootstrapFilter, MeanSummaryStat)", "run_particle_filter"]`                                 |    9.379 s (5%) |   5.055 ms | 201.61 MiB (1%) |     1433140 |
+| `["Filtering (BootstrapFilter, MeanSummaryStat)", "sample_proposal_and_compute_log_weights!"]`            | 431.126 ms (5%) |            |   2.01 MiB (1%) |       20653 |
+| `["Filtering (BootstrapFilter, NaiveMeanAndVarSummaryStat)", "init_filter"]`                              |   9.800 μs (5%) |            |  33.88 MiB (1%) |          64 |
+| `["Filtering (BootstrapFilter, NaiveMeanAndVarSummaryStat)", "run_particle_filter"]`                      |    9.751 s (5%) |  38.870 ms | 472.76 MiB (1%) |    11517183 |
+| `["Filtering (BootstrapFilter, NaiveMeanAndVarSummaryStat)", "sample_proposal_and_compute_log_weights!"]` | 423.004 ms (5%) |            |   2.01 MiB (1%) |       20653 |
+| `["Filtering (BootstrapFilter, NaiveMeanSummaryStat)", "init_filter"]`                                    |   8.100 μs (5%) |            |  32.05 MiB (1%) |          49 |
+| `["Filtering (BootstrapFilter, NaiveMeanSummaryStat)", "run_particle_filter"]`                            |    9.363 s (5%) |   5.176 ms | 201.62 MiB (1%) |     1433247 |
+| `["Filtering (BootstrapFilter, NaiveMeanSummaryStat)", "sample_proposal_and_compute_log_weights!"]`       | 442.416 ms (5%) |            |   2.01 MiB (1%) |       20653 |
+| `["Filtering (OptimalFilter, MeanAndVarSummaryStat)", "init_filter"]`                                     |   27.724 s (5%) | 416.190 ms |   3.12 GiB (1%) |    38481037 |
+| `["Filtering (OptimalFilter, MeanAndVarSummaryStat)", "run_particle_filter"]`                             |   38.787 s (5%) | 618.734 ms |   3.67 GiB (1%) |    55041010 |
+| `["Filtering (OptimalFilter, MeanAndVarSummaryStat)", "sample_proposal_and_compute_log_weights!"]`        | 448.120 ms (5%) |            |   2.37 MiB (1%) |       20800 |
+| `["Filtering (OptimalFilter, MeanSummaryStat)", "init_filter"]`                                           |   27.729 s (5%) | 416.672 ms |   3.12 GiB (1%) |    38481026 |
+| `["Filtering (OptimalFilter, MeanSummaryStat)", "run_particle_filter"]`                                   |   37.847 s (5%) | 549.827 ms |   3.29 GiB (1%) |    39917120 |
+| `["Filtering (OptimalFilter, MeanSummaryStat)", "sample_proposal_and_compute_log_weights!"]`              | 462.478 ms (5%) |            |   2.37 MiB (1%) |       20800 |
+| `["Filtering (OptimalFilter, NaiveMeanAndVarSummaryStat)", "init_filter"]`                                |   27.725 s (5%) | 416.613 ms |   3.12 GiB (1%) |    38481049 |
+| `["Filtering (OptimalFilter, NaiveMeanAndVarSummaryStat)", "run_particle_filter"]`                        |   38.312 s (5%) | 617.082 ms |   3.55 GiB (1%) |    50001166 |
+| `["Filtering (OptimalFilter, NaiveMeanAndVarSummaryStat)", "sample_proposal_and_compute_log_weights!"]`   | 444.080 ms (5%) |            |   2.37 MiB (1%) |       20800 |
+| `["Filtering (OptimalFilter, NaiveMeanSummaryStat)", "init_filter"]`                                      |   27.711 s (5%) | 414.515 ms |   3.12 GiB (1%) |    38481034 |
+| `["Filtering (OptimalFilter, NaiveMeanSummaryStat)", "run_particle_filter"]`                              |   42.452 s (5%) | 552.316 ms |   3.29 GiB (1%) |    39917224 |
+| `["Filtering (OptimalFilter, NaiveMeanSummaryStat)", "sample_proposal_and_compute_log_weights!"]`         | 471.701 ms (5%) |            |   2.37 MiB (1%) |       20801 |
+| `["Model interface", "get_covariance_observation_noise"]`                                                 |   2.278 μs (5%) |            |  576 bytes (1%) |           1 |
+| `["Model interface", "get_covariance_observation_observation_given_previous_state"]`                      |  41.696 ms (5%) |            |   3.14 MiB (1%) |       41542 |
+| `["Model interface", "get_covariance_state_observation_given_previous_state"]`                            |   27.339 s (5%) | 356.763 ms |   3.07 GiB (1%) |    38439432 |
+| `["Model interface", "get_log_density_observation_given_state!"]`                                         |   2.978 μs (5%) |            |   1.22 KiB (1%) |           4 |
+| `["Model interface", "get_observation_mean_given_state!"]`                                                | 262.944 ns (5%) |            |   96 bytes (1%) |           2 |
+| `["Model interface", "sample_initial_state!"]`                                                            |   6.452 ms (5%) |            |   4.05 KiB (1%) |          46 |
+| `["Model interface", "sample_observation_given_state!"]`                                                  |   4.013 μs (5%) |            |   1.78 KiB (1%) |           5 |
+| `["Model interface", "simulate_observations_from_model"]`                                                 | 568.094 ms (5%) |            |   1.73 MiB (1%) |       13069 |
+| `["Model interface", "update_state_deterministic!"]`                                                      |  19.692 ms (5%) |            |  35.25 KiB (1%) |         602 |
+| `["Model interface", "update_state_stochastic!"]`                                                         |   7.178 ms (5%) |            |   3.95 KiB (1%) |          44 |
+
+## Benchmark Group List
+Here's a list of all the benchmark groups executed by this job:
+
+- `["Filtering (BootstrapFilter, MeanAndVarSummaryStat)"]`
+- `["Filtering (BootstrapFilter, MeanSummaryStat)"]`
+- `["Filtering (BootstrapFilter, NaiveMeanAndVarSummaryStat)"]`
+- `["Filtering (BootstrapFilter, NaiveMeanSummaryStat)"]`
+- `["Filtering (OptimalFilter, MeanAndVarSummaryStat)"]`
+- `["Filtering (OptimalFilter, MeanSummaryStat)"]`
+- `["Filtering (OptimalFilter, NaiveMeanAndVarSummaryStat)"]`
+- `["Filtering (OptimalFilter, NaiveMeanSummaryStat)"]`
+- `["Model interface"]`
+
+## Julia versioninfo
+```
+Julia Version 1.8.5
+Commit 17cfb8e65ea (2023-01-08 06:45 UTC)
+Platform Info:
+  OS: Linux (x86_64-linux-gnu)
+      Ubuntu 22.04.2 LTS
+  uname: Linux 5.15.0-1037-azure #44-Ubuntu SMP Thu Apr 20 13:19:31 UTC 2023 x86_64 x86_64
+  CPU: Intel(R) Xeon(R) Platinum 8272CL CPU @ 2.60GHz: 
+              speed         user         nice          sys         idle          irq
+       #1  2593 MHz      13407 s          0 s        396 s       6597 s          0 s
+       #2  2593 MHz      11390 s          0 s        368 s       8618 s          0 s
+  Memory: 6.781208038330078 GB (4227.19921875 MB free)
+  Uptime: 2047.15 sec
+  Load Avg:  1.68  1.38  1.2
+  WORD_SIZE: 64
+  LIBM: libopenlibm
+  LLVM: libLLVM-13.0.1 (ORCJIT, skylake-avx512)
+  Threads: 2 on 2 virtual cores
+```
+
+---
+# Baseline result
+# Benchmark Report for */home/runner/work/ParticleDA.jl/ParticleDA.jl*
+
+## Job Properties
+* Time of benchmark: 24 May 2023 - 17:40
+* Package commit: 87c032
+* Julia commit: 17cfb8
+* Julia command flags: None
+* Environment variables: `JULIA_NUM_THREADS => 2`
+
+## Results
+Below is a table of this job's results, obtained by running the benchmarks.
+The values listed in the `ID` column have the structure `[parent_group, child_group, ..., key]`, and can be used to
+index into the BaseBenchmarks suite to retrieve the corresponding benchmarks.
+The percentages accompanying time and memory values in the below table are noise tolerances. The "true"
+time/memory value for a given benchmark is expected to fall within this percentage of the reported value.
+An empty cell means that the value was zero.
+
+| ID                                                                                                        | time            | GC time    | memory          | allocations |
+|-----------------------------------------------------------------------------------------------------------|----------------:|-----------:|----------------:|------------:|
+| `["Filtering (BootstrapFilter, MeanAndVarSummaryStat)", "init_filter"]`                                   |   6.800 μs (5%) |            |  33.88 MiB (1%) |          52 |
+| `["Filtering (BootstrapFilter, MeanAndVarSummaryStat)", "run_particle_filter"]`                           |    9.714 s (5%) | 102.263 ms | 588.11 MiB (1%) |    16557057 |
+| `["Filtering (BootstrapFilter, MeanAndVarSummaryStat)", "sample_proposal_and_compute_log_weights!"]`      | 446.473 ms (5%) |            |   2.01 MiB (1%) |       20654 |
+| `["Filtering (BootstrapFilter, MeanSummaryStat)", "init_filter"]`                                         |   4.500 μs (5%) |            |  32.05 MiB (1%) |          41 |
+| `["Filtering (BootstrapFilter, MeanSummaryStat)", "run_particle_filter"]`                                 |    9.304 s (5%) |  19.434 ms | 201.52 MiB (1%) |     1431965 |
+| `["Filtering (BootstrapFilter, MeanSummaryStat)", "sample_proposal_and_compute_log_weights!"]`            | 436.804 ms (5%) |            |   2.01 MiB (1%) |       20654 |
+| `["Filtering (BootstrapFilter, NaiveMeanAndVarSummaryStat)", "init_filter"]`                              |  10.200 μs (5%) |            |  33.88 MiB (1%) |          64 |
+| `["Filtering (BootstrapFilter, NaiveMeanAndVarSummaryStat)", "run_particle_filter"]`                      |    9.726 s (5%) |  99.947 ms | 472.76 MiB (1%) |    11517219 |
+| `["Filtering (BootstrapFilter, NaiveMeanAndVarSummaryStat)", "sample_proposal_and_compute_log_weights!"]` | 427.202 ms (5%) |            |   2.01 MiB (1%) |       20654 |
+| `["Filtering (BootstrapFilter, NaiveMeanSummaryStat)", "init_filter"]`                                    |   7.800 μs (5%) |            |  32.05 MiB (1%) |          49 |
+| `["Filtering (BootstrapFilter, NaiveMeanSummaryStat)", "run_particle_filter"]`                            |    9.870 s (5%) |  14.695 ms | 201.62 MiB (1%) |     1433274 |
+| `["Filtering (BootstrapFilter, NaiveMeanSummaryStat)", "sample_proposal_and_compute_log_weights!"]`       | 434.911 ms (5%) |            |   2.01 MiB (1%) |       20654 |
+| `["Filtering (OptimalFilter, MeanAndVarSummaryStat)", "init_filter"]`                                     |   28.150 s (5%) | 445.426 ms |   3.13 GiB (1%) |    38626040 |
+| `["Filtering (OptimalFilter, MeanAndVarSummaryStat)", "run_particle_filter"]`                             |   40.955 s (5%) | 812.245 ms |   3.78 GiB (1%) |    57045401 |
+| `["Filtering (OptimalFilter, MeanAndVarSummaryStat)", "sample_proposal_and_compute_log_weights!"]`        |    2.075 s (5%) |  63.892 ms | 213.30 MiB (1%) |     4416186 |
+| `["Filtering (OptimalFilter, MeanSummaryStat)", "init_filter"]`                                           |   27.986 s (5%) | 440.481 ms |   3.12 GiB (1%) |    38492955 |
+| `["Filtering (OptimalFilter, MeanSummaryStat)", "run_particle_filter"]`                                   |   39.139 s (5%) | 574.230 ms |   3.32 GiB (1%) |    40602785 |
+| `["Filtering (OptimalFilter, MeanSummaryStat)", "sample_proposal_and_compute_log_weights!"]`              | 752.750 ms (5%) |            |  12.89 MiB (1%) |      257610 |
+| `["Filtering (OptimalFilter, NaiveMeanAndVarSummaryStat)", "init_filter"]`                                |   28.281 s (5%) | 457.424 ms |   3.17 GiB (1%) |    39547312 |
+| `["Filtering (OptimalFilter, NaiveMeanAndVarSummaryStat)", "run_particle_filter"]`                        |   40.031 s (5%) | 700.976 ms |   3.61 GiB (1%) |    51180105 |
+| `["Filtering (OptimalFilter, NaiveMeanAndVarSummaryStat)", "sample_proposal_and_compute_log_weights!"]`   | 761.910 ms (5%) |  23.117 ms |  12.89 MiB (1%) |      257581 |
+| `["Filtering (OptimalFilter, NaiveMeanSummaryStat)", "init_filter"]`                                      |   28.536 s (5%) | 493.004 ms |   3.21 GiB (1%) |    40260728 |
+| `["Filtering (OptimalFilter, NaiveMeanSummaryStat)", "run_particle_filter"]`                              |   39.546 s (5%) | 562.749 ms |   3.38 GiB (1%) |    41763258 |
+| `["Filtering (OptimalFilter, NaiveMeanSummaryStat)", "sample_proposal_and_compute_log_weights!"]`         | 739.174 ms (5%) |            |  12.88 MiB (1%) |      257583 |
+| `["Model interface", "get_covariance_observation_noise"]`                                                 |   2.300 μs (5%) |            |  576 bytes (1%) |           1 |
+| `["Model interface", "get_covariance_observation_observation_given_previous_state"]`                      |  41.695 ms (5%) |            |   3.14 MiB (1%) |       41542 |
+| `["Model interface", "get_covariance_state_observation_given_previous_state"]`                            |   27.746 s (5%) | 400.410 ms |   3.07 GiB (1%) |    38474245 |
+| `["Model interface", "get_log_density_observation_given_state!"]`                                         |   2.900 μs (5%) |            |   1.22 KiB (1%) |           4 |
+| `["Model interface", "get_observation_mean_given_state!"]`                                                | 247.356 ns (5%) |            |   96 bytes (1%) |           2 |
+| `["Model interface", "sample_initial_state!"]`                                                            |   6.424 ms (5%) |            |   4.05 KiB (1%) |          46 |
+| `["Model interface", "sample_observation_given_state!"]`                                                  |   3.788 μs (5%) |            |   1.78 KiB (1%) |           5 |
+| `["Model interface", "simulate_observations_from_model"]`                                                 | 561.985 ms (5%) |            |   1.73 MiB (1%) |       13069 |
+| `["Model interface", "update_state_deterministic!"]`                                                      |  19.728 ms (5%) |            |  35.25 KiB (1%) |         602 |
+| `["Model interface", "update_state_stochastic!"]`                                                         |   7.215 ms (5%) |            |   3.95 KiB (1%) |          44 |
+
+## Benchmark Group List
+Here's a list of all the benchmark groups executed by this job:
+
+- `["Filtering (BootstrapFilter, MeanAndVarSummaryStat)"]`
+- `["Filtering (BootstrapFilter, MeanSummaryStat)"]`
+- `["Filtering (BootstrapFilter, NaiveMeanAndVarSummaryStat)"]`
+- `["Filtering (BootstrapFilter, NaiveMeanSummaryStat)"]`
+- `["Filtering (OptimalFilter, MeanAndVarSummaryStat)"]`
+- `["Filtering (OptimalFilter, MeanSummaryStat)"]`
+- `["Filtering (OptimalFilter, NaiveMeanAndVarSummaryStat)"]`
+- `["Filtering (OptimalFilter, NaiveMeanSummaryStat)"]`
+- `["Model interface"]`
+
+## Julia versioninfo
+```
+Julia Version 1.8.5
+Commit 17cfb8e65ea (2023-01-08 06:45 UTC)
+Platform Info:
+  OS: Linux (x86_64-linux-gnu)
+      Ubuntu 22.04.2 LTS
+  uname: Linux 5.15.0-1037-azure #44-Ubuntu SMP Thu Apr 20 13:19:31 UTC 2023 x86_64 x86_64
+  CPU: Intel(R) Xeon(R) Platinum 8272CL CPU @ 2.60GHz: 
+              speed         user         nice          sys         idle          irq
+       #1  2593 MHz      16958 s          0 s        459 s       9737 s          0 s
+       #2  2593 MHz      16203 s          0 s        476 s      10458 s          0 s
+  Memory: 6.781208038330078 GB (4362.96875 MB free)
+  Uptime: 2724.04 sec
+  Load Avg:  1.7  1.35  1.23
+  WORD_SIZE: 64
+  LIBM: libopenlibm
+  LLVM: libLLVM-13.0.1 (ORCJIT, skylake-avx512)
+  Threads: 2 on 2 virtual cores
+```
+
+---
+# Runtime information
+| Runtime Info | |
+|:--|:--|
+| BLAS #threads | 1 |
+| `BLAS.vendor()` | `openblas64` |
+| `Sys.CPU_THREADS` | 2 |
+
+`lscpu` output:
+
+    Architecture:                    x86_64
+    CPU op-mode(s):                  32-bit, 64-bit
+    Address sizes:                   46 bits physical, 48 bits virtual
+    Byte Order:                      Little Endian
+    CPU(s):                          2
+    On-line CPU(s) list:             0,1
+    Vendor ID:                       GenuineIntel
+    Model name:                      Intel(R) Xeon(R) Platinum 8272CL CPU @ 2.60GHz
+    CPU family:                      6
+    Model:                           85
+    Thread(s) per core:              1
+    Core(s) per socket:              2
+    Socket(s):                       1
+    Stepping:                        7
+    BogoMIPS:                        5187.81
+    Flags:                           fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology cpuid pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch invpcid_single pti fsgsbase bmi1 hle avx2 smep bmi2 erms invpcid rtm avx512f avx512dq rdseed adx smap clflushopt avx512cd avx512bw avx512vl xsaveopt xsavec xsaves md_clear
+    Hypervisor vendor:               Microsoft
+    Virtualization type:             full
+    L1d cache:                       64 KiB (2 instances)
+    L1i cache:                       64 KiB (2 instances)
+    L2 cache:                        2 MiB (2 instances)
+    L3 cache:                        35.8 MiB (1 instance)
+    NUMA node(s):                    1
+    NUMA node0 CPU(s):               0,1
+    Vulnerability Itlb multihit:     KVM: Mitigation: VMX unsupported
+    Vulnerability L1tf:              Mitigation; PTE Inversion
+    Vulnerability Mds:               Mitigation; Clear CPU buffers; SMT Host state unknown
+    Vulnerability Meltdown:          Mitigation; PTI
+    Vulnerability Mmio stale data:   Vulnerable: Clear CPU buffers attempted, no microcode; SMT Host state unknown
+    Vulnerability Retbleed:          Vulnerable
+    Vulnerability Spec store bypass: Vulnerable
+    Vulnerability Spectre v1:        Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+    Vulnerability Spectre v2:        Mitigation; Retpolines, STIBP disabled, RSB filling, PBRSB-eIBRS Not affected
+    Vulnerability Srbds:             Not affected
+    Vulnerability Tsx async abort:   Mitigation; Clear CPU buffers; SMT Host state unknown
+    
+
+| Cpu Property       | Value                                                   |
+|:------------------ |:------------------------------------------------------- |
+| Brand              | Intel(R) Xeon(R) Platinum 8272CL CPU @ 2.60GHz          |
+| Vendor             | :Intel                                                  |
+| Architecture       | :Skylake                                                |
+| Model              | Family: 0x06, Model: 0x55, Stepping: 0x07, Type: 0x00   |
+| Cores              | 2 physical cores, 2 logical cores (on executing CPU)    |
+|                    | No Hyperthreading hardware capability detected          |
+| Clock Frequencies  | Not supported by CPU                                    |
+| Data Cache         | Level 1:3 : (32, 1024, 36608) kbytes                    |
+|                    | 64 byte cache line size                                 |
+| Address Size       | 48 bits virtual, 46 bits physical                       |
+| SIMD               | 512 bit = 64 byte max. SIMD vector size                 |
+| Time Stamp Counter | TSC is accessible via `rdtsc`                           |
+|                    | TSC increased at every clock cycle (non-invariant TSC)  |
+| Perf. Monitoring   | Performance Monitoring Counters (PMC) are not supported |
+| Hypervisor         | Yes, Microsoft                                          |
+
