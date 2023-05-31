@@ -3,6 +3,8 @@ using HDF5, LinearAlgebra, MPI, PDMats, Random, StableRNGs, Statistics, Test, YA
 
 include(joinpath(@__DIR__, "models", "llw2d.jl"))
 include(joinpath(@__DIR__, "models", "lorenz63.jl"))
+include(joinpath(@__DIR__, "models", "lineargaussian.jl"))
+include(joinpath(@__DIR__, "kalman.jl"))
 
 using .LLW2d
 using .Lorenz63
@@ -226,10 +228,13 @@ function run_unit_tests_for_generic_model_interface(model, seed)
 end
 
 @testset (
-    "Generic model interface unit tests - $model_module"   
-) for model_module in (LLW2d, Lorenz63)
+    "Generic model interface unit tests - $(parentmodule(typeof(model)))"   
+) for model in (
+    LLW2d.init(Dict()),
+    Lorenz63.init(Dict()),
+    LinearGaussian.init(LinearGaussian.stochastically_driven_dsho_model_parameters())
+)
     seed = 1234
-    model = model_module.init(Dict())
     run_unit_tests_for_generic_model_interface(model, seed)
 end
 
@@ -508,10 +513,14 @@ function run_tests_for_optimal_proposal_model_interface(
 end
 
 @testset (
-    "Optimal proposal model interface unit tests - $(model_module)"
-) for model_module in (LLW2d, Lorenz63)
+    "Optimal proposal model interface unit tests - $(parentmodule(typeof(model)))"
+) for model in (
+    # Use sigma != 1. to test if covariance is being scaled by sigma correctly  
+    LLW2d.init(Dict("llw2d" => Dict("sigma" => [0.5, 1.5, 1.5]))), 
+    Lorenz63.init(Dict()),
+    LinearGaussian.init(LinearGaussian.stochastically_driven_dsho_model_parameters())
+)
     seed = 1234
-    model = model_module.init(Dict())
     # Number of samples to use in convergence tests of Monte Carlo estimates
     estimate_n_samples = [10, 100, 1000]
     # Constant factor used in Monte Carlo estimate convergence tests. Set based on some
@@ -520,6 +529,90 @@ end
     estimate_bound_constant = 12.5
     run_tests_for_optimal_proposal_model_interface(
         model, seed, estimate_bound_constant, estimate_n_samples
+    )
+end
+
+function run_tests_for_convergence_of_filter_estimates_against_kalman_filter(
+    filter_type,
+    init_model,
+    model_parameters_dict,
+    seed,
+    n_time_step,
+    n_particles,
+    mean_rmse_bound_constant,
+    log_var_rmse_bound_constant,
+)
+    rng = Random.TaskLocalRNG()
+    Random.seed!(rng, seed)
+    model = init_model(model_parameters_dict)
+    observation_seq = ParticleDA.simulate_observations_from_model(
+        model, n_time_step; rng=rng
+    )
+    true_state_mean_seq, true_state_var_seq = Kalman.run_kalman_filter(
+        model, observation_seq
+    )
+    for n_particle in n_particles
+        output_filename = tempname()
+        filter_parameters = ParticleDA.FilterParameters(
+            nprt=n_particle, verbose=true, output_filename=output_filename
+        )
+        states, statistics = ParticleDA.run_particle_filter(
+            init_model,
+            filter_parameters, 
+            model_parameters_dict, 
+            observation_seq, 
+            filter_type, 
+            ParticleDA.MeanAndVarSummaryStat; 
+            rng=rng
+        )
+        state_mean_seq = Matrix{ParticleDA.get_state_eltype(model)}(
+            undef, ParticleDA.get_state_dimension(model), n_time_step
+        )
+        state_var_seq = Matrix{ParticleDA.get_state_eltype(model)}(
+            undef, ParticleDA.get_state_dimension(model), n_time_step
+        )
+        weights_seq = Matrix{Float64}(undef, n_particle, n_time_step)
+        h5open(output_filename, "r") do file
+            for t in 1:n_time_step
+                key = ParticleDA.time_index_to_hdf5_key(t)
+                state_mean_seq[:, t] = read(file["state_avg"][key])
+                state_var_seq[:, t] = read(file["state_var"][key])
+                weights_seq[:, t] = read(file["weights"][key])
+            end
+        end
+        mean_rmse = sqrt(
+            mean(x -> x.^2, state_mean_seq .- true_state_mean_seq)
+        )
+        log_var_rmse = sqrt(
+            mean(x -> x.^2, log.(state_var_seq) .- log.(true_state_var_seq))
+        )
+        # Monte Carlo estimates of mean and log variance should have O(sqrt(n_particle))
+        # convergence to true values
+        @test mean_rmse < mean_rmse_bound_constant / sqrt(n_particle)
+        @test log_var_rmse < log_var_rmse_bound_constant / sqrt(n_particle)
+    end
+end
+
+@testset (
+    "Filter estimate validation against Kalman filter - $(filter_type)"
+) for filter_type in (BootstrapFilter, OptimalFilter)
+    seed = 1234
+    n_time_step = 100
+    n_particles = [30, 100, 300, 1000]
+    # Constant factora used in Monte Carlo estimate convergence tests. Set based on some
+    # trial and error to keep tests relatively sensitive while avoiding too high
+    # probability of false failures
+    mean_rmse_bound_constant = 1.
+    log_var_rmse_bound_constant = 5.
+    run_tests_for_convergence_of_filter_estimates_against_kalman_filter(
+        filter_type,
+        LinearGaussian.init,
+        LinearGaussian.stochastically_driven_dsho_model_parameters(),
+        seed,
+        n_time_step,
+        n_particles,
+        mean_rmse_bound_constant,
+        log_var_rmse_bound_constant,
     )
 end
 
