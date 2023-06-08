@@ -6,35 +6,33 @@ using MPI
 MPI.Init()
 mpi_size = MPI.Comm_size(MPI.COMM_WORLD)
 
-# Save some variables for later use
-test_dir = joinpath(dirname(pathof(ParticleDA)), "..", "test")
-llw2d_src = joinpath(test_dir, "models", "llw2d.jl")
-observation_file = "observations.h5"
-
-# Instantiate the test environment
-using Pkg
-Pkg.activate(test_dir)
-Pkg.instantiate()
-
 # Include the sample model source code and load it
+llw2d_src = joinpath(dirname(pathof(ParticleDA)), "..", "test", "models", "llw2d.jl")
 include(llw2d_src)
 using .LLW2d
 
-input_dict = ParticleDA.read_input_file("parametersW1.yaml")
-run_custom_params = Dict(input_dict)
+observation_file = "test_observations.h5"
+parameters_file = "parametersW1.yaml"
+output_file = "llw2d_filtering.h5"
+filter_type = OptimalFilter
+summary_stat_type = NaiveMeanSummaryStat
 
-# Real run
+my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
+
+if my_rank == 0 && !isfile(observation_file)
+    observation_sequence = simulate_observations_from_model(
+      LLW2d.init, parameters_file, observation_file
+    )
+end
+if my_rank == 0 && isfile(output_file)
+    rm(output_file)
+end
+
+MPI.Barrier(MPI.COMM_WORLD)
+
 TimerOutputs.enable_debug_timings(ParticleDA)
-run_custom_params["model"]["llw2d"]["padding"] = 0
-run_custom_params["filter"]["verbose"] = true
-run_custom_params["filter"]["enable_timers"] = true
-run_custom_params["filter"]["output_filename"] = string("weak_scaling_r", mpi_size, ".h5")
-run_custom_params["filter"]["nprt"] = mpi_size * 40
 
-# Run the (optimal proposal) particle filter with simulated observations computing the
-# mean and variance of the particle ensemble. On non-Intel architectures you may need
-# to use NaiveMeanAndVarSummaryStat instead
 final_states, final_statistics = run_particle_filter(
-  LLW2d.init, run_custom_params, observation_file, OptimalFilter, ParticleDA.NaiveMeanSummaryStat
+  LLW2d.init, parameters_file, observation_file, filter_type, summary_stat_type
 )
 

@@ -1,9 +1,8 @@
 # Parameter file for ParticleDA using LLW2D model
 
 filter:
-  nprt: 320
+  nprt: 3200
   verbose: true
-  enable_timers: true
   output_filename: "llw2d_filtering.h5"
 
 model:
@@ -32,8 +31,10 @@ model:
     observed_state_var_indices: [1]
 
     use_peak_initial_state_mean: true
+    
+    padding: 0
  
 simulate_observations:
     seed: 123
-    n_time_step: 50
+    n_time_step: 51
 

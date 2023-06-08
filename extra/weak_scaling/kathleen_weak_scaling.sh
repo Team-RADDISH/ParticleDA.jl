@@ -25,4 +25,4 @@ export OMP_NUM_THREADS=$(ppn)
 export JULIA_NUM_THREADS=$OMP_NUM_THREADS
 
 # Run our MPI job with the default modules. Gerun is a wrapper script for mpirun. 
-gerun julia /home/ccaemgr/Scratch/ParticleDA.jl/extra/weak_scaling/run_particleda.jl
+mpiexecjl -n $NHOSTS julia --project=. /home/ccaemgr/Scratch/ParticleDA.jl/extra/weak_scaling/run_particleda.jl
