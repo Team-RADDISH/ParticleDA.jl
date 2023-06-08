@@ -19,7 +19,6 @@ const my_size = MPI.Comm_size(MPI.COMM_WORLD)
 const params = Dict(
     "filter" => Dict(
         "nprt" => 32,
-        "enable_timers" => true,
         "verbose" => true,
     ),
     "model" => Dict(

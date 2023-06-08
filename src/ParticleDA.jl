@@ -185,100 +185,23 @@ function run_particle_filter(
 
     nprt_per_rank = Int(filter_params.nprt / my_size)
 
-    if filter_params.enable_timers
-        TimerOutputs.enable_debug_timings(ParticleDA)
-    end
     timer = TimerOutput()
 
-    nprt_per_rank = Int(filter_params.nprt / MPI.Comm_size(MPI.COMM_WORLD))
-
-    # Do memory allocations
-    @timeit_debug timer "Model initialization" model = init_model(model_params_dict)
-    
-    @timeit_debug timer "State initialization" states = init_states(
-        model, nprt_per_rank, rng
-    )
-
-    @timeit_debug timer "Filter initialization" filter_data = init_filter(
-        filter_params, model, nprt_per_rank, filter_type, summary_stat_type
-    )
-
-    @timeit_debug timer "Summary statistics" update_statistics!(
-        filter_data.statistics, states, filter_params.master_rank
-    )
-
-    # Write initial state (time = 0) + metadata
-    if(filter_params.verbose && my_rank == filter_params.master_rank)
-        @timeit_debug timer "Unpack statistics" unpack_statistics!(
-            filter_data.unpacked_statistics, filter_data.statistics
+    @timeit_debug timer "Initialization" begin
+        # Do memory allocations
+        @timeit_debug timer "Model" model = init_model(model_params_dict)
+        @timeit_debug timer "States" states = init_states(
+            model, nprt_per_rank, rng
         )
-        @timeit_debug timer "Write snapshot" write_snapshot(
-            filter_params.output_filename,
-            model,
-            filter_data,
-            states,
-            0,
-            0 in filter_params.particle_save_time_indices,
+        @timeit_debug timer "Filter" filter_data = init_filter(
+            filter_params, model, nprt_per_rank, filter_type, summary_stat_type
         )
-    end
-
-    for (time_index, observation) in enumerate(eachcol(observation_sequence))
-
-        # Sample updated values for particles from proposal distribution and compute
-        # unnormalized log weights for each particle in ensemble given observations
-        # for current time step
-        @timeit_debug timer "Proposals and weights" sample_proposal_and_compute_log_weights!(
-            states, 
-            @view(filter_data.weights[1:nprt_per_rank]),
-            observation,
-            time_index,
-            model, 
-            filter_data, 
-            filter_type, 
-            rng
+        @timeit_debug timer "Update statistics" update_statistics!(
+            filter_data.statistics, states, filter_params.master_rank
         )
 
-        # Gather weights to master rank and resample particles, doing MPI collectives 
-        # inplace to save memory allocations.
-        # Note that only master_rank allocates memory for all particles. Other ranks 
-        # only allocate for their chunk of state.
-        if my_rank == filter_params.master_rank
-            @timeit_debug timer "Gather weights" MPI.Gather!(
-                MPI.IN_PLACE,
-                UBuffer(filter_data.weights, nprt_per_rank),
-                filter_params.master_rank,
-                MPI.COMM_WORLD
-            )
-            @timeit_debug timer "Normalize weights" normalized_exp!(filter_data.weights)
-            @timeit_debug timer "Resample" resample!(
-                filter_data.resampling_indices, filter_data.weights, rng
-            )
-
-        else
-            @timeit_debug timer "Gather weights" MPI.Gather!(
-                filter_data.weights, nothing, filter_params.master_rank, MPI.COMM_WORLD
-            )
-        end
-
-        # Broadcast resampled particle indices to all ranks
-        MPI.Bcast!(filter_data.resampling_indices, filter_params.master_rank, MPI.COMM_WORLD)
-    
-        @timeit_debug timer "Copy states" copy_states!(
-            states,
-            filter_data.copy_buffer,
-            filter_data.resampling_indices,
-            my_rank,
-            nprt_per_rank
-        )
-                                                      
-        if filter_params.verbose
-            @timeit_debug timer "Update statistics" update_statistics!(
-                filter_data.statistics, states, filter_params.master_rank
-            )
-        end
-
-        if my_rank == filter_params.master_rank && filter_params.verbose
-
+        # Write initial state (time = 0) + metadata
+        if(filter_params.verbose && my_rank == filter_params.master_rank)
             @timeit_debug timer "Unpack statistics" unpack_statistics!(
                 filter_data.unpacked_statistics, filter_data.statistics
             )
@@ -287,12 +210,96 @@ function run_particle_filter(
                 model,
                 filter_data,
                 states,
+                0,
+                0 in filter_params.particle_save_time_indices,
+            )
+        end
+    end 
+
+    @timeit_debug timer "Filtering" begin
+
+        for (time_index, observation) in enumerate(eachcol(observation_sequence))
+            
+            # Disable timer on first time index to avoid timing compilation of functions
+            if time_index == 1 
+                disable_timer!(timer)
+            else
+                enable_timer!(timer)
+            end
+            
+            # Sample updated values for particles from proposal distribution and compute
+            # unnormalized log weights for each particle in ensemble given observations
+            # for current time step
+            @timeit_debug timer "Proposals & weights" sample_proposal_and_compute_log_weights!(
+                states, 
+                @view(filter_data.weights[1:nprt_per_rank]),
+                observation,
                 time_index,
-                time_index in filter_params.particle_save_time_indices,
+                model, 
+                filter_data, 
+                filter_type, 
+                rng
             )
 
-        end
+            # Gather weights to master rank and resample particles, doing MPI collectives 
+            # inplace to save memory allocations.
+            # Note that only master_rank allocates memory for all particles. Other ranks 
+            # only allocate for their chunk of state.
+            if my_rank == filter_params.master_rank
+                @timeit_debug timer "Gather weights" MPI.Gather!(
+                    MPI.IN_PLACE,
+                    UBuffer(filter_data.weights, nprt_per_rank),
+                    filter_params.master_rank,
+                    MPI.COMM_WORLD
+                )
+                @timeit_debug timer "Normalize weights" normalized_exp!(filter_data.weights)
+                @timeit_debug timer "Resample" resample!(
+                    filter_data.resampling_indices, filter_data.weights, rng
+                )
 
+            else
+                @timeit_debug timer "Gather weights" MPI.Gather!(
+                    filter_data.weights, nothing, filter_params.master_rank, MPI.COMM_WORLD
+                )
+            end
+
+            # Broadcast resampled particle indices to all ranks
+            @timeit_debug timer "Broadcast indices" MPI.Bcast!(
+                filter_data.resampling_indices, filter_params.master_rank, MPI.COMM_WORLD
+            )
+        
+            @timeit_debug timer "Copy states" copy_states!(
+                states,
+                filter_data.copy_buffer,
+                filter_data.resampling_indices,
+                my_rank,
+                nprt_per_rank
+            )
+                                                        
+            if filter_params.verbose
+                @timeit_debug timer "Update statistics" update_statistics!(
+                    filter_data.statistics, states, filter_params.master_rank
+                )
+            end
+
+            if my_rank == filter_params.master_rank && filter_params.verbose
+
+                @timeit_debug timer "Unpack statistics" unpack_statistics!(
+                    filter_data.unpacked_statistics, filter_data.statistics
+                )
+                @timeit_debug timer "Write snapshot" write_snapshot(
+                    filter_params.output_filename,
+                    model,
+                    filter_data,
+                    states,
+                    time_index,
+                    time_index in filter_params.particle_save_time_indices,
+                )
+
+            end
+
+        end
+    
     end
     
     if !filter_params.verbose
@@ -307,10 +314,16 @@ function run_particle_filter(
         end
     end
 
-    if filter_params.enable_timers
+    if timeit_debug_enabled()
 
-        if my_rank == filter_params.master_rank
-            print_timer(timer)
+        # Include record of complement of timed sections
+        TimerOutputs.complement!(timer)
+        # Print timings for each rank out in order
+        for rank in 0:(my_size - 1)
+            if my_rank == rank
+                print_timer(timer; title="Rank $(rank)", sortby=:firstexec)
+            end
+            MPI.Barrier(MPI.COMM_WORLD)
         end
 
         if filter_params.verbose
