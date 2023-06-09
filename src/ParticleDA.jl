@@ -214,7 +214,9 @@ function run_particle_filter(
                 0 in filter_params.particle_save_time_indices,
             )
         end
-    end 
+    end
+    
+    @timeit_debug timer "B: post-init" MPI.Barrier(MPI.COMM_WORLD)
 
     @timeit_debug timer "Filtering" begin
 
@@ -223,8 +225,11 @@ function run_particle_filter(
             # Disable timer on first time index to avoid timing compilation of functions
             if time_index == 1 
                 disable_timer!(timer)
-            else
+            elseif time_index == 2
                 enable_timer!(timer)
+                @timeit_debug timer "B: post-step t=1" MPI.Barrier(MPI.COMM_WORLD)
+            else
+                @timeit_debug timer "B: post-step t>1" MPI.Barrier(MPI.COMM_WORLD)
             end
             
             # Sample updated values for particles from proposal distribution and compute
@@ -240,6 +245,8 @@ function run_particle_filter(
                 filter_type, 
                 rng
             )
+            
+            @timeit_debug timer "B: post-proposals" MPI.Barrier(MPI.COMM_WORLD)
 
             # Gather weights to master rank and resample particles, doing MPI collectives 
             # inplace to save memory allocations.
@@ -262,11 +269,15 @@ function run_particle_filter(
                     filter_data.weights, nothing, filter_params.master_rank, MPI.COMM_WORLD
                 )
             end
+            
+            @timeit_debug timer "B: post-gather" MPI.Barrier(MPI.COMM_WORLD)
 
             # Broadcast resampled particle indices to all ranks
             @timeit_debug timer "Broadcast indices" MPI.Bcast!(
                 filter_data.resampling_indices, filter_params.master_rank, MPI.COMM_WORLD
             )
+            
+            @timeit_debug timer "B: post-broadcast" MPI.Barrier(MPI.COMM_WORLD)
         
             @timeit_debug timer "Copy states" copy_states!(
                 states,
@@ -275,11 +286,14 @@ function run_particle_filter(
                 my_rank,
                 nprt_per_rank
             )
+            
+            @timeit_debug timer "B: post-copy" MPI.Barrier(MPI.COMM_WORLD)
                                                         
             if filter_params.verbose
                 @timeit_debug timer "Update statistics" update_statistics!(
                     filter_data.statistics, states, filter_params.master_rank
                 )
+                @timeit_debug timer "B: post-update" MPI.Barrier(MPI.COMM_WORLD)
             end
 
             if my_rank == filter_params.master_rank && filter_params.verbose
