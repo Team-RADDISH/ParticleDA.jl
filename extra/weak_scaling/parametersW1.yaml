@@ -22,8 +22,8 @@ model:
     lambda_initial_state: 5.0e3
     sigma_initial_state: 0.001
 
-    n_integration_step: 4
-    time_step: 2.0
+    n_integration_step: 16
+    time_step: 0.5
 
     peak_height: 30.0
     peak_position: [1e4,1e4]
