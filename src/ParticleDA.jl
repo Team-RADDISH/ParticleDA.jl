@@ -243,7 +243,8 @@ function run_particle_filter(
                 model, 
                 filter_data, 
                 filter_type, 
-                rng
+                rng,
+                timer
             )
             
             @timeit_debug timer "B: post-proposals" MPI.Barrier(MPI.COMM_WORLD)

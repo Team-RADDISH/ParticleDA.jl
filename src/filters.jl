@@ -150,14 +150,18 @@ function sample_proposal_and_compute_log_weights!(
     ::NamedTuple,
     ::Type{BootstrapFilter},
     rng::Random.AbstractRNG,
+    timer::TimerOutput
 )
     num_particle = size(states, 2)
     Threads.@threads :static for p in 1:num_particle
-        update_state_deterministic!(selectdim(states, 2, p), model, time_index)
-        update_state_stochastic!(selectdim(states, 2, p), model, rng)
-        log_weights[p] = get_log_density_observation_given_state(
+        thread_timer = TimerOutput()
+        t = Threads.threadid()
+        @timeit_debug thread_timer "Up. determin. $t" update_state_deterministic!(selectdim(states, 2, p), model, time_index)
+        @timeit_debug thread_timer "Up. stochastic $t" update_state_stochastic!(selectdim(states, 2, p), model, rng)
+        @timeit_debug thread_timer "Weight $t" log_weights[p] = get_log_density_observation_given_state(
             observation, selectdim(states, 2, p), model
         )
+        timer.enabled && merge!(timer, thread_timer, tree_point=["Filtering", "Proposals & weights"])
     end
 end
 
@@ -225,20 +229,24 @@ function sample_proposal_and_compute_log_weights!(
     filter_data::NamedTuple,
     ::Type{OptimalFilter},
     rng::Random.AbstractRNG,
+    timer::TimerOutput
 )
     num_particle = size(states, 2)
     Threads.@threads :static for p in 1:num_particle
-        update_state_deterministic!(selectdim(states, 2, p), model, time_index)
+        thread_timer = TimerOutput()
+        t = Threads.threadid()
+        @timeit_debug thread_timer "Up. determin. $t"  update_state_deterministic!(selectdim(states, 2, p), model, time_index)
         # Particle weights for optimal proposal _do not_ depend on state noise values
         # therefore we calculate them using states after applying deterministic part of
         # time update but before adding state noise
-        log_weights[p] = get_log_density_observation_given_previous_state(
+        @timeit_debug thread_timer "Weight $t" log_weights[p] = get_log_density_observation_given_previous_state(
             observation, selectdim(states, 2, p), model, filter_data
         )
-        update_state_stochastic!(selectdim(states, 2, p), model, rng)
+        @timeit_debug thread_timer "Up. stochastic $t" update_state_stochastic!(selectdim(states, 2, p), model, rng)
+        timer.enabled && merge!(timer, thread_timer, tree_point=["Filtering", "Proposals & weights"])
     end
     # Update to account for conditioning on observations can be performed using matrix-
     # matrix level 3 BLAS operations therefore perform outside of threaded loop over
     # particles 
-    update_states_given_observations!(states, observation, model, filter_data, rng)
+    timer.enabled && @timeit_debug timer "Update states given observations"  update_states_given_observations!(states, observation, model, filter_data, rng)
 end
