@@ -1,6 +1,13 @@
 using ParticleDA
+using LinearAlgebra
 using TimerOutputs
 using MPI
+
+# Verify BLAS implementation is OpenBLAS
+@assert occursin("openblas", string(BLAS.get_config()))
+
+# Set size of thread pool for BLAS operations to 1
+BLAS.set_num_threads(1)
 
 # Initialise MPI
 MPI.Init()
@@ -14,10 +21,13 @@ using .LLW2d
 observation_file = "test_observations.h5"
 parameters_file = "parametersW1.yaml"
 output_file = "llw2d_filtering.h5"
-filter_type = OptimalFilter
+#filter_type = OptimalFilter
+filter_type = BootstrapFilter
 summary_stat_type = NaiveMeanSummaryStat
 
 my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
+
+println("Rank $(my_rank): # Julia threads = $(Threads.nthreads()), # BLAS threads = $(BLAS.get_num_threads())")
 
 if my_rank == 0 && !isfile(observation_file)
     observation_sequence = simulate_observations_from_model(
