@@ -34,8 +34,12 @@ function init_states(model, nprt_per_rank::Int, rng::AbstractRNG)
     state_el_type = ParticleDA.get_state_eltype(model)
     state_dimension = ParticleDA.get_state_dimension(model)
     states = Matrix{state_el_type}(undef, state_dimension, nprt_per_rank)
-    Threads.@threads :static for p in 1:nprt_per_rank
-        sample_initial_state!(selectdim(states, 2, p), model, rng)
+    nchunks = cld(nprt_per_rank, Threads.nthreads())
+    particle_indices = collect(1:nprt_per_rank)
+    @sync for (i, chunk) in enumerate(Iterators.partition(particle_indices, nchunks))
+        Threads.@spawn for p in chunk
+            sample_initial_state!(selectdim(states, 2, p), model, rng)
+        end
     end
     return states
 end

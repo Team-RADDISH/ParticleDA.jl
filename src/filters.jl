@@ -152,12 +152,16 @@ function sample_proposal_and_compute_log_weights!(
     rng::Random.AbstractRNG,
 )
     num_particle = size(states, 2)
-    Threads.@threads :static for p in 1:num_particle
-        update_state_deterministic!(selectdim(states, 2, p), model, time_index)
-        update_state_stochastic!(selectdim(states, 2, p), model, rng)
-        log_weights[p] = get_log_density_observation_given_state(
-            observation, selectdim(states, 2, p), model
-        )
+    nchunks = cld(num_particle, Threads.nthreads())
+    particle_indices = collect(1:num_particle)
+    @sync for (i, chunk) in enumerate(Iterators.partition(particle_indices, nchunks))
+        Threads.@spawn for p in chunk
+            update_state_deterministic!(selectdim(states, 2, p), model, time_index)
+            update_state_stochastic!(selectdim(states, 2, p), model, rng)
+            log_weights[p] = get_log_density_observation_given_state(
+                observation, selectdim(states, 2, p), model
+            )
+        end
     end
 end
 
@@ -190,13 +194,17 @@ function update_states_given_observations!(
     cov_Y_Y = filter_data.offline_matrices.cov_Y_Y
     # Compute Y ~ Normal(HX, R) for each particle X
     num_particle = size(states, 2)
-    Threads.@threads :static for p in 1:num_particle
-        sample_observation_given_state!(
-            selectdim(observation_buffer, 2, p),
-            selectdim(states, 2, p),
-            model,
-            rng
-        )
+    nchunks = cld(num_particle, Threads.nthreads())
+    particle_indices = collect(1:num_particle)
+    @sync for (i, chunk) in enumerate(Iterators.partition(particle_indices, nchunks))
+        Threads.@spawn for p in chunk
+            sample_observation_given_state!(
+                selectdim(observation_buffer, 2, p),
+                selectdim(states, 2, p),
+                model,
+                rng
+            )
+        end
     end
     # To allow for only a subset of state components being correlated to observations
     # (given previous state) and so needing to be updated as part of optimal proposal
@@ -227,15 +235,19 @@ function sample_proposal_and_compute_log_weights!(
     rng::Random.AbstractRNG,
 )
     num_particle = size(states, 2)
-    Threads.@threads :static for p in 1:num_particle
-        update_state_deterministic!(selectdim(states, 2, p), model, time_index)
-        # Particle weights for optimal proposal _do not_ depend on state noise values
-        # therefore we calculate them using states after applying deterministic part of
-        # time update but before adding state noise
-        log_weights[p] = get_log_density_observation_given_previous_state(
-            observation, selectdim(states, 2, p), model, filter_data
-        )
-        update_state_stochastic!(selectdim(states, 2, p), model, rng)
+    nchunks = cld(num_particle, Threads.nthreads())
+    particle_indices = collect(1:num_particle)
+    @sync for (i, chunk) in enumerate(Iterators.partition(particle_indices, nchunks))
+        Threads.@spawn for p in chunk
+            update_state_deterministic!(selectdim(states, 2, p), model, time_index)
+            # Particle weights for optimal proposal _do not_ depend on state noise values
+            # therefore we calculate them using states after applying deterministic part of
+            # time update but before adding state noise
+            log_weights[p] = get_log_density_observation_given_previous_state(
+                observation, selectdim(states, 2, p), model, filter_data
+            )
+            update_state_stochastic!(selectdim(states, 2, p), model, rng)
+        end
     end
     # Update to account for conditioning on observations can be performed using matrix-
     # matrix level 3 BLAS operations therefore perform outside of threaded loop over
