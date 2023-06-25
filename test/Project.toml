@@ -18,7 +18,7 @@ YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 [compat]
 Distributions = "0.22, 0.23, 0.24, 0.25"
 FillArrays = "0.13"
-GaussianRandomFields = "2.1.1"
+GaussianRandomFields = "2.2.1"
 HDF5 = "0.14, 0.15, 0.16"
 MPI = "0.20.8"
 OrdinaryDiffEq = "6.40"

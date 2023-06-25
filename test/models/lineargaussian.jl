@@ -34,6 +34,79 @@ struct LinearGaussianModel{S <: Real, T <: Real}
     observation_noise_distribution::MvNormal{T}
 end
 
+function diagonal_linear_gaussian_model_parameters(
+    state_dimension=3,
+    state_transition_coefficient=0.8,
+    observation_coefficient=1.0,
+    initial_state_std=1.0,
+    state_noise_std=0.6,
+    observation_noise_std=0.5,
+)
+    return Dict(
+        :state_transition_matrix => ScalMat(
+            state_dimension, state_transition_coefficient
+        ),
+        :observation_matrix => ScalMat(
+            state_dimension, observation_coefficient
+        ),
+        :initial_state_mean => Zeros(state_dimension),
+        :initial_state_covar => ScalMat(
+            state_dimension, initial_state_std^2
+        ),
+        :state_noise_covar => ScalMat(
+            state_dimension, state_noise_std^2
+        ),
+        :observation_noise_covar => ScalMat(
+            state_dimension, observation_noise_std^2
+        ),
+    )
+end
+
+function stochastically_driven_dsho_model_parameters(
+    δ=0.2,
+    ω=1.,
+    Q=2.,
+    σ=0.5,
+)    
+    β = sqrt(Q^2 - 1 / 4)
+    return Dict(
+        :state_transition_matrix => exp(-ω * δ / 2Q) * [
+            [
+                cos(ω * β * δ / Q) + sin(ω * β * δ / Q) / 2β,
+                Q * sin(ω * β * δ / Q) / (ω * β)
+            ]';
+            [
+                -Q * ω * sin(ω * δ * β / Q) / β,
+                cos(ω * δ * β / Q) - sin(ω * δ * β / Q) / 2β
+            ]'
+        ],
+        :observation_matrix => ScalMat(2, 1.),
+        :initial_state_mean => Zeros(2),
+        :initial_state_covar => ScalMat(2, 1.),
+        :state_noise_covar => PDMat(
+            Q * exp(-ω * δ / Q) * [
+                [
+                    (
+                        (cos(2ω * δ * β / Q) - 1) 
+                        - 2β * sin(2ω * δ * β / Q) 
+                        + 4β^2 * (exp(ω * δ / Q) - 1)
+                    ) / (8ω^3 * β^2),
+                    Q * sin(ω * δ * β / Q)^2 / (2ω^2 * β^2)
+                ]';
+                [
+                    Q * sin(ω * δ * β / Q)^2 / (2ω^2 * β^2),
+                    (
+                        (cos(2ω * δ * β / Q) - 1) 
+                        + 2β * sin(2ω * δ * β / Q) 
+                        + 4β^2 * (exp(ω * δ / Q) - 1)
+                    ) / (8ω * β^2),                    
+                ]'
+            ]
+        ),
+        :observation_noise_covar => ScalMat(2, σ^2)    
+    )
+end
+
 function init(parameters_dict::Dict)
     parameters = LinearGaussianModelParameters(; parameters_dict...)
     (observation_dimension, state_dimension) = size(

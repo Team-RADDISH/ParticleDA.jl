@@ -396,7 +396,7 @@ function get_covariance_gaussian_random_fields(
             model_parameters, (x_index_2, y_index_2)
         )
         covariance_structure = gaussian_random_fields[var_index_1].grf.cov.cov
-        return covariance_structure.σ^2 * apply(
+        return apply(
             covariance_structure, abs.(grid_point_1 .- grid_point_2)
         )
     else
