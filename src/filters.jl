@@ -161,7 +161,7 @@ function sample_proposal_and_compute_log_weights!(
     rng::Random.AbstractRNG,
 )
     n_particle = size(states, 2)
-    @sync for (task_index, particle_indices) in chunks(1:n_particle, filter_data.n_tasks)
+    @sync for (particle_indices, task_index) in chunks(1:n_particle, filter_data.n_tasks)
         Threads.@spawn for particle_index in particle_indices
             state = selectdim(states, 2, particle_index)
             update_state_deterministic!(state, model, time_index, task_index)
@@ -203,7 +203,7 @@ function update_states_given_observations!(
     cov_Y_Y = filter_data.offline_matrices.cov_Y_Y
     # Compute Y ~ Normal(HX, R) for each particle X
     n_particle = size(states, 2)
-    @sync for (task_index, particle_indices) in chunks(1:n_particle, filter_data.n_tasks)
+    @sync for (particle_indices, task_index) in chunks(1:n_particle, filter_data.n_tasks)
         Threads.@spawn for particle_index in particle_indices
             sample_observation_given_state!(
                 selectdim(observation_buffer, 2, particle_index),
@@ -243,7 +243,7 @@ function sample_proposal_and_compute_log_weights!(
     rng::Random.AbstractRNG,
 )
     n_particle = size(states, 2)
-    @sync for (task_index, particle_indices) in chunks(1:n_particle, filter_data.n_tasks)
+    @sync for (particle_indices, task_index) in chunks(1:n_particle, filter_data.n_tasks)
         Threads.@spawn for particle_index in particle_indices
             state = selectdim(states, 2, particle_index)
             update_state_deterministic!(state, model, time_index, task_index)
