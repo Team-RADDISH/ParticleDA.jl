@@ -57,8 +57,6 @@ Base.@kwdef struct LLW2dModelParameters{T<:AbstractFloat}
     dx::T = x_length / (nx - 1)
     dy::T = y_length / (ny - 1)
 
-  
-
     time_step::T = 50.0
     n_integration_step::Int = 50
 
@@ -152,13 +150,16 @@ end
 # Initialize a gaussian random field generating function using the Matern covariance kernel
 # and circulant embedding generation method
 # TODO: Could generalise this
-function init_gaussian_random_field_generator(lambda::Vector{T},
-                                              nu::Vector{T},
-                                              sigma::Vector{T},
-                                              x::AbstractVector{T},
-                                              y::AbstractVector{T},
-                                              pad::Int,
-                                              primes::Bool) where T
+function init_gaussian_random_field_generator(
+    lambda::Vector{T},
+    nu::Vector{T},
+    sigma::Vector{T},
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    pad::Int,
+    primes::Bool,
+    n_tasks::Int,
+) where T
 
     # Let's limit ourselves to two-dimensional fields
     dim = 2
@@ -167,9 +168,9 @@ function init_gaussian_random_field_generator(lambda::Vector{T},
         cov = CovarianceFunction(dim, Matern(l, n, σ = s))
         grf = GaussianRandomField(cov, CirculantEmbedding(), x, y, minpadding=pad, primes=primes)
         v = grf.data[1]
-        xi = Array{eltype(grf.cov)}(undef, size(v)..., nthreads())
-        w = Array{complex(float(eltype(v)))}(undef, size(v)..., nthreads())
-        z = Array{eltype(grf.cov)}(undef, length.(grf.pts)..., nthreads())
+        xi = Array{eltype(grf.cov)}(undef, size(v)..., n_tasks)
+        w = Array{complex(float(eltype(v)))}(undef, size(v)..., n_tasks)
+        z = Array{eltype(grf.cov)}(undef, length.(grf.pts)..., n_tasks)
         RandomField(grf, xi, w, z)
     end
 
@@ -177,25 +178,36 @@ function init_gaussian_random_field_generator(lambda::Vector{T},
 end
 
 # Get a random sample from random_field_generator using random number generator rng
-function sample_gaussian_random_field!(field::AbstractMatrix{T},
-                                       random_field_generator::RandomField,
-                                       rng::Random.AbstractRNG) where T
+function sample_gaussian_random_field!(
+    field::AbstractMatrix{T},
+    random_field_generator::RandomField,
+    rng::Random.AbstractRNG,
+    task_index::Integer=1
+) where T
 
-    @. @view(random_field_generator.xi[:,:,threadid()]) = randn((rng,), T)
-    sample_gaussian_random_field!(field, random_field_generator, @view(random_field_generator.xi[:,:,threadid()]))
+    randn!(rng, selectdim(random_field_generator.xi, 3, task_index))
+    sample_gaussian_random_field!(
+        field,
+        random_field_generator,
+        selectdim(random_field_generator.xi, 3, task_index),
+        task_index
+    )
 
 end
 
 # Get a random sample from random_field_generator using random_numbers
-function sample_gaussian_random_field!(field::AbstractMatrix{T},
-                                       random_field_generator::RandomField,
-                                       random_numbers::AbstractArray{T}) where T
-
-    field .= GaussianRandomFields._sample!(@view(random_field_generator.w[:,:,threadid()]),
-                                           @view(random_field_generator.z[:,:,threadid()]),
-                                           random_field_generator.grf,
-                                           random_numbers)
-
+function sample_gaussian_random_field!(
+    field::AbstractMatrix{T},
+    random_field_generator::RandomField,
+    random_numbers::AbstractArray{T},
+    task_index::Integer=1
+) where T
+    field .= GaussianRandomFields._sample!(
+        selectdim(random_field_generator.w, 3, task_index),
+        selectdim(random_field_generator.z, 3, task_index),
+        random_field_generator.grf,
+        random_numbers
+    )
 end
 
 function add_random_field!(
@@ -203,9 +215,10 @@ function add_random_field!(
     field_buffer::AbstractMatrix{T},
     generators::Vector{<:RandomField},
     rng::Random.AbstractRNG,
+    task_index::Integer
 ) where T
     for (field, generator) in zip(eachslice(state_fields, dims=3), generators)
-        sample_gaussian_random_field!(field_buffer, generator, rng)
+        sample_gaussian_random_field!(field_buffer, generator, rng, task_index)
         field .+= field_buffer
     end
 end
@@ -217,7 +230,7 @@ function ParticleDA.get_initial_state_mean!(
     state_mean_fields = flat_state_to_fields(state_mean, model.parameters)
     if model.parameters.use_peak_initial_state_mean
         initheight!(
-            @view(state_mean_fields[:, :, 1]), 
+            selectdim(state_mean_fields, 3, 1), 
             model.model_matrices, 
             model.parameters.dx, 
             model.parameters.dy,
@@ -236,14 +249,16 @@ function ParticleDA.sample_initial_state!(
     state::AbstractVector{T},
     model::LLW2dModel, 
     rng::Random.AbstractRNG,
+    task_index::Integer=1
 ) where T
     ParticleDA.get_initial_state_mean!(state, model)
     # Add samples of the initial random field to all particles
     add_random_field!(
         flat_state_to_fields(state, model.parameters), 
-        view(model.field_buffer, :, :, 1, threadid()), 
+        view(model.field_buffer, :, :, 1, task_index), 
         model.initial_state_grf, 
         rng,
+        task_index
     )
     return state
 end
@@ -479,7 +494,7 @@ function ParticleDA.get_state_indices_correlated_to_observations(model::LLW2dMod
     )
 end
 
-function init(parameters_dict::Dict)
+function init(parameters_dict::Dict, n_tasks::Int=1)
 
     parameters = ParticleDA.get_params(
         LLW2dModelParameters, get(parameters_dict, "llw2d", Dict())
@@ -492,10 +507,10 @@ function init(parameters_dict::Dict)
     n_observations = n_stations * length(parameters.observed_state_var_indices)
     
     # Buffer array to be used in the tsunami update
-    field_buffer = Array{T}(undef, parameters.nx, parameters.ny, 2, nthreads())
+    field_buffer = Array{T}(undef, parameters.nx, parameters.ny, 2, n_tasks)
     
     # Buffer array to be used in computing observation mean
-    observation_buffer = Array{T}(undef, n_observations, nthreads())
+    observation_buffer = Array{T}(undef, n_observations, n_tasks)
     
     # Gaussian random fields for generating intial state and state noise
     x, y = get_grid_axes(parameters)
@@ -506,7 +521,8 @@ function init(parameters_dict::Dict)
         x,
         y,
         parameters.padding,
-        parameters.primes
+        parameters.primes,
+        n_tasks,
     )
     state_noise_grf = init_gaussian_random_field_generator(
         parameters.lambda,
@@ -515,7 +531,8 @@ function init(parameters_dict::Dict)
         x,
         y,
         parameters.padding,
-        parameters.primes
+        parameters.primes,
+        n_tasks
     )
 
     # Set up tsunami model
@@ -540,7 +557,10 @@ function init(parameters_dict::Dict)
 end
 
 function ParticleDA.get_observation_mean_given_state!(
-    observation_mean::AbstractVector, state::AbstractVector, model::LLW2dModel
+    observation_mean::AbstractVector,
+    state::AbstractVector,
+    model::LLW2dModel,
+    task_index::Integer=1
 )
     state_fields = flat_state_to_fields(state, model.parameters)
     n = 1
@@ -555,10 +575,11 @@ end
 function ParticleDA.sample_observation_given_state!(
     observation::AbstractVector{S},
     state::AbstractVector{T},
-    model::LLW2dModel, 
-    rng::AbstractRNG
+    model::LLW2dModel,
+    rng::AbstractRNG,
+    task_index::Integer=1,
 ) where{S, T}
-    ParticleDA.get_observation_mean_given_state!(observation, state, model)
+    ParticleDA.get_observation_mean_given_state!(observation, state, model, task_index)
     observation .+= rand(
         rng, MvNormal(ParticleDA.get_covariance_observation_noise(model))
     )
@@ -569,9 +590,10 @@ function ParticleDA.get_log_density_observation_given_state(
     observation::AbstractVector, 
     state::AbstractVector, 
     model::LLW2dModel,
+    task_index::Integer=1
 )
-    observation_mean = view(model.observation_buffer, :, threadid())
-    ParticleDA.get_observation_mean_given_state!(observation_mean, state, model)
+    observation_mean = selectdim(model.observation_buffer, 2, task_index)
+    ParticleDA.get_observation_mean_given_state!(observation_mean, state, model, task_index)
     return -invquad(
         ParticleDA.get_covariance_observation_noise(model), 
         observation - observation_mean
@@ -579,15 +601,15 @@ function ParticleDA.get_log_density_observation_given_state(
 end
 
 function ParticleDA.update_state_deterministic!(
-    state::AbstractVector, model::LLW2dModel, time_index::Integer
+    state::AbstractVector, model::LLW2dModel, time_index::Integer, task_index::Integer=1
 )
     # Parts of state vector are aliased to tsunami height and velocity component fields
     state_fields = flat_state_to_fields(state, model.parameters)
-    height_field = @view(state_fields[:, :, 1])
-    velocity_x_field = @view(state_fields[:, :, 2])
-    velocity_y_field = @view(state_fields[:, :, 3])
-    dx_buffer = view(model.field_buffer, :, :, 1, threadid())
-    dy_buffer = view(model.field_buffer, :, :, 2, threadid())
+    height_field = selectdim(state_fields, 3, 1)
+    velocity_x_field = selectdim(state_fields, 3, 2)
+    velocity_y_field = selectdim(state_fields, 3, 3)
+    dx_buffer = view(model.field_buffer, :, :, 1, task_index)
+    dy_buffer = view(model.field_buffer, :, :, 2, task_index)
     dt = model.parameters.time_step / model.parameters.n_integration_step
     for _ in 1:model.parameters.n_integration_step
         # Update tsunami wavefield with LLW2d.timestep in-place
@@ -609,14 +631,15 @@ function ParticleDA.update_state_deterministic!(
 end
 
 function ParticleDA.update_state_stochastic!(
-    state::AbstractVector, model::LLW2dModel, rng::AbstractRNG
+    state::AbstractVector, model::LLW2dModel, rng::AbstractRNG, task_index::Integer=1
 )
     # Add state noise
     add_random_field!(
         flat_state_to_fields(state, model.parameters),
-        view(model.field_buffer, :, :, 1, threadid()),
+        view(model.field_buffer, :, :, 1, task_index),
         model.state_noise_grf,
         rng,
+        task_index
     )
 end
 

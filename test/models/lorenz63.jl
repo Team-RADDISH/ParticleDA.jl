@@ -43,7 +43,12 @@ function update_time_derivative!(
     du_dt[3] = u[1] * u[2] - parameters.β * u[3]
 end
 
-function init(parameters_dict::Dict; S::Type{<:Real}=Float64, T::Type{<:Real}=Float64)
+function init(
+    parameters_dict::Dict,
+    n_tasks::Int=1;
+    S::Type{<:Real}=Float64,
+    T::Type{<:Real}=Float64
+)
     parameters = get_params(Lorenz63ModelParameters{S, T}, parameters_dict)
     time_span = (0, parameters.time_step)
     integrators = [
@@ -52,7 +57,7 @@ function init(parameters_dict::Dict; S::Type{<:Real}=Float64, T::Type{<:Real}=Fl
             Tsit5();
             save_everystep=false
         ) 
-        for u in eachcol(Matrix{S}(undef, 3, nthreads()))
+        for u in eachcol(Matrix{S}(undef, 3, n_tasks))
     ]
     state_dimension = 3
     observation_dimension = length(parameters.observed_indices)
@@ -81,6 +86,7 @@ function ParticleDA.sample_initial_state!(
     state::AbstractVector{T},
     model::Lorenz63Model{S, T}, 
     rng::Random.AbstractRNG,
+    task_index::Integer=1
 ) where {S, T}
     rand!(rng, model.initial_state_distribution, state)
 end
@@ -88,17 +94,19 @@ end
 function ParticleDA.update_state_deterministic!(
     state::AbstractVector{T}, 
     model::Lorenz63Model{S, T}, 
-    time_index::Int,
+    time_index::Integer,
+    task_index::Integer=1
 ) where {S, T}
-    reinit!(model.integrators[threadid()], state)
-    step!(model.integrators[threadid()], model.parameters.time_step, true)
-    state .= model.integrators[threadid()].u
+    reinit!(model.integrators[task_index], state)
+    step!(model.integrators[task_index], model.parameters.time_step, true)
+    state .= model.integrators[task_index].u
 end
 
 function ParticleDA.update_state_stochastic!(
     state::AbstractVector{T}, 
     model::Lorenz63Model{S, T}, 
     rng::Random.AbstractRNG,
+    task_index::Integer=1
 ) where {S, T}
     rand!(rng, state + model.state_noise_distribution, state)
 end
@@ -108,6 +116,7 @@ function ParticleDA.sample_observation_given_state!(
     state::AbstractVector{S}, 
     model::Lorenz63Model{S, T}, 
     rng::Random.AbstractRNG,
+    task_index::Integer=1
 ) where {S <: Real, T <: Real}
     rand!(
         rng,
@@ -118,7 +127,10 @@ function ParticleDA.sample_observation_given_state!(
 end
 
 function ParticleDA.get_log_density_observation_given_state(
-    observation::AbstractVector{T}, state::AbstractVector{S}, model::Lorenz63Model{S, T}
+    observation::AbstractVector{T},
+    state::AbstractVector{S},
+    model::Lorenz63Model{S, T},
+    task_index::Integer=1
 ) where {S <: Real, T <: Real}
     return logpdf(
         view(state, model.parameters.observed_indices) 
@@ -145,7 +157,8 @@ end
 function ParticleDA.get_observation_mean_given_state!(
     observation_mean::AbstractVector{T},
     state::AbstractVector{S},
-    model::Lorenz63Model{S, T}
+    model::Lorenz63Model{S, T},
+    task_index::Integer=1
 ) where {S <: Real, T <: Real}
     observation_mean .= view(state, model.parameters.observed_indices)
 end

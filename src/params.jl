@@ -10,6 +10,13 @@ Parameters for ParticleDA run. Keyword arguments:
 * `enable_timers::Bool` : Flag to control run time measurements
 * `particle_save_time_indices`: Set of time indices to save particles at
 * `seed`: Seed to initialise state of random number generator used for filtering
+* `n_tasks`: Number of tasks to use for running parallelisable operations. Positive
+   integers indicate the number of tasks directly, while the absolute value of negative
+   integers indicate the number of task to use per-thread (as reported by 
+   `Threads.nthreads()`). Using multiple tasks per thread will improve the ability of
+   the scheduler to balance load across threads but potentially increase overheads.
+   If simulation of the model being filtered use multiple threads then it may be 
+   beneficial to set the `n_tasks = 1` to avoid too much contention between threads.
 """
 Base.@kwdef struct FilterParameters{V<:Union{AbstractSet, AbstractVector}}
     master_rank::Int = 0
@@ -19,6 +26,7 @@ Base.@kwdef struct FilterParameters{V<:Union{AbstractSet, AbstractVector}}
     enable_timers::Bool = false
     particle_save_time_indices::V = []
     seed::Union{Nothing, Int} = nothing
+    n_tasks::Int = -1
 end
 
 

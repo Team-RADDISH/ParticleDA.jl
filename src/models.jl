@@ -45,7 +45,7 @@ the type of `model`.
 function get_observation_eltype end
 
 """
-    ParticleDA.sample_initial_state!(state, model, rng)
+    ParticleDA.sample_initial_state!(state, model, rng, task_index)
     
 Sample value for state vector from its initial distribution for model described by 
 `model` using random number generator `rng` to generate random draws and writing
@@ -57,7 +57,7 @@ the type of `model`.
 function sample_initial_state! end
 
 """
-    ParticleDA.update_state_deterministic!(state, model, time_index)
+    ParticleDA.update_state_deterministic!(state, model, time_index, task_index)
 
 Apply the deterministic component of the state time update at discrete time index 
 `time_index` for the model described by `model` for the state vector `state`
@@ -69,7 +69,7 @@ the type of `model`.
 function update_state_deterministic! end
 
 """
-    ParticleDA.update_state_stochastic!(state, model, rng)
+    ParticleDA.update_state_stochastic!(state, model, rng, task_index)
 
 Apply the stochastic component of the state time update for the model described by
 `model` for the state vector `state`, using random number generator `rng` to
@@ -81,7 +81,7 @@ the type of `model`.
 function update_state_stochastic! end
 
 """
-    ParticleDA.sample_observation_given_state!(observation, state, model, rng)
+    ParticleDA.sample_observation_given_state!(observation, state, model, rng, task_index)
 
 Simulate noisy observations of the state `state` of model described by `model`
 and write to `observation` array using `rng` to generate any random draws.
@@ -93,7 +93,7 @@ function sample_observation_given_state! end
 
 """
     ParticleDA.get_log_density_observation_given_state(
-        observation, state, model
+        observation, state, model, task_index
     ) -> Real
     
 Return the logarithm of the probability density of an observation vector `observation`
