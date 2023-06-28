@@ -22,7 +22,6 @@ observation_file_path = tempname()
 input_params = Dict(
     "filter" => Dict(
         "nprt" => n_particle,
-        "enable_timers" => true,
         "verbose"=> false,
         "output_filename" => output_file_path,
         "seed" => 456,
