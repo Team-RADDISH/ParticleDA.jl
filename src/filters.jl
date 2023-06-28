@@ -161,12 +161,10 @@ function sample_proposal_and_compute_log_weights!(
     rng::Random.AbstractRNG,
 )
     n_particle = size(states, 2)
-    particles_per_task = max(1, n_particle ÷ filter_data.n_tasks)
-    particle_index_chunks = Iterators.partition(1:n_particle, particles_per_task)
-    @sync for (task_index, per_task_particle_indices) in enumerate(particle_index_chunks)
-        Threads.@spawn for particle_index in per_task_particle_indices
+    @sync for (task_index, particle_indices) in chunk(1:n_particle, filter_data.n_tasks)
+        Threads.@spawn for particle_index in particle_indices
             state = selectdim(states, 2, particle_index)
-            update_state_deterministic!(state, model, time_index)
+            update_state_deterministic!(state, model, time_index, task_index)
             update_state_stochastic!(state, model, rng, task_index)
             log_weights[particle_index] = get_log_density_observation_given_state(
                 observation, state, model, task_index
@@ -205,10 +203,8 @@ function update_states_given_observations!(
     cov_Y_Y = filter_data.offline_matrices.cov_Y_Y
     # Compute Y ~ Normal(HX, R) for each particle X
     n_particle = size(states, 2)
-    particles_per_task = max(1, n_particle ÷ filter_data.n_tasks)
-    particle_index_chunks = Iterators.partition(1:n_particle, particles_per_task)
-    @sync for (task_index, per_task_particle_indices) in enumerate(particle_index_chunks)
-        Threads.@spawn for particle_index in per_task_particle_indices
+    @sync for (task_index, particle_indices) in chunk(1:n_particle, filter_data.n_tasks)
+        Threads.@spawn for particle_index in particle_indices
             sample_observation_given_state!(
                 selectdim(observation_buffer, 2, particle_index),
                 selectdim(states, 2, particle_index),
@@ -247,10 +243,8 @@ function sample_proposal_and_compute_log_weights!(
     rng::Random.AbstractRNG,
 )
     n_particle = size(states, 2)
-    particles_per_task = max(1, n_particle ÷ filter_data.n_tasks)
-    particle_index_chunks = Iterators.partition(1:n_particle, particles_per_task)
-    @sync for (task_index, per_task_particle_indices) in enumerate(particle_index_chunks)
-        Threads.@spawn for particle_index in per_task_particle_indices
+    @sync for (task_index, particle_indices) in chunk(1:n_particle, filter_data.n_tasks)
+        Threads.@spawn for particle_index in particle_indices
             state = selectdim(states, 2, particle_index)
             update_state_deterministic!(state, model, time_index, task_index)
             # Particle weights for optimal proposal _do not_ depend on state noise values

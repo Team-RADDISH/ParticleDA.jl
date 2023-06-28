@@ -10,6 +10,7 @@ using TimerOutputs
 using LinearAlgebra
 using PDMats
 using StructArrays
+using ChunkSplitters
 
 export run_particle_filter, simulate_observations_from_model
 export BootstrapFilter, OptimalFilter
