@@ -1,6 +1,7 @@
 [deps]
 BenchmarkCI = "20533458-34a3-403d-a444-e18f38190b5b"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+ChunkSplitters = "ae650224-84b6-46f8-82ea-d812ca08434e"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 GaussianRandomFields = "e4b2fa32-6e09-5554-b718-106ed5adafe9"
