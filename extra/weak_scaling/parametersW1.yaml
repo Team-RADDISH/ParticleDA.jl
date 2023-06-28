@@ -4,7 +4,7 @@ filter:
   nprt: 3200
   verbose: true
   output_filename: "llw2d_filtering.h5"
-  n_tasks: -400
+  n_tasks: -10
 
 model:
   llw2d:
