@@ -107,7 +107,7 @@ function stochastically_driven_dsho_model_parameters(
     )
 end
 
-function init(parameters_dict::Dict)
+function init(parameters_dict::Dict, n_tasks::Int=1)
     parameters = LinearGaussianModelParameters(; parameters_dict...)
     (observation_dimension, state_dimension) = size(
         parameters.observation_matrix
@@ -136,6 +136,7 @@ function ParticleDA.sample_initial_state!(
     state::AbstractVector{T},
     model::LinearGaussianModel{S, T}, 
     rng::Random.AbstractRNG,
+    task_index::Int=1,
 ) where {S, T}
     rand!(rng, model.initial_state_distribution, state)
 end
@@ -144,6 +145,7 @@ function ParticleDA.update_state_deterministic!(
     state::AbstractVector{T}, 
     model::LinearGaussianModel{S, T}, 
     time_index::Int,
+    task_index::Int=1,
 ) where {S, T}
     state .= model.parameters.state_transition_matrix * state
 end
@@ -152,6 +154,7 @@ function ParticleDA.update_state_stochastic!(
     state::AbstractVector{T}, 
     model::LinearGaussianModel{S, T}, 
     rng::Random.AbstractRNG,
+    task_index::Int=1,
 ) where {S, T}
     rand!(rng, state + model.state_noise_distribution, state)
 end
@@ -161,6 +164,7 @@ function ParticleDA.sample_observation_given_state!(
     state::AbstractVector{S}, 
     model::LinearGaussianModel{S, T}, 
     rng::Random.AbstractRNG,
+    task_index::Int=1,
 ) where {S <: Real, T <: Real}
     rand!(
         rng,
@@ -173,7 +177,8 @@ end
 function ParticleDA.get_log_density_observation_given_state(
     observation::AbstractVector{T},
     state::AbstractVector{S},
-    model::LinearGaussianModel{S, T}
+    model::LinearGaussianModel{S, T},
+    task_index::Int=1,
 ) where {S <: Real, T <: Real}
     return logpdf(
         (model.parameters.observation_matrix * state)
@@ -200,7 +205,8 @@ end
 function ParticleDA.get_observation_mean_given_state!(
     observation_mean::AbstractVector{T},
     state::AbstractVector{S},
-    model::LinearGaussianModel{S, T}
+    model::LinearGaussianModel{S, T},
+    task_index::Int=1,
 ) where {S <: Real, T <: Real}
     observation_mean .= model.parameters.observation_matrix * state
 end

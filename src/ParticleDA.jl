@@ -191,16 +191,23 @@ function run_particle_filter(
     timer = TimerOutput()
 
     nprt_per_rank = Int(filter_params.nprt / MPI.Comm_size(MPI.COMM_WORLD))
+    n_tasks = (
+        filter_params.n_tasks > 0 
+        ? filter_params.n_tasks 
+        : Threads.nthreads() * abs(filter_params.n_tasks)
+    )
 
     # Do memory allocations
-    @timeit_debug timer "Model initialization" model = init_model(model_params_dict)
+    @timeit_debug timer "Model initialization" model = init_model(
+        model_params_dict, n_tasks
+    )
     
     @timeit_debug timer "State initialization" states = init_states(
-        model, nprt_per_rank, rng
+        model, nprt_per_rank, n_tasks, rng
     )
 
     @timeit_debug timer "Filter initialization" filter_data = init_filter(
-        filter_params, model, nprt_per_rank, filter_type, summary_stat_type
+        filter_params, model, nprt_per_rank, n_tasks, filter_type, summary_stat_type
     )
 
     @timeit_debug timer "Summary statistics" update_statistics!(

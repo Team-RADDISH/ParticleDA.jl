@@ -37,8 +37,13 @@ const n_time_step = 20
 const nprt_per_rank = Int(params["filter"]["nprt"] / my_size)
 const rng = Random.TaskLocalRNG()
 Random.seed!(rng, 1234)
-const model = LLW2d.init(params["model"])
 const filter_params = ParticleDA.get_params(ParticleDA.FilterParameters, params["filter"])
+const n_tasks = (
+    filter_params.n_tasks > 0 
+    ? filter_params.n_tasks 
+    : Threads.nthreads() * abs(filter_params.n_tasks)
+)
+const model = LLW2d.init(params["model"], n_tasks)
 const state = Vector{ParticleDA.get_state_eltype(model)}(
     undef, ParticleDA.get_state_dimension(model)
 )
@@ -132,6 +137,7 @@ for filter_type in (BootstrapFilter, OptimalFilter), statistics_type in (
             $(filter_params),
             $(model),
             $(nprt_per_rank),
+            $(n_tasks),
             $(filter_type),
             $(statistics_type)
         )
@@ -149,7 +155,7 @@ for filter_type in (BootstrapFilter, OptimalFilter), statistics_type in (
         )
     ) setup=(
         local_rng=copy($(rng));
-        states=ParticleDA.init_states($(model), $(nprt_per_rank), local_rng);
+        states=ParticleDA.init_states($(model), $(nprt_per_rank), 1, local_rng);
         log_weights=Vector{Float64}(undef, $(nprt_per_rank));
         local_state = copy($(state));
         local_observation = copy($(observation));
@@ -161,6 +167,7 @@ for filter_type in (BootstrapFilter, OptimalFilter), statistics_type in (
             $(filter_params),
             $(model),
             $(nprt_per_rank),
+            $(n_tasks),
             $(filter_type),
             $(statistics_type)
         )

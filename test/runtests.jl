@@ -661,7 +661,8 @@ end
     model = LLW2d.init(Dict())
     filter_params = ParticleDA.get_params()
     nprt_per_rank = filter_params.nprt
-    states = ParticleDA.init_states(model, nprt_per_rank, rng)
+    n_tasks = 1
+    states = ParticleDA.init_states(model, nprt_per_rank, n_tasks, rng)
     @test size(states) == (ParticleDA.get_state_dimension(model), nprt_per_rank)
     @test eltype(states) == ParticleDA.get_state_eltype(model)
     # Sample an observation from model to use for testing filter update
@@ -678,7 +679,7 @@ end
     log_weights .= NaN
     for filter_type in (BootstrapFilter, OptimalFilter)
         filter_data = ParticleDA.init_filter(
-            filter_params, model, nprt_per_rank, filter_type, summary_stat_type
+            filter_params, model, nprt_per_rank, n_tasks, filter_type, summary_stat_type
         )
         @test isa(filter_data, NamedTuple)
         new_states = copy(states)
@@ -720,6 +721,7 @@ end
 
 @testset "Optimal proposal filter specific unit tests" begin
     rng = StableRNG(2468)
+    n_task = 1
     model_params_dict = Dict(
         "llw2d" => Dict(
             "nx" => 32, 
@@ -803,7 +805,7 @@ end
            ParticleDA.FilterParameters, Dict("nprt" => nprt)
         )
         filter_data = ParticleDA.init_filter(
-            filter_params, model, nprt, OptimalFilter, ParticleDA.MeanSummaryStat
+            filter_params, model, nprt, n_task, OptimalFilter, ParticleDA.MeanSummaryStat
         )
         # Create set of state 'particles' all equal to propagated state
         states = Matrix{ParticleDA.get_state_eltype(model)}(
