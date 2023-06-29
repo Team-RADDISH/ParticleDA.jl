@@ -519,8 +519,8 @@ uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
 version = "2.7.1"
 
 [[deps.ParticleDA]]
-deps = ["HDF5", "LinearAlgebra", "MPI", "PDMats", "Random", "Statistics", "StructArrays", "TimerOutputs", "YAML"]
-git-tree-sha1 = "69010d3724769c4b183c274cbd3f1756eaa222d1"
+deps = ["ChunkSplitters", "HDF5", "LinearAlgebra", "MPI", "PDMats", "Random", "Statistics", "StructArrays", "TimerOutputs", "YAML"]
+path = ".."
 uuid = "61cd1fb4-f4c4-4bc8-80c6-ea5639a6ca2e"
 version = "1.0.1"
 
