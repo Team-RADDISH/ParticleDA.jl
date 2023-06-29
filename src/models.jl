@@ -45,11 +45,11 @@ the type of `model`.
 function get_observation_eltype end
 
 """
-    ParticleDA.sample_initial_state!(state, model, rng, task_index)
+    ParticleDA.sample_initial_state!(state, model, rng, task_index=1)
     
 Sample value for state vector from its initial distribution for model described by 
 `model` using random number generator `rng` to generate random draws and writing
-to `state` argument. 
+to `state` argument.
 
 This method is intended to be extended by the user with the above signature, specifying
 the type of `model`.
@@ -57,7 +57,7 @@ the type of `model`.
 function sample_initial_state! end
 
 """
-    ParticleDA.update_state_deterministic!(state, model, time_index, task_index)
+    ParticleDA.update_state_deterministic!(state, model, time_index, task_index=1)
 
 Apply the deterministic component of the state time update at discrete time index 
 `time_index` for the model described by `model` for the state vector `state`
@@ -69,7 +69,7 @@ the type of `model`.
 function update_state_deterministic! end
 
 """
-    ParticleDA.update_state_stochastic!(state, model, rng, task_index)
+    ParticleDA.update_state_stochastic!(state, model, rng, task_index=1)
 
 Apply the stochastic component of the state time update for the model described by
 `model` for the state vector `state`, using random number generator `rng` to
@@ -81,7 +81,9 @@ the type of `model`.
 function update_state_stochastic! end
 
 """
-    ParticleDA.sample_observation_given_state!(observation, state, model, rng, task_index)
+    ParticleDA.sample_observation_given_state!(
+        observation, state, model, rng, task_index=1
+    )
 
 Simulate noisy observations of the state `state` of model described by `model`
 and write to `observation` array using `rng` to generate any random draws.
@@ -93,7 +95,7 @@ function sample_observation_given_state! end
 
 """
     ParticleDA.get_log_density_observation_given_state(
-        observation, state, model, task_index
+        observation, state, model, task_index=1
     ) -> Real
     
 Return the logarithm of the probability density of an observation vector `observation`
@@ -118,7 +120,9 @@ function write_model_metadata end
 # Functions to extend in the model - required only for optimal proposal filter
 
 """
-    ParticleDA.get_observation_mean_given_state!(observation_mean, state, model)
+    ParticleDA.get_observation_mean_given_state!(
+        observation_mean, state, model, task_index=1
+    )
     
 Compute the mean of the multivariate normal distribution on the observations given
 the current state and write to the first argument.
