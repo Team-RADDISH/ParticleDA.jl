@@ -81,10 +81,19 @@ be used by [`run_particle_filter`](@ref):
   dispatch the methods to be defined, listed below;
 * an initialisation function with the following signature:
   ```julia
-  init(params_dict::Dict) -> model
+  init(params_dict::Dict, n_tasks::Integer) -> model
   ```
-  with `params_dict` a dictionary with the parameters of the model. This initialisation 
-  function should create an instance of the model data structure and return it.
+  with `params_dict` a dictionary with the parameters of the model and `n_tasks` an
+  integer specifying the maximum number tasks (coroutines) parallelizable operations
+  will be scheduled over. This initialisation function should create an instance of the
+  model data structure and return it. The value of `n_tasks` can be used to create 
+  task-specific buffers for writing to when computing the model updates to avoid 
+  reallocating data structures on each function call. As tasks may be run in parallel 
+  over multiple threads, any buffers used in functions called within tasks should be
+  unique to the task; to facilitate this functions in the model interface (see below)
+  which may be called within tasks scheduled in parallel are passed a `thread_index` 
+  argument which is a integer index in `1:n_tasks` which is guaranteed to be unique to a
+  particular task and so can be used to index in to task specific buffers.
 * The model needs to extend the following methods, using the model type for dispatch:
 ```@docs
 ParticleDA.get_state_dimension
