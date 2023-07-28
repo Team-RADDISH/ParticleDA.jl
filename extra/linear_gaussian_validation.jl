@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.22
+# v0.19.26
 
 using Markdown
 using InteractiveUtils
@@ -53,7 +53,7 @@ function plot_filtering_distribution_comparison(
         model_parameters_dict, 
         observation_seq, 
         filter_type, 
-        ParticleDA.MeanAndVarSummaryStat; 
+        ParticleDA.NaiveMeanAndVarSummaryStat; 
         rng=rng
     )
     state_mean_seq = Matrix{ParticleDA.get_state_eltype(model)}(
@@ -112,8 +112,8 @@ function plot_filtering_distribution_comparison(
     )
 end
 
-# ╔═╡ 2ad564f3-48a2-4c2a-8d7d-384a84f7d6d2
-function plot_filter_estimate_rmse_vs_n_particles(
+# ╔═╡ f7704ce7-d44c-4e3a-b9e5-8f4dc4382cce
+function plot_filter_estimate_rmse_vs_n_particles_single_fig(
     n_time_step,
     n_particles,
     init_model,
@@ -129,7 +129,18 @@ function plot_filter_estimate_rmse_vs_n_particles(
     true_state_mean_seq, true_state_var_seq = Kalman.run_kalman_filter(
         model, observation_seq
     )
-    plots = Array{Plots.Plot}(undef, 2)
+	# Set up the empty figure
+	ps = plot(xlabel="Number of particles",
+		ylabel="RMSE(true mean, estimate)",
+		xaxis=:log,
+		yaxis=:log,
+		xticks=n_particles,
+		size=(600, 400),
+		left_margin=20Plots.px,
+		bottom_margin=20Plots.px,
+		dpi=300)
+	colors = [:blue, :orange]
+	
     for (j, (filter_type, label)) in enumerate(
         zip(
             (BootstrapFilter, OptimalFilter), 
@@ -149,7 +160,7 @@ function plot_filter_estimate_rmse_vs_n_particles(
                 model_parameters_dict, 
                 observation_seq, 
                 filter_type, 
-                ParticleDA.MeanAndVarSummaryStat; 
+                ParticleDA.NaiveMeanAndVarSummaryStat; 
                 rng=rng
             )
             state_mean_seq = Matrix{ParticleDA.get_state_eltype(model)}(
@@ -174,25 +185,15 @@ function plot_filter_estimate_rmse_vs_n_particles(
                 mean(x -> x.^2, log.(state_var_seq) .- log.(true_state_var_seq))
             )
         end
-        plots[j] = plot(
-            n_particles,
-            [mean_rmses, log_var_rmses],
-            labels=["mean" "log(variance)"],
-            xlabel="Number of particles",
-            ylabel="RMSE(truth, estimate)",
-            xaxis=:log,
-            yaxis=:log,
-            xticks=n_particles,
-            title=label,
-        )
+		plot!(ps,
+			n_particles,
+			[mean_rmses, log_var_rmses], 
+			color = [colors[j] colors[j]],
+			marker = [:star :square],
+			labels=["Mean ($label)" "Log(Variance) ($label)"]
+		)
     end
-    plot(
-        plots...,
-        layout=(1, 2),
-        size=(1000, 400),
-        left_margin=20Plots.px,
-        bottom_margin=20Plots.px,
-    )
+	return ps
 end
 
 # ╔═╡ 89dae12b-0010-4ea1-ae69-490137196662
@@ -216,7 +217,7 @@ let
     n_particles = [10, 100, 1000, 10_000, 100_000]
     n_time_step = 200
     seed = 20230222
-    figure = plot_filter_estimate_rmse_vs_n_particles(
+    figure = plot_filter_estimate_rmse_vs_n_particles_single_fig(
         n_time_step,
         n_particles,
         LinearGaussian.init,
@@ -248,14 +249,14 @@ let
     n_particles = [10, 100, 1000, 10_000, 100_000]
     n_time_step = 200
     seed = 20230222
-    figure = plot_filter_estimate_rmse_vs_n_particles(
+    figure = plot_filter_estimate_rmse_vs_n_particles_single_fig(
         n_time_step,
         n_particles,
         LinearGaussian.init,
         LinearGaussian.stochastically_driven_dsho_model_parameters(),
         seed
     )
-    figure
+	figure
 end
 
 # ╔═╡ Cell order:
@@ -263,7 +264,7 @@ end
 # ╠═116a8654-c619-4683-8d9a-073aa548fe37
 # ╠═4d2656ca-eacb-4d2b-91cb-bc82fdb49520
 # ╠═a64762bb-3a9f-4b1c-83db-f1a366f282eb
-# ╠═2ad564f3-48a2-4c2a-8d7d-384a84f7d6d2
+# ╠═f7704ce7-d44c-4e3a-b9e5-8f4dc4382cce
 # ╠═89dae12b-0010-4ea1-ae69-490137196662
 # ╠═3e0abdfc-8668-431c-8ad3-61802e21d34e
 # ╠═64a289be-75ce-42e2-9e43-8e0286f70a35
