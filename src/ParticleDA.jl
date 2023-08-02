@@ -191,8 +191,6 @@ function run_particle_filter(
     end
     timer = TimerOutput()
 
-    nprt_per_rank = Int(filter_params.nprt / MPI.Comm_size(MPI.COMM_WORLD))
-
     # Number of tasks to schedule operations which can be parallelized acoss particles 
     # over - negative n_tasks filter parameter values are assumed to correspond to 
     # number of tasks per thread and we force the maximum number of tasks that can be 
