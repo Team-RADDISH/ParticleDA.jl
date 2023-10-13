@@ -131,7 +131,7 @@ function plot_filter_estimate_rmse_vs_n_particles_single_fig(
     )
 	# Set up the empty figure
 	ps = plot(xlabel="Number of particles",
-		ylabel="RMSE(true mean, estimate)",
+		ylabel="RMSE(true mean/log(variance), estimate)",
 		xaxis=:log,
 		yaxis=:log,
 		xticks=n_particles,
@@ -257,6 +257,7 @@ let
         seed
     )
 	figure
+	savefig("dsho_linear_gaussian_model_estimate_rmse_vs_n_particles_oneplot.pdf")
 end
 
 # ╔═╡ Cell order:
