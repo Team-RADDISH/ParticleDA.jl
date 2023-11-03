@@ -124,8 +124,6 @@ function observation_operator!(
 ) where {T <: Real}
     if operator_type == "log"
         observation .= log.(abs.(observation))
-    elseif operator_type == "square"
-        observation .= (observation).^2
     else
         observation .= observation
     end

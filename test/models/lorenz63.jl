@@ -19,6 +19,7 @@ Base.@kwdef struct Lorenz63ModelParameters{S <: Real, T <: Real}
     initial_state_std::Union{S, Vector{S}} = 0.05
     state_noise_std::Union{S, Vector{S}} = 0.05
     observation_noise_std::Union{T, Vector{T}} = 2.
+    operator_type::String = "linear"
 end
 
 function get_params(
@@ -103,15 +104,28 @@ function ParticleDA.update_state_stochastic!(
     rand!(rng, state + model.state_noise_distribution, state)
 end
 
+function observation_operator!(
+    observation::AbstractVector{T},
+    operator_type::String
+) where {T <: Real}
+    if operator_type == "log"
+        observation .= log.(abs.(observation))
+    else
+        observation .= observation
+    end
+end
+
 function ParticleDA.sample_observation_given_state!(
     observation::AbstractVector{T},
     state::AbstractVector{S}, 
     model::Lorenz63Model{S, T}, 
     rng::Random.AbstractRNG,
 ) where {S <: Real, T <: Real}
+
+    observation .= view(state, model.parameters.observed_indices)
     rand!(
         rng,
-        view(state, model.parameters.observed_indices) 
+        observation_operator!(observation, model.parameters.operator_type)
         + model.observation_noise_distribution,
         observation
     )
@@ -120,9 +134,11 @@ end
 function ParticleDA.get_log_density_observation_given_state(
     observation::AbstractVector{T}, state::AbstractVector{S}, model::Lorenz63Model{S, T}
 ) where {S <: Real, T <: Real}
+
+    obs_given_state = (view(state, model.parameters.observed_indices) + model.observation_noise_distribution)
+    observation_operator!(obs_given_state.μ, model.parameters.operator_type)
     return logpdf(
-        view(state, model.parameters.observed_indices) 
-        + model.observation_noise_distribution,
+        obs_given_state,
         observation
     )
 end
