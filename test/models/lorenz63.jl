@@ -2,7 +2,6 @@ module Lorenz63
 
 using Base.Threads
 using Distributions
-using FillArrays
 using HDF5
 using Random
 using PDMats
@@ -56,7 +55,7 @@ function init(
             Tsit5();
             save_everystep=false
         ) 
-        for u in eachcol(Matrix{S}(undef, 3, n_tasks))
+        for u in eachcol(zeros(S, 3, n_tasks))
     ]
     state_dimension = 3
     observation_dimension = length(parameters.observed_indices)
@@ -66,9 +65,9 @@ function init(
         (
             MvNormal(m, isa(s, Vector) ? PDiagMat(s.^2) : ScalMat(length(m), s.^2))
             for (m, s) in (
-                (Ones{S}(state_dimension), parameters.initial_state_std), 
-                (Zeros{S}(state_dimension), parameters.state_noise_std), 
-                (Zeros{T}(observation_dimension), parameters.observation_noise_std), 
+                (ones(S, state_dimension), parameters.initial_state_std), 
+                (zeros(S, state_dimension), parameters.state_noise_std), 
+                (zeros(T, observation_dimension), parameters.observation_noise_std), 
             )
         )...
     )
