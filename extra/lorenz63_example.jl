@@ -201,7 +201,7 @@ let
 		simulation_filename
 	)
 	filter_parameters = ParticleDA.FilterParameters(
-		nprt=n_particle, verbose=true, output_filename=filtering_filename
+		nprt=n_particle, verbose=true, output_filename=filtering_filename,
 	)
 	ParticleDA.run_particle_filter(
 		Lorenz63.init,
