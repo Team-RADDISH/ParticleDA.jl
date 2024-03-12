@@ -2,12 +2,10 @@ module Lorenz63
 
 using Base.Threads
 using Distributions
-using FillArrays
 using HDF5
 using Random
 using PDMats
 using OrdinaryDiffEq
-using SciMLBase
 using ParticleDA
 
 Base.@kwdef struct Lorenz63ModelParameters{S <: Real, T <: Real}
@@ -27,9 +25,9 @@ function get_params(
     return P(; (; (Symbol(k) => v for (k, v) in model_params_dict)...)...)
 end
 
-struct Lorenz63Model{S <: Real, T <: Real}
+struct Lorenz63Model{S <: Real, T <: Real, I}
     parameters::Lorenz63ModelParameters{S, T}
-    integrators::Vector{<:SciMLBase.AbstractODEIntegrator}
+    integrators::Vector{I}
     initial_state_distribution::MvNormal{S}
     state_noise_distribution::MvNormal{S}
     observation_noise_distribution::MvNormal{T}
@@ -57,7 +55,7 @@ function init(
             Tsit5();
             save_everystep=false
         ) 
-        for u in eachcol(Matrix{S}(undef, 3, n_tasks))
+        for u in eachcol(zeros(S, 3, n_tasks))
     ]
     state_dimension = 3
     observation_dimension = length(parameters.observed_indices)
@@ -67,9 +65,9 @@ function init(
         (
             MvNormal(m, isa(s, Vector) ? PDiagMat(s.^2) : ScalMat(length(m), s.^2))
             for (m, s) in (
-                (Ones{S}(state_dimension), parameters.initial_state_std), 
-                (Zeros{S}(state_dimension), parameters.state_noise_std), 
-                (Zeros{T}(observation_dimension), parameters.observation_noise_std), 
+                (ones(S, state_dimension), parameters.initial_state_std), 
+                (zeros(S, state_dimension), parameters.state_noise_std), 
+                (zeros(T, observation_dimension), parameters.observation_noise_std), 
             )
         )...
     )
