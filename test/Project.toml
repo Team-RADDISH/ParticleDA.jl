@@ -2,7 +2,6 @@
 ChunkSplitters = "ae650224-84b6-46f8-82ea-d812ca08434e"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
-FillArrays = "1a297f60-69ca-5386-bcde-b61e274b549b"
 GaussianRandomFields = "e4b2fa32-6e09-5554-b718-106ed5adafe9"
 HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
@@ -17,7 +16,6 @@ YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
 [compat]
 Distributions = "0.22, 0.23, 0.24, 0.25"
-FillArrays = "1.9.3"
 GaussianRandomFields = "2.2.1"
 HDF5 = "0.14, 0.15, 0.16"
 MPI = "0.20.8"

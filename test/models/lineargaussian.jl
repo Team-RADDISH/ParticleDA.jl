@@ -1,7 +1,6 @@
 module LinearGaussian
 
 using Distributions
-using FillArrays
 using HDF5
 using Random
 using PDMats
@@ -49,7 +48,7 @@ function diagonal_linear_gaussian_model_parameters(
         :observation_matrix => ScalMat(
             state_dimension, observation_coefficient
         ),
-        :initial_state_mean => Zeros(state_dimension),
+        :initial_state_mean => zeros(state_dimension),
         :initial_state_covar => ScalMat(
             state_dimension, initial_state_std^2
         ),
@@ -81,7 +80,7 @@ function stochastically_driven_dsho_model_parameters(
             ]'
         ],
         :observation_matrix => ScalMat(2, 1.),
-        :initial_state_mean => Zeros(2),
+        :initial_state_mean => zeros(2),
         :initial_state_covar => ScalMat(2, 1.),
         :state_noise_covar => PDMat(
             Q * exp(-ω * δ / Q) * [
@@ -120,8 +119,8 @@ function init(parameters_dict::Dict, n_tasks::Int=1)
             MvNormal(m, c)
             for (m, c) in (
                 (parameters.initial_state_mean, parameters.initial_state_covar), 
-                (Zeros(state_dimension), parameters.state_noise_covar), 
-                (Zeros(observation_dimension), parameters.observation_noise_covar), 
+                (zeros(state_dimension), parameters.state_noise_covar), 
+                (zeros(observation_dimension), parameters.observation_noise_covar), 
             )
         )...
     )
