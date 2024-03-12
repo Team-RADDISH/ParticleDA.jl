@@ -7,7 +7,6 @@ using HDF5
 using Random
 using PDMats
 using OrdinaryDiffEq
-using SciMLBase
 using ParticleDA
 
 Base.@kwdef struct Lorenz63ModelParameters{S <: Real, T <: Real}
@@ -27,9 +26,9 @@ function get_params(
     return P(; (; (Symbol(k) => v for (k, v) in model_params_dict)...)...)
 end
 
-struct Lorenz63Model{S <: Real, T <: Real}
+struct Lorenz63Model{S <: Real, T <: Real, I}
     parameters::Lorenz63ModelParameters{S, T}
-    integrators::Vector{<:SciMLBase.AbstractODEIntegrator}
+    integrators::Vector{I}
     initial_state_distribution::MvNormal{S}
     state_noise_distribution::MvNormal{S}
     observation_noise_distribution::MvNormal{T}
