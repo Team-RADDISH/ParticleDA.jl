@@ -515,8 +515,21 @@ end
 @testset (
     "Optimal proposal model interface unit tests - $(parentmodule(typeof(model)))"
 ) for model in (
-    # Use sigma != 1. to test if covariance is being scaled by sigma correctly  
-    LLW2d.init(Dict("llw2d" => Dict("sigma" => [0.5, 1.5, 1.5]))), 
+    # Use sigma != 1. to test if covariance is being scaled by sigma correctly
+    # Reduce mesh dimensions to keep test run time reasonable
+    LLW2d.init(
+        Dict(
+            "llw2d" => Dict(
+                "sigma" => [0.5, 1.5, 1.5],
+                "nx" => 11,
+                "ny" => 11,
+                "x_length" => 100e3,
+                "y_length" => 100e3,
+                "station_boundary_x" => 30e3,
+                "station_boundary_y" => 30e3, 
+            )
+        )
+    ), 
     Lorenz63.init(Dict()),
     LinearGaussian.init(LinearGaussian.stochastically_driven_dsho_model_parameters())
 )
