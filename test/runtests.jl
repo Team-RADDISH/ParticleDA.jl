@@ -513,35 +513,41 @@ function run_tests_for_optimal_proposal_model_interface(
 end
 
 @testset (
-    "Optimal proposal model interface unit tests - $(parentmodule(typeof(model)))"
-) for model in (
-    # Use sigma != 1. to test if covariance is being scaled by sigma correctly
-    # Reduce mesh dimensions to keep test run time reasonable
-    LLW2d.init(
-        Dict(
-            "llw2d" => Dict(
-                "sigma" => [0.5, 1.5, 1.5],
-                "nx" => 11,
-                "ny" => 11,
-                "x_length" => 100e3,
-                "y_length" => 100e3,
-                "station_boundary_x" => 30e3,
-                "station_boundary_y" => 30e3, 
+    "Optimal proposal model interface unit tests - $(parentmodule(typeof(config.model)))"
+) for config in (
+    (;
+        # Use sigma != 1. to test if covariance is being scaled by sigma correctly
+        # Reduce mesh dimensions to keep test run time reasonable
+        model = LLW2d.init(
+            Dict(
+                "llw2d" => Dict(
+                    "sigma" => [0.5, 1.5, 1.5],
+                    "nx" => 11,
+                    "ny" => 11,
+                    "x_length" => 100e3,
+                    "y_length" => 100e3,
+                    "station_boundary_x" => 30e3,
+                    "station_boundary_y" => 30e3, 
+                )
             )
-        )
-    ), 
-    Lorenz63.init(Dict()),
-    LinearGaussian.init(LinearGaussian.stochastically_driven_dsho_model_parameters())
+        ),
+        estimate_n_samples = [10, 100],
+    ),
+    (; model = Lorenz63.init(Dict()), estimate_n_samples = [10, 100, 1000]),
+    (;
+        model = LinearGaussian.init(
+            LinearGaussian.stochastically_driven_dsho_model_parameters()
+        ),
+        estimate_n_samples = [10, 100, 1000]
+    )
 )
     seed = 1234
-    # Number of samples to use in convergence tests of Monte Carlo estimates
-    estimate_n_samples = [10, 100, 1000]
     # Constant factor used in Monte Carlo estimate convergence tests. Set based on some
     # trial and error to keep tests relatively sensitive while avoiding too high
     # probability of false failures but may require tweaking for each model
     estimate_bound_constant = 12.5
     run_tests_for_optimal_proposal_model_interface(
-        model, seed, estimate_bound_constant, estimate_n_samples
+        config.model, seed, estimate_bound_constant, config.estimate_n_samples
     )
 end
 
