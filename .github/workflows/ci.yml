@@ -18,6 +18,7 @@ jobs:
     env:
       JULIA_NUM_THREADS: ${{ matrix.threads }}
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.version == 'nightly' }}
     strategy:
       fail-fast: false
       matrix:
