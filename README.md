@@ -3,7 +3,7 @@
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://team-raddish.github.io/ParticleDA.jl/stable/)
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://team-raddish.github.io/ParticleDA.jl/dev/)
 [![Build Status](https://github.com/Team-RADDISH/ParticleDA.jl/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Team-RADDISH/ParticleDA.jl/actions/workflows/ci.yml?query=branch%3Amaster)
-[![Coverage](https://codecov.io/gh/Team-RADDISH/ParticleDA.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/Team-RADDISH/ParticleDA.jl)
+[![Coverage](https://codecov.io/gh/Team-RADDISH/ParticleDA.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/Team-RADDISH/ParticleDA.jl)
 [![DOI](https://zenodo.org/badge/232626497.svg)](https://zenodo.org/badge/latestdoi/232626497)
 [![DOI:10.5194/gmd-2023-38](https://img.shields.io/badge/Journal_article-10.5194/gmd--2023--38-d4a519.svg)](https://doi.org/10.5194/gmd-2023-38)
 
