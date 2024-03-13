@@ -2,13 +2,22 @@ name: Documentation
 
 on:
   push:
+    paths:
+      - 'Project.toml'
+      - 'docs/**'
+      - 'src/**'
     branches:
       - main
     tags: '*'
   pull_request:
+    paths:
+      - 'Project.toml'
+      - 'docs/**'
+      - 'src/**'
 
 jobs:
   build:
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
