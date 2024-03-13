@@ -2,6 +2,12 @@ name: Run benchmarks
 
 on:
   pull_request:
+    paths:
+      - '.github/workflows/benchmark.yml'
+      - 'benchmark/**'
+      - 'src/**'
+      # Benchmarks include this file
+      - 'test/models/llw2d.jl'
   workflow_dispatch:
 
 concurrency:

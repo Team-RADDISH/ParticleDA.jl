@@ -2,9 +2,19 @@ name: CI
 
 on:
   push:
+    paths:
+      - '.github/workflows/ci.yml'
+      - 'Project.toml'
+      - 'src/**'
+      - 'test/**'
     branches: [master]
     tags: ["*"]
   pull_request:
+    paths:
+      - '.github/workflows/ci.yml'
+      - 'Project.toml'
+      - 'src/**'
+      - 'test/**'
 
 concurrency:
   # Skip intermediate builds: always.

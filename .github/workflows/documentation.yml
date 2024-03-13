@@ -2,10 +2,18 @@ name: Documentation
 
 on:
   push:
+    paths:
+      - 'Project.toml'
+      - 'docs/**'
+      - 'src/**'
     branches:
       - master
     tags: '*'
   pull_request:
+    paths:
+      - 'Project.toml'
+      - 'docs/**'
+      - 'src/**'
 
 jobs:
   build:
