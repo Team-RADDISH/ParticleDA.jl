@@ -38,6 +38,7 @@ jobs:
                       "JULIA_NUM_THREADS" => "2",
                   ),
               ),
+              "origin/main",
           )
       - name: Print judgement
         shell: julia --color=yes {0}

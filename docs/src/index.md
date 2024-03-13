@@ -229,7 +229,7 @@ The coordinates of the observation stations can be set in two different ways.
 
 If the filter parameter `verbose` is set to `true`, [`run_particle_filter`](@ref) will produce an HDF5 file in the run directory. The file name is `particle_da.h5` by default (this is configurable using the `output_filename` filter parameter). The file contains the summary statistics of the estimate state distribution (by default the mean and variance), particle weights, parameters used, and other metadata at each time step observation were assimilated. To read the output file, use the [HDF5 library](https://www.hdfgroup.org/solutions/hdf5/).
 
-A basic plotting tool is provided in a [Jupyter notebook](https://github.com/Team-RADDISH/ParticleDA.jl/blob/master/extra/Plot_tdac_output.ipynb). This is intended as a template to build more sophisticated postprocessing tools, but can be used for some simple analysis. Set the variable `timestamp` in the third cell to plot different time slices from the output file. More functionality may be added as the package develops.
+A basic plotting tool is provided in a [Jupyter notebook](https://github.com/Team-RADDISH/ParticleDA.jl/blob/main/extra/Plot_tdac_output.ipynb). This is intended as a template to build more sophisticated postprocessing tools, but can be used for some simple analysis. Set the variable `timestamp` in the third cell to plot different time slices from the output file. More functionality may be added as the package develops.
 
 ## Running in parallel
 
