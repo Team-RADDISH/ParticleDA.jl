@@ -42,6 +42,15 @@ jobs:
         arch:
           - x64
         threads: [1, 2]
+        include:
+          - version: "1"
+            os: macos-latest
+            arch: "aarch64"
+            threads: 1
+          - version: "1"
+            os: macos-latest
+            arch: "aarch64"
+            threads: 2
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
