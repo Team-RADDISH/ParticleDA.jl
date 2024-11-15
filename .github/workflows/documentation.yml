@@ -3,6 +3,7 @@ name: Documentation
 on:
   push:
     paths:
+      - '.github/workflows/documentation.yml'
       - 'Project.toml'
       - 'docs/**'
       - 'src/**'
@@ -11,19 +12,27 @@ on:
     tags: '*'
   pull_request:
     paths:
+      - '.github/workflows/documentation.yml'
       - 'Project.toml'
       - 'docs/**'
       - 'src/**'
 
+concurrency:
+  # Skip intermediate builds: always.
+  # Cancel intermediate builds: always.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
+  build-docs:
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
       - uses: julia-actions/cache@v2
         with:
           cache-name: "docs"
-      - uses: julia-actions/julia-docdeploy@releases/v1
+      - uses: julia-actions/julia-docdeploy@v1
         env:
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
