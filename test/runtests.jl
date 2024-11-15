@@ -937,7 +937,5 @@ end
     julia = Base.julia_cmd()
     flags = ["--startup-file=no", "-q", "-t$(Base.Threads.nthreads())"]
     script = joinpath(@__DIR__, file)
-    mpiexec() do mpiexec
-        @test success(run(ignorestatus(`$(mpiexec) -n 3 $(julia) $(flags) $(script)`)))
-    end
+    @test success(run(ignorestatus(`$(mpiexec()) -n 3 $(julia) $(flags) $(script)`)))
 end
