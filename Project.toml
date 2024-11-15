@@ -1,7 +1,7 @@
 name = "ParticleDA"
 uuid = "61cd1fb4-f4c4-4bc8-80c6-ea5639a6ca2e"
 authors = ["Mosè Giordano and Tuomas Koskela and Dan Giles and Matt Graham"]
-version = "1.1.0"
+version = "1.2.0"
 
 [deps]
 ChunkSplitters = "ae650224-84b6-46f8-82ea-d812ca08434e"
@@ -19,7 +19,7 @@ YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 ChunkSplitters = "3.1"
 HDF5 = "0.14, 0.15, 0.16, 0.17"
 LinearAlgebra = "<0.0.1, 1"
-MPI = "0.20.8"
+MPI = "0.20.22"
 PDMats = "0.11.17"
 Random = "<0.0.1, 1"
 Statistics = "<0.0.1, 1"
