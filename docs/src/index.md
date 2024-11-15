@@ -118,6 +118,21 @@ ParticleDA.get_covariance_state_observation_given_previous_state
 ParticleDA.get_covariance_observation_observation_given_previous_state
 ```
 
+### Other function you may want to extend
+
+```@docs
+ParticleDA.get_state_indices_correlated_to_observations
+ParticleDA.get_initial_state_mean!
+ParticleDA.write_snapshot
+ParticleDA.write_state
+ParticleDA.get_covariance_initial_state
+ParticleDA.init_filter
+ParticleDA.sample_proposal_and_compute_log_weights!
+ParticleDA.write_observation
+ParticleDA.write_weights
+ParticleDA.get_initial_state_mean
+```
+
 ### Input parameters
 
 You can store the input parameters in an YAML file with the following structure
