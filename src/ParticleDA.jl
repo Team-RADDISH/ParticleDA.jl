@@ -11,6 +11,7 @@ using LinearAlgebra
 using PDMats
 using StructArrays
 using ChunkSplitters
+using Test
 
 export run_particle_filter, simulate_observations_from_model
 export BootstrapFilter, OptimalFilter
@@ -22,6 +23,7 @@ include("models.jl")
 include("statistics.jl")
 include("filters.jl")
 include("utils.jl")
+include("testing.jl")
 
 """
     simulate_observations_from_model(
