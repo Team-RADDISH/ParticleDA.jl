@@ -132,7 +132,9 @@ end
     LinearGaussian.init(LinearGaussian.stochastically_driven_dsho_model_parameters())
 )
     seed = 1234
-    ParticleDA.run_unit_tests_for_generic_model_interface(model, seed)
+    ParticleDA.run_unit_tests_for_generic_model_interface(
+        model, seed; RNGType=StableRNG
+    )
 end
 
 @testset (
@@ -170,7 +172,11 @@ end
     # probability of false failures but may require tweaking for each model
     estimate_bound_constant = 12.5
     ParticleDA.run_tests_for_optimal_proposal_model_interface(
-        config.model, seed, estimate_bound_constant, config.estimate_n_samples
+        config.model,
+        seed,
+        estimate_bound_constant,
+        config.estimate_n_sample; 
+        RNGType=StableRNG
     )
 end
 
