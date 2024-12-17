@@ -180,67 +180,6 @@ end
     )
 end
 
-function run_tests_for_convergence_of_filter_estimates_against_kalman_filter(
-    filter_type,
-    init_model,
-    model_parameters_dict,
-    seed,
-    n_time_step,
-    n_particles,
-    mean_rmse_bound_constant,
-    log_var_rmse_bound_constant,
-)
-    rng = Random.TaskLocalRNG()
-    Random.seed!(rng, seed)
-    model = init_model(model_parameters_dict)
-    observation_seq = ParticleDA.simulate_observations_from_model(
-        model, n_time_step; rng=rng
-    )
-    true_state_mean_seq, true_state_var_seq = ParticleDA.Kalman.run_kalman_filter(
-        model, observation_seq
-    )
-    for n_particle in n_particles
-        output_filename = tempname()
-        filter_parameters = ParticleDA.FilterParameters(
-            nprt=n_particle, verbose=true, output_filename=output_filename
-        )
-        states, statistics = ParticleDA.run_particle_filter(
-            init_model,
-            filter_parameters, 
-            model_parameters_dict, 
-            observation_seq, 
-            filter_type, 
-            ParticleDA.MeanAndVarSummaryStat; 
-            rng=rng
-        )
-        state_mean_seq = Matrix{ParticleDA.get_state_eltype(model)}(
-            undef, ParticleDA.get_state_dimension(model), n_time_step
-        )
-        state_var_seq = Matrix{ParticleDA.get_state_eltype(model)}(
-            undef, ParticleDA.get_state_dimension(model), n_time_step
-        )
-        weights_seq = Matrix{Float64}(undef, n_particle, n_time_step)
-        h5open(output_filename, "r") do file
-            for t in 1:n_time_step
-                key = ParticleDA.time_index_to_hdf5_key(t)
-                state_mean_seq[:, t] = read(file["state_avg"][key])
-                state_var_seq[:, t] = read(file["state_var"][key])
-                weights_seq[:, t] = read(file["weights"][key])
-            end
-        end
-        mean_rmse = sqrt(
-            mean(x -> x.^2, state_mean_seq .- true_state_mean_seq)
-        )
-        log_var_rmse = sqrt(
-            mean(x -> x.^2, log.(state_var_seq) .- log.(true_state_var_seq))
-        )
-        # Monte Carlo estimates of mean and log variance should have O(sqrt(n_particle))
-        # convergence to true values
-        @test mean_rmse < mean_rmse_bound_constant / sqrt(n_particle)
-        @test log_var_rmse < log_var_rmse_bound_constant / sqrt(n_particle)
-    end
-end
-
 @testset (
     "Filter estimate validation against Kalman filter - $(filter_type)"
 ) for filter_type in (BootstrapFilter, OptimalFilter)
@@ -252,7 +191,7 @@ end
     # probability of false failures
     mean_rmse_bound_constant = 1.
     log_var_rmse_bound_constant = 5.
-    run_tests_for_convergence_of_filter_estimates_against_kalman_filter(
+    ParticleDA.run_tests_for_convergence_of_filter_estimates_against_kalman_filter(
         filter_type,
         LinearGaussian.init,
         LinearGaussian.stochastically_driven_dsho_model_parameters(),

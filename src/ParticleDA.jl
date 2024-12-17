@@ -26,6 +26,8 @@ include("utils.jl")
 include("testing.jl")
 include("kalman.jl")
 
+using .Kalman
+
 """
     simulate_observations_from_model(
         init_model, input_file_path, output_file_path; rng=Random.TaskLocalRNG()
