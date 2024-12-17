@@ -1,10 +1,10 @@
 using ParticleDA
+using ParticleDA.Kalman
 using HDF5, LinearAlgebra, MPI, PDMats, Random, StableRNGs, Statistics, Test, YAML 
 
 include(joinpath(@__DIR__, "models", "llw2d.jl"))
 include(joinpath(@__DIR__, "models", "lorenz63.jl"))
 include(joinpath(@__DIR__, "models", "lineargaussian.jl"))
-include(joinpath(@__DIR__, "kalman.jl"))
 
 using .LLW2d
 using .Lorenz63
@@ -196,7 +196,7 @@ function run_tests_for_convergence_of_filter_estimates_against_kalman_filter(
     observation_seq = ParticleDA.simulate_observations_from_model(
         model, n_time_step; rng=rng
     )
-    true_state_mean_seq, true_state_var_seq = Kalman.run_kalman_filter(
+    true_state_mean_seq, true_state_var_seq = ParticleDA.Kalman.run_kalman_filter(
         model, observation_seq
     )
     for n_particle in n_particles

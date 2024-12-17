@@ -24,6 +24,7 @@ include("statistics.jl")
 include("filters.jl")
 include("utils.jl")
 include("testing.jl")
+include("kalman.jl")
 
 """
     simulate_observations_from_model(
