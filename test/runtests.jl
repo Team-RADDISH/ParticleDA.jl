@@ -175,7 +175,7 @@ end
         config.model,
         seed,
         estimate_bound_constant,
-        config.estimate_n_sample; 
+        config.estimate_n_samples; 
         RNGType=StableRNG
     )
 end
