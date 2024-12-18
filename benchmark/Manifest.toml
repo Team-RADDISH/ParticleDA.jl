@@ -1,8 +1,8 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.10.2"
+julia_version = "1.10.4"
 manifest_format = "2.0"
-project_hash = "f00b51c34b7f1de9c4ebe7994f2b7050dfc6db05"
+project_hash = "cec505300ec6a2cea80149f24ed06e6311223663"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -138,7 +138,7 @@ weakdeps = ["Dates", "LinearAlgebra"]
 [[deps.CompilerSupportLibraries_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
-version = "1.1.0+0"
+version = "1.1.1+0"
 
 [[deps.ConcurrentUtilities]]
 deps = ["Serialization", "Sockets"]
@@ -800,7 +800,7 @@ uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
 version = "2.8.1"
 
 [[deps.ParticleDA]]
-deps = ["ChunkSplitters", "HDF5", "LinearAlgebra", "MPI", "PDMats", "Random", "Statistics", "StructArrays", "TimerOutputs", "YAML"]
+deps = ["ChunkSplitters", "HDF5", "LinearAlgebra", "MPI", "PDMats", "Random", "Statistics", "StructArrays", "Test", "TimerOutputs", "YAML"]
 path = ".."
 uuid = "61cd1fb4-f4c4-4bc8-80c6-ea5639a6ca2e"
 version = "1.2.0"
