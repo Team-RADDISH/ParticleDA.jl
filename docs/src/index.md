@@ -118,6 +118,15 @@ ParticleDA.get_covariance_state_observation_given_previous_state
 ParticleDA.get_covariance_observation_observation_given_previous_state
 ```
 
+Functions are provided to run tests to check a model correctly implements the expected
+interfaces:
+
+```@docs
+ParticleDA.run_unit_tests_for_generic_model_interface
+ParticleDA.run_tests_for_optimal_proposal_model_interface
+ParticleDA.run_tests_for_convergence_of_filter_estimates_against_kalman_filter
+```
+
 ### Other function you may want to extend
 
 ```@docs
@@ -262,6 +271,21 @@ mpirun -np <your_number_of_processes> julia <your_julia_script>
 
 Note that the parallel performance may vary depending on the performance of the algorithm. In general, a degeneracy of the particle weights will lead to poor load balance and parallel performance. See [this issue](https://github.com/Team-RADDISH/ParticleDA.jl/issues/115#issuecomment-675468511) for more details.
 
+## Kalman filters
+
+To allow validation that the filter implementations give the expected results when
+applied to linear-Gaussian state space models, dense and matrix-free Kalman filter
+implementations are available in the `ParticleDA.Kalman` module
+
+```@docs
+ParticleDA.Kalman.KalmanFilter
+ParticleDA.Kalman.MatrixFreeKalmanFilter
+ParticleDA.Kalman.run_kalman_filter
+ParticleDA.Kalman.lmult_by_observation_matrix!
+ParticleDA.Kalman.pre_and_postmultiply_by_state_transition_matrix!
+ParticleDA.Kalman.pre_and_postmultiply_by_observation_matrix!
+ParticleDA.Kalman.lmult_by_state_transition_matrix!
+```
 ## Testing
 
 We have a basic test suite for `ParticleDA.jl`.  You can run the tests by entering the
