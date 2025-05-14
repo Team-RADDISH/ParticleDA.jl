@@ -81,10 +81,19 @@ be used by [`run_particle_filter`](@ref):
   dispatch the methods to be defined, listed below;
 * an initialisation function with the following signature:
   ```julia
-  init(params_dict::Dict) -> model
+  init(params_dict::Dict, n_tasks::Integer) -> model
   ```
-  with `params_dict` a dictionary with the parameters of the model. This initialisation 
-  function should create an instance of the model data structure and return it.
+  with `params_dict` a dictionary with the parameters of the model and `n_tasks` an
+  integer specifying the maximum number tasks (coroutines) parallelisable operations
+  will be scheduled over. This initialisation function should create an instance of the
+  model data structure and return it. The value of `n_tasks` can be used to create 
+  task-specific buffers for writing to when computing the model updates to avoid 
+  reallocating data structures on each function call. As tasks may be run in parallel 
+  over multiple threads, any buffers used in functions called within tasks should be
+  unique to the task; to facilitate this functions in the model interface (see below)
+  which may be called within tasks scheduled in parallel are passed a `task_index` 
+  argument which is a integer index in `1:n_tasks` which is guaranteed to be unique to a
+  particular task and so can be used to index in to task specific buffers.
 * The model needs to extend the following methods, using the model type for dispatch:
 ```@docs
 ParticleDA.get_state_dimension
@@ -107,6 +116,30 @@ ParticleDA.get_covariance_state_noise
 ParticleDA.get_covariance_observation_noise
 ParticleDA.get_covariance_state_observation_given_previous_state
 ParticleDA.get_covariance_observation_observation_given_previous_state
+```
+
+Functions are provided to run tests to check a model correctly implements the expected
+interfaces:
+
+```@docs
+ParticleDA.run_unit_tests_for_generic_model_interface
+ParticleDA.run_tests_for_optimal_proposal_model_interface
+ParticleDA.run_tests_for_convergence_of_filter_estimates_against_kalman_filter
+```
+
+### Other function you may want to extend
+
+```@docs
+ParticleDA.get_state_indices_correlated_to_observations
+ParticleDA.get_initial_state_mean!
+ParticleDA.write_snapshot
+ParticleDA.write_state
+ParticleDA.get_covariance_initial_state
+ParticleDA.init_filter
+ParticleDA.sample_proposal_and_compute_log_weights!
+ParticleDA.write_observation
+ParticleDA.write_weights
+ParticleDA.get_initial_state_mean
 ```
 
 ### Input parameters
@@ -220,7 +253,7 @@ The coordinates of the observation stations can be set in two different ways.
 
 If the filter parameter `verbose` is set to `true`, [`run_particle_filter`](@ref) will produce an HDF5 file in the run directory. The file name is `particle_da.h5` by default (this is configurable using the `output_filename` filter parameter). The file contains the summary statistics of the estimate state distribution (by default the mean and variance), particle weights, parameters used, and other metadata at each time step observation were assimilated. To read the output file, use the [HDF5 library](https://www.hdfgroup.org/solutions/hdf5/).
 
-A basic plotting tool is provided in a [Jupyter notebook](https://github.com/Team-RADDISH/ParticleDA.jl/blob/master/extra/Plot_tdac_output.ipynb). This is intended as a template to build more sophisticated postprocessing tools, but can be used for some simple analysis. Set the variable `timestamp` in the third cell to plot different time slices from the output file. More functionality may be added as the package develops.
+A basic plotting tool is provided in a [Jupyter notebook](https://github.com/Team-RADDISH/ParticleDA.jl/blob/main/extra/Plot_tdac_output.ipynb). This is intended as a template to build more sophisticated postprocessing tools, but can be used for some simple analysis. Set the variable `timestamp` in the third cell to plot different time slices from the output file. More functionality may be added as the package develops.
 
 ## Running in parallel
 
@@ -238,6 +271,21 @@ mpirun -np <your_number_of_processes> julia <your_julia_script>
 
 Note that the parallel performance may vary depending on the performance of the algorithm. In general, a degeneracy of the particle weights will lead to poor load balance and parallel performance. See [this issue](https://github.com/Team-RADDISH/ParticleDA.jl/issues/115#issuecomment-675468511) for more details.
 
+## Kalman filters
+
+To allow validation that the filter implementations give the expected results when
+applied to linear-Gaussian state space models, dense and matrix-free Kalman filter
+implementations are available in the `ParticleDA.Kalman` module
+
+```@docs
+ParticleDA.Kalman.KalmanFilter
+ParticleDA.Kalman.MatrixFreeKalmanFilter
+ParticleDA.Kalman.run_kalman_filter
+ParticleDA.Kalman.lmult_by_observation_matrix!
+ParticleDA.Kalman.pre_and_postmultiply_by_state_transition_matrix!
+ParticleDA.Kalman.pre_and_postmultiply_by_observation_matrix!
+ParticleDA.Kalman.lmult_by_state_transition_matrix!
+```
 ## Testing
 
 We have a basic test suite for `ParticleDA.jl`.  You can run the tests by entering the

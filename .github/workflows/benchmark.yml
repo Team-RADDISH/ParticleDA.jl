@@ -2,17 +2,30 @@ name: Run benchmarks
 
 on:
   pull_request:
+    paths:
+      - '.github/workflows/benchmark.yml'
+      - 'benchmark/**'
+      - 'src/**'
+      # Benchmarks include this file
+      - 'test/models/llw2d.jl'
   workflow_dispatch:
+
+concurrency:
+  # Skip intermediate builds: always.
+  # Cancel intermediate builds: always.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   benchmark:
+    timeout-minutes: 90
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: julia-actions/setup-julia@v1
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
         with:
-          version: '1.8'
-      - uses: julia-actions/cache@v1
+          version: '1.10.2'
+      - uses: julia-actions/cache@v2
         with:
           cache-name: "benchmarks"
       - name: Install dependencies
@@ -32,6 +45,7 @@ jobs:
                       "JULIA_NUM_THREADS" => "2",
                   ),
               ),
+              "origin/main",
           )
       - name: Print judgement
         shell: julia --color=yes {0}

@@ -30,12 +30,16 @@ function resample!(
     end
 end
 
-function init_states(model, nprt_per_rank::Int, rng::AbstractRNG)
+function init_states(model, nprt_per_rank::Int, n_tasks::Int, rng::AbstractRNG)
     state_el_type = ParticleDA.get_state_eltype(model)
     state_dimension = ParticleDA.get_state_dimension(model)
     states = Matrix{state_el_type}(undef, state_dimension, nprt_per_rank)
-    Threads.@threads :static for p in 1:nprt_per_rank
-        sample_initial_state!(selectdim(states, 2, p), model, rng)
+    @sync for (task_index, particle_indices) in enumerate(index_chunks(1:nprt_per_rank; n=n_tasks))
+        Threads.@spawn for particle_index in particle_indices
+            sample_initial_state!(
+                selectdim(states, 2, particle_index), model, rng, task_index
+            )
+        end
     end
     return states
 end

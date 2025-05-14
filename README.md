@@ -1,12 +1,18 @@
 # ParticleDA
 
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://team-raddish.github.io/ParticleDA.jl/stable/)
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://team-raddish.github.io/ParticleDA.jl/dev/)
-[![Build Status](https://github.com/Team-RADDISH/ParticleDA.jl/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Team-RADDISH/ParticleDA.jl/actions/workflows/ci.yml?query=branch%3Amaster)
+[![Build Status](https://github.com/Team-RADDISH/ParticleDA.jl/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Team-RADDISH/ParticleDA.jl/actions/workflows/ci.yml?query=branch%3Amain)
 [![Coverage](https://codecov.io/gh/Team-RADDISH/ParticleDA.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/Team-RADDISH/ParticleDA.jl)
 [![DOI](https://zenodo.org/badge/232626497.svg)](https://zenodo.org/badge/latestdoi/232626497)
+[![DOI:10.5194/gmd-2023-38](https://img.shields.io/badge/Journal_article-10.5194/gmd--2023--38-d4a519.svg)](https://doi.org/10.5194/gmd-2023-38)
 
-`ParticleDA.jl` is a Julia package to run data assimilation with particle filter
-distributed using MPI.
+
+`ParticleDA.jl` is a Julia package to perform data assimilation with particle filters, 
+supporting both thread-based parallelism and distributed processing using MPI.
+
+This project is developed in collaboration with the
+[Centre for Advanced Research Computing](https://ucl.ac.uk/arc), University College London.
 
 ## Installation
 

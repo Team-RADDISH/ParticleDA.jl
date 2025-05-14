@@ -10,6 +10,8 @@ using TimerOutputs
 using LinearAlgebra
 using PDMats
 using StructArrays
+using ChunkSplitters
+using Test
 
 export run_particle_filter, simulate_observations_from_model
 export BootstrapFilter, OptimalFilter
@@ -21,6 +23,10 @@ include("models.jl")
 include("statistics.jl")
 include("filters.jl")
 include("utils.jl")
+include("testing.jl")
+include("kalman.jl")
+
+using .Kalman
 
 """
     simulate_observations_from_model(
@@ -187,11 +193,39 @@ function run_particle_filter(
 
     timer = TimerOutput()
 
-    @timeit_debug timer "Initialization" begin
-        # Do memory allocations
-        @timeit_debug timer "Model" model = init_model(model_params_dict)
-        @timeit_debug timer "States" states = init_states(
-            model, nprt_per_rank, rng
+    # Number of tasks to schedule operations which can be parallelized acoss particles 
+    # over - negative n_tasks filter parameter values are assumed to correspond to 
+    # number of tasks per thread and we force the maximum number of tasks that can be 
+    # set to the number of particles on each rank so that there is at least one
+    # particle per task
+    n_tasks = min(
+        filter_params.n_tasks > 0 
+        ? filter_params.n_tasks 
+        : Threads.nthreads() * abs(filter_params.n_tasks),
+        nprt_per_rank
+    )
+
+    # Do memory allocations
+    @timeit_debug timer "Model initialization" model = init_model(
+        model_params_dict, n_tasks
+    )
+    
+    @timeit_debug timer "State initialization" states = init_states(
+        model, nprt_per_rank, n_tasks, rng
+    )
+
+    @timeit_debug timer "Filter initialization" filter_data = init_filter(
+        filter_params, model, nprt_per_rank, n_tasks, filter_type, summary_stat_type
+    )
+
+    @timeit_debug timer "Summary statistics" update_statistics!(
+        filter_data.statistics, states, filter_params.master_rank
+    )
+
+    # Write initial state (time = 0) + metadata
+    if(filter_params.verbose && my_rank == filter_params.master_rank)
+        @timeit_debug timer "Unpack statistics" unpack_statistics!(
+            filter_data.unpacked_statistics, filter_data.statistics
         )
         @timeit_debug timer "Filter" filter_data = init_filter(
             filter_params, model, nprt_per_rank, filter_type, summary_stat_type

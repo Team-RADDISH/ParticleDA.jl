@@ -4,7 +4,10 @@ using LinearAlgebra
 using PDMats
 using ParticleDA
 
-"""Compute `matrix = state_transition_matrix * matrix`."""
+"""
+    lmult_by_state_transition_matrix!(matrix::AbstractMatrix, model, time_index)
+
+Compute `matrix = state_transition_matrix * matrix`."""
 function lmult_by_state_transition_matrix!(
 	matrix::AbstractMatrix, model, time_index
 )
@@ -15,7 +18,12 @@ function lmult_by_state_transition_matrix!(
 	end
 end
 
-"""Compute `output_matrix = observation_matrix * rhs_matrix`."""
+"""
+    lmult_by_observation_matrix!(
+        output_matrix::AbstractMatrix, rhs_matrix::AbstractMatrix, model
+    )
+
+Compute `output_matrix = observation_matrix * rhs_matrix`."""
 function lmult_by_observation_matrix!(
 	output_matrix::AbstractMatrix, rhs_matrix::AbstractMatrix, model
 )
@@ -40,6 +48,13 @@ struct MatrixFreeKalmanFilter <: AbstractKalmanFilter
     model
 end
 
+"""
+    pre_and_postmultiply_by_state_transition_matrix!(
+        state_covar::Matrix, filter::MatrixFreeKalmanFilter, time_index::Int
+    )
+
+Compute `state_covar = transition_matrix * state_covar * transition_matrix'`.
+"""
 function pre_and_postmultiply_by_state_transition_matrix!(
     state_covar::Matrix, filter::MatrixFreeKalmanFilter, time_index::Int
 )
@@ -47,6 +62,13 @@ function pre_and_postmultiply_by_state_transition_matrix!(
     lmult_by_state_transition_matrix!(state_covar', filter.model, time_index)
 end
 
+"""
+    pre_and_postmultiply_by_state_transition_matrix!(
+        state_covar::Matrix, filter::MatrixFreeKalmanFilter, time_index::Int
+    )
+
+Compute `observation_covar = observation_matrix * state_covar * observation_matrix'`.
+"""
 function pre_and_postmultiply_by_observation_matrix!(
     state_observation_covar::Matrix, 
     observation_covar::Matrix, 
