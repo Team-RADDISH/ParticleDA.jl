@@ -49,7 +49,8 @@ function copy_states!(
     buffer::AbstractMatrix{T},
     resampling_indices::Vector{Int},
     my_rank::Int,
-    nprt_per_rank::Int
+    nprt_per_rank::Int,
+    to::TimerOutputs.TimerOutput = TimerOutputs.TimerOutput()
 ) where T
 
     # These are the particle indices stored on this rank
@@ -66,31 +67,35 @@ function copy_states!(
     reqs = Vector{MPI.Request}(undef, 0)
 
     # Send particles to processes that want them
-    for (k,id) in enumerate(resampling_indices)
-        rank_wants = floor(Int, (k - 1) / nprt_per_rank)
-        if id in particles_have && rank_wants != my_rank
-            local_id = id - my_rank * nprt_per_rank
-            req = MPI.Isend(view(particles, :, local_id), rank_wants, id, MPI.COMM_WORLD)
-            push!(reqs, req)
+    @timeit_debug to "send loop" begin
+        for (k,id) in enumerate(resampling_indices)
+            rank_wants = floor(Int, (k - 1) / nprt_per_rank)
+            if id in particles_have && rank_wants != my_rank
+                local_id = id - my_rank * nprt_per_rank
+                req = MPI.Isend(view(particles, :, local_id), rank_wants, id, MPI.COMM_WORLD)
+                push!(reqs, req)
+            end
         end
     end
 
     # Receive particles this rank wants from ranks that have them
     # If I already have them, just do a local copy
     # Receive into a buffer so we dont accidentally overwrite stuff
-    for (k,proc,id) in zip(1:nprt_per_rank, rank_has, particles_want)
-        if proc == my_rank
-            local_id = id - my_rank * nprt_per_rank
-            buffer[:, k] .= view(particles, :, local_id)
-        else
-            req = MPI.Irecv!(view(buffer, :, k), proc, id, MPI.COMM_WORLD)
-            push!(reqs,req)
+    @timeit_debug to "receive loop" begin
+        for (k,proc,id) in zip(1:nprt_per_rank, rank_has, particles_want)
+            if proc == my_rank
+                local_id = id - my_rank * nprt_per_rank
+                buffer[:, k] .= view(particles, :, local_id)
+            else
+                req = MPI.Irecv!(view(buffer, :, k), proc, id, MPI.COMM_WORLD)
+                push!(reqs,req)
+            end
         end
     end
 
     # Wait for all comms to complete
-    MPI.Waitall(reqs)
+    @timeit_debug to "waitall" MPI.Waitall(reqs)
 
-    particles .= buffer
+    @timeit_debug to "write from buffer" particles .= buffer
 
 end

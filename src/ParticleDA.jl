@@ -286,7 +286,8 @@ function run_particle_filter(
             filter_data.copy_buffer,
             filter_data.resampling_indices,
             my_rank,
-            nprt_per_rank
+            nprt_per_rank,
+            timer
         )
                                                       
         if filter_params.verbose
