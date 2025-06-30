@@ -84,11 +84,15 @@ function copy_states!(
     @timeit_debug to "receive loop" begin
         for (k,proc,id) in zip(1:nprt_per_rank, rank_has, particles_want)
             if proc == my_rank
-                local_id = id - my_rank * nprt_per_rank
-                buffer[:, k] .= view(particles, :, local_id)
+                @timeit_debug to "write to buffer" begin
+                    local_id = id - my_rank * nprt_per_rank
+                    buffer[:, k] .= view(particles, :, local_id)
+                end
             else
-                req = MPI.Irecv!(view(buffer, :, k), proc, id, MPI.COMM_WORLD)
-                push!(reqs,req)
+                @timeit_debug to "irecv" begin
+                    req = MPI.Irecv!(view(buffer, :, k), proc, id, MPI.COMM_WORLD)
+                    push!(reqs,req)
+                end
             end
         end
     end
