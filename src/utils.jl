@@ -66,13 +66,15 @@ function copy_states!(
     # this appropriately but, lazy
     reqs = Vector{MPI.Request}(undef, 0)
 
+    @timeit_debug to "determine sends" sends_to = _determine_sends(resampling_indices, my_rank, nprt_per_rank)
+    @timeit_debug to "categorize wants" local_copies, remote_copies = _categorize_wants(particles_want, my_rank, nprt_per_rank)
+
     # Send particles to processes that want them
-    @timeit_debug to "send loop" begin
-        for (k,id) in enumerate(resampling_indices)
-            rank_wants = floor(Int, (k - 1) / nprt_per_rank)
-            if id in particles_have && rank_wants != my_rank
+    @timeit_debug to "isend loop" begin
+        for (dest_rank, unique_ids) in sends_to
+            for id in unique_ids
                 local_id = id - my_rank * nprt_per_rank
-                req = MPI.Isend(view(particles, :, local_id), rank_wants, id, MPI.COMM_WORLD)
+                req = MPI.Isend(view(particles, :, local_id), dest_rank, id, MPI.COMM_WORLD)
                 push!(reqs, req)
             end
         end
@@ -81,18 +83,21 @@ function copy_states!(
     # Receive particles this rank wants from ranks that have them
     # If I already have them, just do a local copy
     # Receive into a buffer so we dont accidentally overwrite stuff
-    @timeit_debug to "receive loop" begin
-        for (k,proc,id) in zip(1:nprt_per_rank, rank_has, particles_want)
-            if proc == my_rank
-                @timeit_debug to "write to buffer" begin
-                    local_id = id - my_rank * nprt_per_rank
-                    buffer[:, k] .= view(particles, :, local_id)
-                end
-            else
-                @timeit_debug to "irecv" begin
-                    req = MPI.Irecv!(view(buffer, :, k), proc, id, MPI.COMM_WORLD)
-                    push!(reqs,req)
-                end
+    @timeit_debug to "irecv loop" begin
+        for (id, buffer_indices) in remote_copies
+            source_rank = floor(Int, (id - 1) / nprt_per_rank)
+            first_k = buffer_indices[1] # Receive into the first required slot.
+            req = MPI.Irecv!(view(buffer, :, first_k), source_rank, id, MPI.COMM_WORLD)
+            push!(reqs, req)
+        end
+    end
+
+    @timeit_debug to "local copies" begin
+        for (id, buffer_indices) in local_copies
+            local_id = id - my_rank * nprt_per_rank
+            source_view = view(particles, :, local_id)
+            for k in buffer_indices
+                buffer[:, k] .= source_view
             end
         end
     end
@@ -100,6 +105,53 @@ function copy_states!(
     # Wait for all comms to complete
     @timeit_debug to "waitall" MPI.Waitall(reqs)
 
+    @timeit_debug to "remote duplicates copy" begin
+        for (id, buffer_indices) in remote_copies
+            if length(buffer_indices) > 1
+                source_view = view(buffer, :, buffer_indices[1])
+                for i in 2:length(buffer_indices)
+                    k = buffer_indices[i]
+                    buffer[:, k] .= source_view
+                end
+            end
+        end
+    end
+
     @timeit_debug to "write from buffer" particles .= buffer
 
 end
+
+function _determine_sends(resampling_indices::Vector{Int}, my_rank::Int, nprt_per_rank::Int)
+    sends_to = Dict{Int, Set{Int}}()
+    for (new_idx, old_id) in enumerate(resampling_indices)
+        source_rank = floor(Int, (old_id - 1) / nprt_per_rank)
+
+        if source_rank == my_rank
+            dest_rank = floor(Int, (new_idx - 1) / nprt_per_rank)
+            if dest_rank != my_rank
+                unique_ids_for_dest = get!(() -> Set{Int}(), sends_to, dest_rank)
+                push!(unique_ids_for_dest, old_id)
+            end
+        end
+    end
+    return sends_to
+end
+
+function _categorize_wants(particles_want, my_rank::Int, nprt_per_rank::Int)
+    local_copies = Dict{Int, Vector{Int}}()
+    remote_copies = Dict{Int, Vector{Int}}()
+
+    for k in 1:nprt_per_rank
+        id = particles_want[k]
+        source_rank = floor(Int, (id - 1) / nprt_per_rank)
+
+        if source_rank == my_rank
+            get!(() -> Int[], local_copies, id) |> v -> push!(v, k)
+        else
+            get!(() -> Int[], remote_copies, id) |> v -> push!(v, k)
+        end
+    end
+    return local_copies, remote_copies
+end
+
+
