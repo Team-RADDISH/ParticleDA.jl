@@ -48,8 +48,9 @@ if output_timer
     output_filename = ARGS[2]
     println("Outputting timers to HDF5 file '$output_filename'")
 end
+dedup = "-d" in ARGS || "--dedup" in ARGS
+println("Deduplication enabled: ", dedup)
 
-# TODO: change each particle to be a vector of states(2D), >= thousands of floats to reach the network bandwidth
 n_float_per_particle = 100000
 # total number of floats per rank
 N = n_float_per_particle * n_particle_per_rank
@@ -72,16 +73,16 @@ buffer = zeros((n_float_per_particle, n_particle_per_rank))
 
 
 trial_sets = Dict(
-    "1:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm" => sample_indices(n_particle, k=1, p=0.99),
-    "10:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm" => sample_indices(n_particle, k=10, p=0.99),
-    "100:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm" => sample_indices(n_particle, k=100, p=0.99),
-    "half:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm" => sample_indices(n_particle, k=div(n_particle, 2), p=0.99),
-    "all:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm" => randperm(n_particle),
+    "1:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm" => sort!(sample_indices(n_particle, k=1, p=0.99)),
+    "10:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm" => sort!(sample_indices(n_particle, k=10, p=0.99)),
+    "100:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm" => sort!(sample_indices(n_particle, k=100, p=0.99)),
+    "half:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm" => sort!(sample_indices(n_particle, k=div(n_particle, 2), p=0.99)),
+    "all:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm" => collect(1:n_particle),
     "1:$my_size:$n_particle_per_rank:$n_float_per_particle:firstperm" => ones(Int, n_particle),
-    "10:$my_size:$n_particle_per_rank:$n_float_per_particle:firstperm" => rand(rng, 1:10, n_particle),
-    "100:$my_size:$n_particle_per_rank:$n_float_per_particle:firstperm" => rand(rng, 1:100, n_particle),
-    "half:$my_size:$n_particle_per_rank:$n_float_per_particle:firstperm" => rand(rng, 1:div(n_particle, 2), n_particle),
-    "all:$my_size:$n_particle_per_rank:$n_float_per_particle:firstperm" => randperm(n_particle),
+    "10:$my_size:$n_particle_per_rank:$n_float_per_particle:firstperm" => sort!(rand(rng, 1:10, n_particle)),
+    "100:$my_size:$n_particle_per_rank:$n_float_per_particle:firstperm" => sort!(rand(rng, 1:100, n_particle)),
+    "half:$my_size:$n_particle_per_rank:$n_float_per_particle:firstperm" => sort!(rand(rng, 1:div(n_particle, 2), n_particle)),
+    "all:$my_size:$n_particle_per_rank:$n_float_per_particle:firstperm" => collect(1:n_particle),
 )
 
 local_timer_dicts = Dict{String, Dict{String,Any}}()
@@ -103,16 +104,17 @@ for (trial_name, indices) in trial_sets
     timer = TimerOutputs.TimerOutput("copy_states")
     for _ in 1:10
         copyto!(local_states, init_local_states)
-        ParticleDA.copy_states!(
+        @timeit timer "overall" ParticleDA.copy_states!(
             local_states,
             buffer, 
             indices, 
             my_rank, 
             n_particle_per_rank,
-            timer
+            timer,
+            dedup
         )
     end
-    local_timer_dicts[trial_name] = TimerOutputs.todict(timer)
+    local_timer_dicts[trial_name] = TimerOutputs.todict(timer["overall"])
 
     if verbose
         for i = 1:my_size
