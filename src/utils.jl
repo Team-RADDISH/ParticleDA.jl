@@ -161,7 +161,7 @@ function copy_states_dedup!(
         for (id, buffer_indices) in local_copies
             local_id = id - my_rank * nprt_per_rank
             source_view = view(particles, :, local_id)
-            for k in buffer_indices
+            Threads.@threads for k in buffer_indices
                 buffer[:, k] .= source_view
             end
         end
@@ -174,7 +174,7 @@ function copy_states_dedup!(
         for (id, buffer_indices) in remote_copies
             if length(buffer_indices) > 1
                 source_view = view(buffer, :, buffer_indices[1])
-                for i in 2:length(buffer_indices)
+                Threads.@threads for i in 2:length(buffer_indices)
                     k = buffer_indices[i]
                     buffer[:, k] .= source_view
                 end

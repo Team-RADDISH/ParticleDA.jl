@@ -2,6 +2,7 @@
 #SBATCH --job-name=ParticleDAScaling
 #SBATCH --time=02:00:00
 #SBATCH --mem-per-cpu=4G
+#SBATCH --cpus-per-task=40
 #SBATCH --nodes=16
 #SBATCH --ntasks-per-node=1
 #SBATCH --chdir=/home/ucabc46/exp/ParticleDA.jl

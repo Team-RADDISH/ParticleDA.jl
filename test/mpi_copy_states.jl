@@ -37,6 +37,8 @@ MPI.Init()
 my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
 my_size = MPI.Comm_size(MPI.COMM_WORLD)
 
+println("Number of threads available: ", Threads.nthreads())
+
 n_particle_per_rank = 1000
 n_particle = n_particle_per_rank * my_size
 verbose = "-v" in ARGS || "--verbose" in ARGS
