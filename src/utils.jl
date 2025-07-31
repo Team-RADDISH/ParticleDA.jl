@@ -1,4 +1,4 @@
-using ExactOptimalTransport
+using ExactOptimalTransport, HiGHS
 
 function normalized_exp!(weight::AbstractVector)
     weight .-= maximum(weight)
@@ -16,14 +16,14 @@ function optimized_resample!(resampled_indices::AbstractVector{Int}, nrank::Int)
         push!(stock_queue[rank], resampled_idx)
     end
 
-    supply_vector = [length(stock_queue[rank]) for rank in 1:nrank]
-    demand_vector = fill(nprt_per_rank, nrank)
-    cost_matrix = ones(Int, nrank, nrank)
+    supply_vector = Float64[length(stock_queue[rank]) for rank in 1:nrank]
+    demand_vector = Float64.(fill(nprt_per_rank, nrank))
+    cost_matrix = ones(Float64, nrank, nrank)
     for i in 1:nrank
         cost_matrix[i, i] = 0
     end
 
-    γ = emd(supply_vector, demand_vector, cost_matrix)
+    γ = emd(supply_vector, demand_vector, cost_matrix, HiGHS.Optimizer())
 
     # update resampled_indices
     for i in 1:nrank
