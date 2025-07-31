@@ -1,3 +1,4 @@
+using ExactOptimalTransport
 
 function normalized_exp!(weight::AbstractVector)
     weight .-= maximum(weight)
@@ -5,11 +6,47 @@ function normalized_exp!(weight::AbstractVector)
     weight ./= sum(weight)
 end
 
+function optimized_resample!(resampled_indices::AbstractVector{Int}, nrank::Int)
+    nprt_per_rank = length(resampled_indices) ÷ nrank
+    stock_queue = [Int[] for _ in 1:nrank]
+
+    # Assign each resampled index to its corresponding rank
+    for resampled_idx in resampled_indices
+        rank = div(resampled_idx - 1, nprt_per_rank) + 1
+        push!(stock_queue[rank], resampled_idx)
+    end
+
+    supply_vector = [length(stock_queue[rank]) for rank in 1:nrank]
+    demand_vector = fill(nprt_per_rank, nrank)
+    cost_matrix = ones(Int, nrank, nrank)
+    for i in 1:nrank
+        cost_matrix[i, i] = 0
+    end
+
+    γ = emd(supply_vector, demand_vector, cost_matrix)
+
+    # update resampled_indices
+    for i in 1:nrank
+        idx = 1
+        for j in 1:nrank
+            nmove = Int(γ[j, i])
+            for _ in 1:nmove
+                resampled_indices[(i - 1) * nprt_per_rank + idx] = popfirst!(stock_queue[j])
+                idx += 1
+            end
+        end
+    end
+    return resampled_indices
+end
+
+
 # Resample particles from given weights using Stochastic Universal Sampling
 function resample!(
     resampled_indices::AbstractVector{Int}, 
     weights::AbstractVector{T}, 
-    rng::Random.AbstractRNG=Random.TaskLocalRNG()
+    rng::Random.AbstractRNG=Random.TaskLocalRNG(),
+    optimize_resample::Bool=false,
+    nrank::Int=1,
 ) where T
 
     nprt = length(weights)
@@ -27,6 +64,10 @@ function resample!(
             k += 1
         end
         resampled_indices[ip] = k
+    end
+
+    if optimize_resample
+        resampled_indices .= optimized_resample!(resampled_indices, nrank)
     end
 end
 
@@ -174,6 +215,7 @@ function copy_states_dedup!(
         for (id, buffer_indices) in remote_copies
             if length(buffer_indices) > 1
                 source_view = view(buffer, :, buffer_indices[1])
+                # TODO: threading in chunks
                 Threads.@threads for i in 2:length(buffer_indices)
                     k = buffer_indices[i]
                     buffer[:, k] .= source_view
@@ -182,8 +224,12 @@ function copy_states_dedup!(
         end
     end
 
-    @timeit_debug to "write from buffer" particles .= buffer
-
+    @timeit_debug to "write from buffer" begin
+        Threads.@threads for j in 1:size(particles, 2)
+            # @views creates a non-allocating view of the column, which is faster inside a loop
+            @views particles[:, j] .= buffer[:, j]
+        end
+    end
 end
 
 function _determine_sends(resampling_indices::Vector{Int}, my_rank::Int, nprt_per_rank::Int)
