@@ -5,7 +5,9 @@ version = "1.3.0"
 
 [deps]
 ChunkSplitters = "ae650224-84b6-46f8-82ea-d812ca08434e"
+ExactOptimalTransport = "24df6009-d856-477c-ac5c-91f668376b31"
 HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
+HiGHS = "87dc4568-4c63-4d18-b0c0-bb2238e4078b"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
 OpenMPI_jll = "fe0851c0-eecd-5654-98d4-656369965a5c"
@@ -19,7 +21,9 @@ YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
 [compat]
 ChunkSplitters = "3.1"
+ExactOptimalTransport = "0.2.5"
 HDF5 = "0.14, 0.15, 0.16, 0.17"
+HiGHS = "1.19.0"
 LinearAlgebra = "<0.0.1, 1"
 MPI = "0.20.22"
 OpenMPI_jll = "4"

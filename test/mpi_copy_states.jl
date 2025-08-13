@@ -39,7 +39,7 @@ my_size = MPI.Comm_size(MPI.COMM_WORLD)
 
 println("Number of threads available: ", Threads.nthreads())
 
-n_particle_per_rank = 100
+n_particle_per_rank = 1000
 n_particle = n_particle_per_rank * my_size
 verbose = "-v" in ARGS || "--verbose" in ARGS
 output_timer = "-t" in ARGS || "--output-timer" in ARGS
@@ -109,12 +109,14 @@ for (trial_name, indices) in trial_sets
     for _ in 1:10
         copyto!(local_states, init_local_states)
         @timeit timer "overall" begin 
-            if optimize_resample
-                resampled_indices = ParticleDA.optimized_resample!(indices, my_size)
-            else
-                resampled_indices = indices
+            if optimize_resample && my_rank == 0
+                @timeit timer "optimize resample" indices = ParticleDA.optimized_resample!(indices, my_size)
             end
-            ParticleDA.copy_states!(
+            
+            # broadcast no matter whether we optimize or not to eliminate the overall time bias
+            @timeit timer "broadcast" MPI.Bcast!(indices, 0, MPI.COMM_WORLD)
+
+            @timeit timer "copy states" ParticleDA.copy_states!(
                 local_states,
                 buffer, 
                 indices, 
