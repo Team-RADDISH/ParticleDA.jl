@@ -23,13 +23,13 @@ function optimized_resample!(resampled_indices::AbstractVector{Int}, nrank::Int)
         cost_matrix[i, i] = 0
     end
 
-    γ = emd(supply_vector, demand_vector, cost_matrix, HiGHS.Optimizer())
+    y = emd(supply_vector, demand_vector, cost_matrix, HiGHS.Optimizer())
 
     # update resampled_indices
     for i in 1:nrank
         idx = 1
         for j in 1:nrank
-            nmove = Int(γ[j, i])
+            nmove = Int(y[j, i])
             for _ in 1:nmove
                 resampled_indices[(i - 1) * nprt_per_rank + idx] = popfirst!(stock_queue[j])
                 idx += 1

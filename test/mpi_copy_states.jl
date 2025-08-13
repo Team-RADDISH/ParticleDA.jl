@@ -52,6 +52,8 @@ if output_timer
 end
 dedup = "-d" in ARGS || "--dedup" in ARGS
 println("Deduplication enabled: ", dedup)
+optimize_resample = "-o" in ARGS || "--optimize-resample" in ARGS
+println("Optimized resampling enabled: ", optimize_resample)
 
 n_float_per_particle = 100000
 # total number of floats per rank
@@ -106,15 +108,22 @@ for (trial_name, indices) in trial_sets
     timer = TimerOutputs.TimerOutput("copy_states")
     for _ in 1:10
         copyto!(local_states, init_local_states)
-        @timeit timer "overall" ParticleDA.copy_states!(
-            local_states,
-            buffer, 
-            indices, 
-            my_rank, 
-            n_particle_per_rank,
-            timer,
-            dedup
-        )
+        @timeit timer "overall" begin 
+            if optimize_resample
+                resampled_indices = ParticleDA.optimized_resample!(indices, my_size)
+            else
+                resampled_indices = indices
+            end
+            ParticleDA.copy_states!(
+                local_states,
+                buffer, 
+                indices, 
+                my_rank, 
+                n_particle_per_rank,
+                timer,
+                dedup
+            )
+        end
     end
     local_timer_dicts[trial_name] = TimerOutputs.todict(timer["overall"])
 
