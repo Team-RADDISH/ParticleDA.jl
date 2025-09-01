@@ -172,11 +172,11 @@ function copy_states_dedup!(
     # this appropriately but, lazy
     reqs = Vector{MPI.Request}(undef, 0)
 
-    @timeit_debug to "determine sends" sends_to = _determine_sends(resampling_indices, my_rank, nprt_per_rank)
-    @timeit_debug to "categorize wants" local_copies, remote_copies = _categorize_wants(particles_want, my_rank, nprt_per_rank)
+    @timeit_debug to "send plan" sends_to = _determine_sends(resampling_indices, my_rank, nprt_per_rank)
+    @timeit_debug to "receive plan" local_copies, remote_copies = _categorize_wants(particles_want, my_rank, nprt_per_rank)
 
     # Send particles to processes that want them
-    @timeit_debug to "isend loop" begin
+    @timeit_debug to "send loop" begin
         for (dest_rank, unique_ids) in sends_to
             for id in unique_ids
                 local_id = id - my_rank * nprt_per_rank
@@ -189,7 +189,7 @@ function copy_states_dedup!(
     # Receive particles this rank wants from ranks that have them
     # If I already have them, just do a local copy
     # Receive into a buffer so we dont accidentally overwrite stuff
-    @timeit_debug to "irecv loop" begin
+    @timeit_debug to "receive loop" begin
         for (id, buffer_indices) in remote_copies
             source_rank = floor(Int, (id - 1) / nprt_per_rank)
             first_k = buffer_indices[1] # Receive into the first required slot.
@@ -198,7 +198,7 @@ function copy_states_dedup!(
         end
     end
 
-    @timeit_debug to "local copies" begin
+    @timeit_debug to "local replication" begin
         for (id, buffer_indices) in local_copies
             local_id = id - my_rank * nprt_per_rank
             source_view = view(particles, :, local_id)
@@ -209,9 +209,9 @@ function copy_states_dedup!(
     end
 
     # Wait for all comms to complete
-    @timeit_debug to "waitall" MPI.Waitall(reqs)
+    @timeit_debug to "waitall phase" MPI.Waitall(reqs)
 
-    @timeit_debug to "remote duplicates copy" begin
+    @timeit_debug to "remote replication" begin
         for (id, buffer_indices) in remote_copies
             if length(buffer_indices) > 1
                 source_view = view(buffer, :, buffer_indices[1])
@@ -224,7 +224,7 @@ function copy_states_dedup!(
         end
     end
 
-    @timeit_debug to "write from buffer" begin
+    @timeit_debug to "buffer write-back" begin
         Threads.@threads for j in 1:size(particles, 2)
             # @views creates a non-allocating view of the column, which is faster inside a loop
             @views particles[:, j] .= buffer[:, j]

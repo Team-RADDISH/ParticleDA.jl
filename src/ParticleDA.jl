@@ -12,6 +12,7 @@ using PDMats
 using StructArrays
 using ChunkSplitters
 using Test
+using Serialization
 
 export run_particle_filter, simulate_observations_from_model
 export BootstrapFilter, OptimalFilter
@@ -131,7 +132,8 @@ function run_particle_filter(
     observation_file_path::String,
     filter_type::Type{<:ParticleFilter}=BootstrapFilter,
     summary_stat_type::Type{<:AbstractSummaryStat}=MeanAndVarSummaryStat;
-    rng::Random.AbstractRNG=Random.TaskLocalRNG()
+    rng::Random.AbstractRNG=Random.TaskLocalRNG(),
+    optimize_copy_states::Bool=false,
 )
     MPI.Init()
     # Do I/O on rank 0 only and then broadcast
@@ -167,7 +169,8 @@ function run_particle_filter(
         observation_sequence,
         filter_type,
         summary_stat_type; 
-        rng
+        rng,
+        optimize_copy_states,
     )
 end
 
@@ -178,7 +181,8 @@ function run_particle_filter(
     observation_sequence::AbstractMatrix,
     filter_type::Type{<:ParticleFilter},
     summary_stat_type::Type{<:AbstractSummaryStat};
-    rng::Random.AbstractRNG=Random.TaskLocalRNG()
+    rng::Random.AbstractRNG=Random.TaskLocalRNG(),
+    optimize_copy_states::Bool=false
 )
 
     MPI.Init()
@@ -269,7 +273,7 @@ function run_particle_filter(
             )
             @timeit_debug timer "Normalize weights" normalized_exp!(filter_data.weights)
             @timeit_debug timer "Resample" resample!(
-                filter_data.resampling_indices, filter_data.weights, rng
+                filter_data.resampling_indices, filter_data.weights, rng, optimize_copy_states, my_size
             )
 
         else
@@ -287,7 +291,8 @@ function run_particle_filter(
             filter_data.resampling_indices,
             my_rank,
             nprt_per_rank,
-            timer
+            timer,
+            optimize_copy_states
         )
                                                       
         if filter_params.verbose
@@ -335,10 +340,12 @@ function run_particle_filter(
         if filter_params.verbose
             # Gather string representations of timers from all ranks and write them on master
             str_timer = string(timer)
+            dict_timer = TimerOutputs.todict(timer)
 
             timer_lengths = MPI.Gather(
                 sizeof(str_timer), filter_params.master_rank, MPI.COMM_WORLD
             )
+            timer_dict = MPI.gather(dict_timer, MPI.COMM_WORLD; root=filter_params.master_rank)
 
             if my_rank == filter_params.master_rank
                 timer_chars = MPI.Gatherv!(
@@ -348,6 +355,17 @@ function run_particle_filter(
                     MPI.COMM_WORLD
                 )
                 write_timers(timer_lengths, my_size, timer_chars, filter_params)
+                
+                merged_dict = Dict{Int,Dict{String,Any}}()
+                for (r, tdict) in enumerate(timer_dict)
+                    merged_dict[r-1] = tdict
+                end
+                buf   = IOBuffer()
+                serialize(buf, merged_dict)
+                blob  = take!(buf)  # Vector{UInt8}
+                h5open(filter_params.timer_output, "w") do f
+                    write(f, "all_timers", blob)
+                end
             else
                 MPI.Gatherv!(str_timer, nothing, filter_params.master_rank, MPI.COMM_WORLD)
             end

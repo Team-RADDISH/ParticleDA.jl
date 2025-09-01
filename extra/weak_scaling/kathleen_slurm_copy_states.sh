@@ -12,6 +12,8 @@
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export JULIA_NUM_THREADS=$OMP_NUM_THREADS
 
+julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+
 /home/ucabc46/.julia/bin/mpiexecjl -n $SLURM_NNODES\
      julia --project=. \
-     /home/ucabc46/exp/ParticleDA.jl/test/mpi_copy_states.jl -t /home/ucabc46/exp/ParticleDA.jl/test/output/dedup_threading_optimize_resampling/all_timers_$SLURM_NNODES.h5 -d -o
+     /home/ucabc46/exp/ParticleDA.jl/test/mpi_copy_states.jl -t /home/ucabc46/exp/ParticleDA.jl/test/output/dedup_threading/all_timers_$SLURM_NNODES.h5 -d

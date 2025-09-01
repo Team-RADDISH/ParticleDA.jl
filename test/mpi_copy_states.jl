@@ -78,17 +78,9 @@ buffer = zeros((n_float_per_particle, n_particle_per_rank))
 
 trial_sets = Dict(
     "1:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm:1.0" => () -> sort!(sample_indices(n_particle, k=1, p=1.0)),
-    "1:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm:0.999" => () -> sort!(sample_indices(n_particle, k=1, p=0.999)),
     "1:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm:0.99" => () -> sort!(sample_indices(n_particle, k=1, p=0.99)),
-    # "10:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm" => () -> sort!(sample_indices(n_particle, k=10, p=0.99)),
-    # "100:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm" => () -> sort!(sample_indices(n_particle, k=100, p=0.99)),
     "half:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm:1.0" => () -> sort!(sample_indices(n_particle, k=div(n_particle, 2), p=1.0)),
-    "all:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm:1.0" => () -> collect(1:n_particle),
-    # "1:$my_size:$n_particle_per_rank:$n_float_per_particle:firstperm" => ones(Int, n_particle),
-    # "10:$my_size:$n_particle_per_rank:$n_float_per_particle:firstperm" => sort!(rand(rng, 1:10, n_particle)),
-    # "100:$my_size:$n_particle_per_rank:$n_float_per_particle:firstperm" => sort!(rand(rng, 1:100, n_particle)),
-    # "half:$my_size:$n_particle_per_rank:$n_float_per_particle:firstperm" => sort!(rand(rng, 1:div(n_particle, 2), n_particle)),
-    # "all:$my_size:$n_particle_per_rank:$n_float_per_particle:firstperm" => collect(1:n_particle),
+    "all:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm:1.0" => () -> collect(1:n_particle)
 )
 
 local_timer_dicts = Dict{String, Dict{String,Any}}()
@@ -99,8 +91,20 @@ for (trial_name, indices_func) in trial_sets
         println("Resampling particles to indices ", indices)
         println()
     end
-    indices = [1, 2, 3]  # Placeholder for actual indices
+    indices = collect(1:n_particle)  # Placeholder for actual indices
     # repeat experiment 10 times to get average time
+    # warm up run
+    println("Warm up run...")
+    ParticleDA.optimized_resample!(indices, my_size)
+    ParticleDA.copy_states!(
+        local_states,
+        buffer, 
+        indices, 
+        my_rank, 
+        n_particle_per_rank
+    )
+    println("Starting timed runs for trial '$trial_name'...")
+
     timer = TimerOutputs.TimerOutput("copy_states")
     for _ in 1:10
         indices = collect(indices_func())

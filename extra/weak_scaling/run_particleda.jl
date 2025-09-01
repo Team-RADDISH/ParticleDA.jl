@@ -2,6 +2,7 @@ using ParticleDA
 using TimerOutputs
 using MPI
 using LinearAlgebra
+using YAML
 
 # Verify BLAS implementation is OpenBLAS
 @assert occursin("openblas", string(BLAS.get_config()))
@@ -17,9 +18,9 @@ mpi_size = MPI.Comm_size(MPI.COMM_WORLD)
 llw2d_src = joinpath(dirname(pathof(ParticleDA)), "..", "test", "models", "llw2d.jl")
 include(llw2d_src)
 using .LLW2d
-observation_file = "test_observations.h5"
-parameters_file = "parametersW1.yaml"
-output_file = "llw2d_filtering.h5"
+observation_file = joinpath(dirname(pathof(ParticleDA)), "..", "extra", "weak_scaling", "test_observations.h5")
+parameters_file = joinpath(dirname(pathof(ParticleDA)), "..", "extra", "weak_scaling", "parametersW1.yaml")
+output_file = joinpath(dirname(pathof(ParticleDA)), "..", "extra", "weak_scaling", "llw2d_filtering.h5")
 #filter_type = OptimalFilter
 filter_type = BootstrapFilter
 summary_stat_type = NaiveMeanSummaryStat
@@ -40,7 +41,27 @@ end
 MPI.Barrier(MPI.COMM_WORLD)
 
 TimerOutputs.enable_debug_timings(ParticleDA)
+output_timer = "-t" in ARGS || "--output-timer" in ARGS
+if output_timer
+    if length(ARGS) < 2
+        error("Please provide the output filename for timers.")
+    end
+    output_filename = ARGS[2]
+    println("Outputting timers to HDF5 file '$output_filename'")
+end
+optimize = "-o" in ARGS || "--optimize-copy-states" in ARGS
+println("Optimized copy states enabled: ", optimize)
+
+# update parameters to enable weak scaling
+parameters = YAML.load_file(parameters_file)
+parameters["filter"]["nprt"] = mpi_size * 1000
+if output_timer
+    parameters["filter"]["timer_output"] = output_filename
+end
+open(parameters_file, "w") do io
+    YAML.write(io, parameters)
+end
 
 final_states, final_statistics = run_particle_filter(
-  LLW2d.init, parameters_file, observation_file, filter_type, summary_stat_type
+  LLW2d.init, parameters_file, observation_file, filter_type, summary_stat_type, optimize_copy_states=optimize
 )
