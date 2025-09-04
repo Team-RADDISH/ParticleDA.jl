@@ -6,14 +6,14 @@ model:
     station_filename: "/home/ucabc46/exp/ParticleDA.jl/extra/weak_scaling/stationsW1.txt"
     nu: 2.5
     nu_initial_state: 2.5
-    peak_position:
-      - 10000.0
-      - 10000.0
+    peak_height: 30.0
     sigma: 0.01
     nx: 51
     n_integration_step: 16
     x_length: 200000.0
-    peak_height: 30.0
+    peak_position:
+      - 10000.0
+      - 10000.0
     lambda_initial_state: 5000.0
     obs_noise_std:
       - 0.0025
@@ -27,7 +27,7 @@ model:
       - 1
     time_step: 0.5
 filter:
+  optimize_copy_states: true
   output_filename: "llw2d_filtering.h5"
   nprt: 1000
   enable_timers: true
-  optimize_copy_states: true
