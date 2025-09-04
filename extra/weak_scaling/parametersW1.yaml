@@ -27,8 +27,6 @@ model:
       - 1
     time_step: 0.5
 filter:
-  timer_output: "/home/ucabc46/exp/ParticleDA.jl/test/overall/original/all_timers_16.h5"
-  verbose: true
   output_filename: "llw2d_filtering.h5"
-  nprt: 16000
+  nprt: 1000
   enable_timers: true

@@ -14,4 +14,4 @@ export JULIA_NUM_THREADS=$OMP_NUM_THREADS
 
 /home/ucabc46/.julia/bin/mpiexecjl -n $SLURM_NNODES\
      julia --project=. \
-     /home/ucabc46/exp/ParticleDA.jl/extra/weak_scaling/run_particleda.jl -t /home/ucabc46/exp/ParticleDA.jl/test/overall/optimized/all_timers_$SLURM_NNODES.h5 -o
+     /home/ucabc46/exp/ParticleDA.jl/extra/weak_scaling/run_particleda.jl -o

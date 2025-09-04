@@ -41,23 +41,12 @@ end
 MPI.Barrier(MPI.COMM_WORLD)
 
 TimerOutputs.enable_debug_timings(ParticleDA)
-output_timer = "-t" in ARGS || "--output-timer" in ARGS
-if output_timer
-    if length(ARGS) < 2
-        error("Please provide the output filename for timers.")
-    end
-    output_filename = ARGS[2]
-    println("Outputting timers to HDF5 file '$output_filename'")
-end
 optimize = "-o" in ARGS || "--optimize-copy-states" in ARGS
 println("Optimized copy states enabled: ", optimize)
 
 # update parameters to enable weak scaling
 parameters = YAML.load_file(parameters_file)
 parameters["filter"]["nprt"] = mpi_size * 1000
-if output_timer
-    parameters["filter"]["timer_output"] = output_filename
-end
 open(parameters_file, "w") do io
     YAML.write(io, parameters)
 end
