@@ -41,9 +41,6 @@ end
 MPI.Barrier(MPI.COMM_WORLD)
 
 TimerOutputs.enable_debug_timings(ParticleDA)
-optimize = "-o" in ARGS || "--optimize-copy-states" in ARGS
-println("Optimized copy states enabled: ", optimize)
-
 # update parameters to enable weak scaling
 parameters = YAML.load_file(parameters_file)
 parameters["filter"]["nprt"] = mpi_size * 1000
@@ -51,6 +48,8 @@ open(parameters_file, "w") do io
     YAML.write(io, parameters)
 end
 
+println("Optimized copy states enabled: ", parameters["filter"]["optimize_copy_states"])
+
 final_states, final_statistics = run_particle_filter(
-  LLW2d.init, parameters_file, observation_file, filter_type, summary_stat_type, optimize_copy_states=optimize
+  LLW2d.init, parameters_file, observation_file, filter_type, summary_stat_type
 )

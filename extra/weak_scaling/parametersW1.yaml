@@ -30,3 +30,4 @@ filter:
   output_filename: "llw2d_filtering.h5"
   nprt: 1000
   enable_timers: true
+  optimize_copy_states: true

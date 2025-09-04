@@ -116,8 +116,7 @@ specifying the summary statistics of the particles to compute at each time step.
 generator to use to generate random variates while filtering - a seeded random 
 number generator may be specified to ensure reproducible results. If running with
 multiple threads a thread-safe generator such as `Random.TaskLocalRNG` (the default)
-must be used. `optimize_copy_states` is a flag to control whether to use an optimized
-version of the `copy_states!` function.
+must be used.
 
 Returns a tuple containing the state particles representing an estimate of the filtering
 distribution at the final observation time (with each particle a column of the returned
@@ -134,7 +133,6 @@ function run_particle_filter(
     filter_type::Type{<:ParticleFilter}=BootstrapFilter,
     summary_stat_type::Type{<:AbstractSummaryStat}=MeanAndVarSummaryStat;
     rng::Random.AbstractRNG=Random.TaskLocalRNG(),
-    optimize_copy_states::Bool=false,
 )
     MPI.Init()
     # Do I/O on rank 0 only and then broadcast
@@ -170,8 +168,7 @@ function run_particle_filter(
         observation_sequence,
         filter_type,
         summary_stat_type; 
-        rng,
-        optimize_copy_states,
+        rng
     )
 end
 
@@ -182,8 +179,7 @@ function run_particle_filter(
     observation_sequence::AbstractMatrix,
     filter_type::Type{<:ParticleFilter},
     summary_stat_type::Type{<:AbstractSummaryStat};
-    rng::Random.AbstractRNG=Random.TaskLocalRNG(),
-    optimize_copy_states::Bool=false
+    rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
 
     MPI.Init()
@@ -276,7 +272,7 @@ function run_particle_filter(
             @timeit_debug timer "Resample" resample!(
                 filter_data.resampling_indices, filter_data.weights, rng
             )
-            if optimize_copy_states
+            if filter_params.optimize_copy_states
                 # Optimize resampling indices to minimize data movement when copying states
                 @timeit_debug timer "Optimize Resample" filter_data.resampling_indices .= optimized_resample!(
                     filter_data.resampling_indices, my_size
@@ -299,7 +295,7 @@ function run_particle_filter(
             my_rank,
             nprt_per_rank,
             timer,
-            optimize_copy_states
+            filter_params.optimize_copy_states
         )
                                                       
         if filter_params.verbose

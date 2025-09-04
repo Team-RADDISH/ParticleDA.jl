@@ -483,7 +483,7 @@ end
 @testset "Integration test -- $(input_file) with $(filter_type) and $(stat_type)" for
         filter_type in (ParticleDA.BootstrapFilter, ParticleDA.OptimalFilter),
         stat_type in (ParticleDA.MeanSummaryStat, ParticleDA.MeanAndVarSummaryStat),
-        input_file in ["integration_test_$i.yaml" for i in 1:6]
+        input_file in ["integration_test_$i.yaml" for i in 1:7]
     observation_file_path = tempname()
     ParticleDA.simulate_observations_from_model(
         LLW2d.init,

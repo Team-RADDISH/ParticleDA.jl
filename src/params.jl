@@ -27,6 +27,7 @@ Base.@kwdef struct FilterParameters{V<:Union{AbstractSet, AbstractVector}}
     particle_save_time_indices::V = []
     seed::Union{Nothing, Int} = nothing
     n_tasks::Int = -1
+    optimize_copy_states::Bool = false
 end
 
 
