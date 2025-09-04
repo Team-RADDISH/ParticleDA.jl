@@ -6,6 +6,8 @@ function normalized_exp!(weight::AbstractVector)
     weight ./= sum(weight)
 end
 
+# Solve an optimal transport problem to minimize the number of particles
+# that need to be communicated between ranks during resampling.
 function optimized_resample!(resampled_indices::AbstractVector{Int}, nrank::Int)
     nprt_per_rank = length(resampled_indices) ÷ nrank
     stock_queue = [Int[] for _ in 1:nrank]
@@ -23,6 +25,7 @@ function optimized_resample!(resampled_indices::AbstractVector{Int}, nrank::Int)
         cost_matrix[i, i] = 0
     end
 
+    # Solve the optimal transport problem using the HiGHS solver
     y = emd(supply_vector, demand_vector, cost_matrix, HiGHS.Optimizer())
 
     # update resampled_indices
@@ -144,6 +147,8 @@ function copy_states!(
 
 end
 
+# An optimized version of copy_states that minimizes the number of messages sent
+# by deduplicating particles that need to be sent between ranks.
 function copy_states_dedup!(
     particles::AbstractMatrix{T},
     buffer::AbstractMatrix{T},
@@ -153,20 +158,14 @@ function copy_states_dedup!(
     to::TimerOutputs.TimerOutput = TimerOutputs.TimerOutput()
 ) where T
 
-    # These are the particle indices stored on this rank
+    # Same as copy_states
     particles_have = my_rank * nprt_per_rank + 1:(my_rank + 1) * nprt_per_rank
-
-    # These are the particle indices this rank should have after resampling
     particles_want = resampling_indices[particles_have]
-
-    # These are the ranks that have the particles this rank should have
-    rank_has = floor.(Int, (particles_want .- 1) / nprt_per_rank)
-
-    # We could work out how many sends and receives we have to do and allocate
-    # this appropriately but, lazy
     reqs = Vector{MPI.Request}(undef, 0)
 
+    # Determine which particles need to be sent where
     @timeit_debug to "send plan" sends_to = _determine_sends(resampling_indices, my_rank, nprt_per_rank)
+    # Categorize the particles this rank wants into local copies and remote copies
     @timeit_debug to "receive plan" local_copies, remote_copies = _categorize_wants(particles_want, my_rank, nprt_per_rank)
 
     # Send particles to processes that want them
@@ -192,6 +191,7 @@ function copy_states_dedup!(
         end
     end
 
+    # Perform local copies
     @timeit_debug to "local replication" begin
         for (id, buffer_indices) in local_copies
             local_id = id - my_rank * nprt_per_rank
@@ -205,6 +205,7 @@ function copy_states_dedup!(
     # Wait for all comms to complete
     @timeit_debug to "waitall phase" MPI.Waitall(reqs)
 
+    # Perform remote copies for particles received from other ranks
     @timeit_debug to "remote replication" begin
         for (id, buffer_indices) in remote_copies
             if length(buffer_indices) > 1
