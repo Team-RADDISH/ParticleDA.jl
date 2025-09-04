@@ -44,9 +44,7 @@ end
 function resample!(
     resampled_indices::AbstractVector{Int}, 
     weights::AbstractVector{T}, 
-    rng::Random.AbstractRNG=Random.TaskLocalRNG(),
-    optimize_resample::Bool=false,
-    nrank::Int=1,
+    rng::Random.AbstractRNG=Random.TaskLocalRNG()
 ) where T
 
     nprt = length(weights)
@@ -64,10 +62,6 @@ function resample!(
             k += 1
         end
         resampled_indices[ip] = k
-    end
-
-    if optimize_resample
-        resampled_indices .= optimized_resample!(resampled_indices, nrank)
     end
 end
 

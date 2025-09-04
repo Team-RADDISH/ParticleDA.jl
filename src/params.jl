@@ -22,9 +22,7 @@ Base.@kwdef struct FilterParameters{V<:Union{AbstractSet, AbstractVector}}
     master_rank::Int = 0
     verbose::Bool = false
     output_filename::String = "particle_da.h5"
-    timer_output::String = "timers.h5"
     nprt::Int = 4
-    nprt_per_rank::Union{Nothing, Int} = nothing
     enable_timers::Bool = false
     particle_save_time_indices::V = []
     seed::Union{Nothing, Int} = nothing

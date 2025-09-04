@@ -472,6 +472,13 @@ end
     @test all(resampled_indices .== 5)
 end
 
+@testset "Optimized resampling unit tests" begin
+    indices = [1, 3, 5, 5, 5, 5]
+    n_rank = 3
+    optimized_indices = ParticleDA.optimized_resample!(copy(indices), n_rank)
+    @test optimized_indices == [1, 5, 3, 5, 5, 5]
+end
+
 
 @testset "Integration test -- $(input_file) with $(filter_type) and $(stat_type)" for
         filter_type in (ParticleDA.BootstrapFilter, ParticleDA.OptimalFilter),
@@ -507,7 +514,7 @@ end
 end
 
 @testset "MPI test -- $(file)" for file in (
-    "mpi_filtering.jl", "mpi_copy_states.jl", "mpi_summary_statistics.jl"
+    "mpi_filtering.jl", "mpi_copy_states.jl", "mpi_summary_statistics.jl", "mpi_optimized_copy_states.jl"
 )
     julia = Base.julia_cmd()
     flags = ["--startup-file=no", "-q", "-t$(Base.Threads.nthreads())"]

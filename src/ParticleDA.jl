@@ -12,7 +12,6 @@ using PDMats
 using StructArrays
 using ChunkSplitters
 using Test
-using Serialization
 
 export run_particle_filter, simulate_observations_from_model
 export BootstrapFilter, OptimalFilter
@@ -103,7 +102,8 @@ end
         observation_file_path,
         filter_type=BootstrapFilter,
         summary_stat_type=MeanAndVarSummaryStat;
-        rng=Random.TaskLocalRNG()
+        rng=Random.TaskLocalRNG(),
+        optimize_copy_states=false
     ) -> Tuple{Matrix, Union{NamedTuple, Nothing}}
 
 Run particle filter. `init_model` is the function which initialise the model,
@@ -116,7 +116,8 @@ specifying the summary statistics of the particles to compute at each time step.
 generator to use to generate random variates while filtering - a seeded random 
 number generator may be specified to ensure reproducible results. If running with
 multiple threads a thread-safe generator such as `Random.TaskLocalRNG` (the default)
-must be used.
+must be used. `optimize_copy_states` is a flag to control whether to use an optimized
+version of the `copy_states!` function.
 
 Returns a tuple containing the state particles representing an estimate of the filtering
 distribution at the final observation time (with each particle a column of the returned
@@ -273,8 +274,14 @@ function run_particle_filter(
             )
             @timeit_debug timer "Normalize weights" normalized_exp!(filter_data.weights)
             @timeit_debug timer "Resample" resample!(
-                filter_data.resampling_indices, filter_data.weights, rng, optimize_copy_states, my_size
+                filter_data.resampling_indices, filter_data.weights, rng
             )
+            if optimize_copy_states
+                # Optimize resampling indices to minimize data movement when copying states
+                @timeit_debug timer "Optimize Resample" filter_data.resampling_indices .= optimized_resample!(
+                    filter_data.resampling_indices, my_size
+                )
+            end
 
         else
             @timeit_debug timer "Gather weights" MPI.Gather!(
@@ -340,12 +347,10 @@ function run_particle_filter(
         if filter_params.verbose
             # Gather string representations of timers from all ranks and write them on master
             str_timer = string(timer)
-            dict_timer = TimerOutputs.todict(timer)
 
             timer_lengths = MPI.Gather(
                 sizeof(str_timer), filter_params.master_rank, MPI.COMM_WORLD
             )
-            timer_dict = MPI.gather(dict_timer, MPI.COMM_WORLD; root=filter_params.master_rank)
 
             if my_rank == filter_params.master_rank
                 timer_chars = MPI.Gatherv!(
@@ -355,17 +360,6 @@ function run_particle_filter(
                     MPI.COMM_WORLD
                 )
                 write_timers(timer_lengths, my_size, timer_chars, filter_params)
-                
-                merged_dict = Dict{Int,Dict{String,Any}}()
-                for (r, tdict) in enumerate(timer_dict)
-                    merged_dict[r-1] = tdict
-                end
-                buf   = IOBuffer()
-                serialize(buf, merged_dict)
-                blob  = take!(buf)  # Vector{UInt8}
-                h5open(filter_params.timer_output, "w") do f
-                    write(f, "all_timers", blob)
-                end
             else
                 MPI.Gatherv!(str_timer, nothing, filter_params.master_rank, MPI.COMM_WORLD)
             end
