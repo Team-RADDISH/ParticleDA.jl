@@ -102,8 +102,7 @@ end
         observation_file_path,
         filter_type=BootstrapFilter,
         summary_stat_type=MeanAndVarSummaryStat;
-        rng=Random.TaskLocalRNG(),
-        optimize_copy_states=false
+        rng=Random.TaskLocalRNG()
     ) -> Tuple{Matrix, Union{NamedTuple, Nothing}}
 
 Run particle filter. `init_model` is the function which initialise the model,
