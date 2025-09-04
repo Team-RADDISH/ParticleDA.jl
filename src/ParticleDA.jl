@@ -132,7 +132,7 @@ function run_particle_filter(
     observation_file_path::String,
     filter_type::Type{<:ParticleFilter}=BootstrapFilter,
     summary_stat_type::Type{<:AbstractSummaryStat}=MeanAndVarSummaryStat;
-    rng::Random.AbstractRNG=Random.TaskLocalRNG(),
+    rng::Random.AbstractRNG=Random.TaskLocalRNG()
 )
     MPI.Init()
     # Do I/O on rank 0 only and then broadcast
