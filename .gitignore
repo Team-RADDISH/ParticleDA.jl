@@ -5,5 +5,3 @@ Manifest-v*.toml
 /docs/build/
 /.benchmarkci
 *.h5
-*.png
-*.pdf

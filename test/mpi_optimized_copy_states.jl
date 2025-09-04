@@ -78,10 +78,10 @@ buffer = zeros((n_float_per_particle, n_particle_per_rank))
 
 
 trial_sets = Dict(
-    "1:$my_size:$n_particle_per_rank:$n_float_per_particle:1.0" => () -> sort!(sample_indices(n_particle, k=1, p=1.0)),
-    "1:$my_size:$n_particle_per_rank:$n_float_per_particle:0.99" => () -> sort!(sample_indices(n_particle, k=1, p=0.99)),
-    "half:$my_size:$n_particle_per_rank:$n_float_per_particle:1.0" => () -> sort!(sample_indices(n_particle, k=div(n_particle, 2), p=1.0)),
-    "all:$my_size:$n_particle_per_rank:$n_float_per_particle:1.0" => () -> collect(1:n_particle)
+    "1:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm:1.0" => () -> sort!(sample_indices(n_particle, k=1, p=1.0)),
+    "1:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm:0.99" => () -> sort!(sample_indices(n_particle, k=1, p=0.99)),
+    "half:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm:1.0" => () -> sort!(sample_indices(n_particle, k=div(n_particle, 2), p=1.0)),
+    "all:$my_size:$n_particle_per_rank:$n_float_per_particle:randperm:1.0" => () -> collect(1:n_particle)
 )
 
 local_timer_dicts = Dict{String, Dict{String,Any}}()
