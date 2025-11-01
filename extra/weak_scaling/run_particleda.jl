@@ -3,6 +3,7 @@ using TimerOutputs
 using MPI
 using LinearAlgebra
 using YAML
+using Logging
 
 # Verify BLAS implementation is OpenBLAS
 @assert occursin("openblas", string(BLAS.get_config()))
@@ -27,7 +28,7 @@ summary_stat_type = NaiveMeanSummaryStat
 
 my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
 
-println("Rank $(my_rank): # Julia threads = $(Threads.nthreads()), # BLAS threads = $(BLAS.get_num_threads())")
+@info "Rank $(my_rank): # Julia threads = $(Threads.nthreads()), # BLAS threads = $(BLAS.get_num_threads())"
 
 if my_rank == 0 && !isfile(observation_file)
     observation_sequence = simulate_observations_from_model(
@@ -48,7 +49,7 @@ open(parameters_file, "w") do io
     YAML.write(io, parameters)
 end
 
-println("Optimized resampling enabled: ", parameters["filter"]["optimize_resampling"])
+@info "Optimized resampling enabled: ", parameters["filter"]["optimize_resampling"]
 
 final_states, final_statistics = run_particle_filter(
   LLW2d.init, parameters_file, observation_file, filter_type, summary_stat_type

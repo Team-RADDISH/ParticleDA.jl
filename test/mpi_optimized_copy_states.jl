@@ -1,4 +1,4 @@
-using Test, ParticleDA, MPI, Random, TimerOutputs, HDF5, Serialization
+using Test, ParticleDA, MPI, Random, TimerOutputs, HDF5, Serialization, Logging
 TimerOutputs.enable_debug_timings(ParticleDA)
 
 const rng = Random.TaskLocalRNG()
@@ -37,7 +37,7 @@ MPI.Init()
 my_rank = MPI.Comm_rank(MPI.COMM_WORLD)
 my_size = MPI.Comm_size(MPI.COMM_WORLD)
 
-println("Number of threads available: ", Threads.nthreads())
+@info "Number of threads available: ", Threads.nthreads()
 
 n_particle_per_rank = 1000
 n_particle = n_particle_per_rank * my_size
@@ -48,13 +48,13 @@ if output_timer
         error("Please provide the output filename for timers.")
     end
     output_filename = ARGS[2]
-    println("Outputting timers to HDF5 file '$output_filename'")
+    @info "Outputting timers to HDF5 file '$output_filename'"
 end
 # default: dedup enabled for testing
 no_dedup = "-nd" in ARGS || "--no-dedup" in ARGS
-println("Deduplication enabled: ", !no_dedup)
+@info "Deduplication enabled: ", !no_dedup
 optimize_resample = "-o" in ARGS || "--optimize-resample" in ARGS
-println("Optimized resampling enabled: ", optimize_resample)
+@info "Optimized resampling enabled: ", optimize_resample
 
 n_float_per_particle = 100000
 # total number of floats per rank
@@ -68,7 +68,7 @@ local_states = similar(init_local_states)
 if verbose
     for i = 1:my_size
         if i == my_rank + 1
-            println("rank ", my_rank, ": local states: ", local_states)
+            @info "rank $(my_rank): local states: ", local_states
         end
         MPI.Barrier(MPI.COMM_WORLD)
     end
@@ -88,14 +88,12 @@ local_timer_dicts = Dict{String, Dict{String,Any}}()
 
 for (trial_name, indices_func) in trial_sets
     if verbose && my_rank == 0
-        println()
-        println("Resampling particles to indices ", indices)
-        println()
+        @info "Resampling particles to indices ", indices
     end
     indices = collect(1:n_particle)  # Placeholder for actual indices
     # repeat experiment 10 times to get average time
     # warm up run
-    println("Warm up run...")
+    @info "Warm up run..."
     ParticleDA.optimized_resample!(indices, my_size)
     ParticleDA.copy_states!(
         local_states,
@@ -104,7 +102,7 @@ for (trial_name, indices_func) in trial_sets
         my_rank, 
         n_particle_per_rank
     )
-    println("Starting timed runs for trial '$trial_name'...")
+    @info "Starting timed runs for trial '$trial_name'..."
 
     timer = TimerOutputs.TimerOutput("copy_states")
     for _ in 1:10
@@ -141,11 +139,11 @@ for (trial_name, indices_func) in trial_sets
                 # compare
                 match = local_states == expected
 
-                println("rank ", my_rank, ": local_states =")
-                show(stdout, "text/plain", local_states); println()
-                println("rank ", my_rank, ": expected =")
-                show(stdout, "text/plain", expected); println()
-                println("rank ", my_rank, ": match = ", match)
+                @info "rank $(my_rank): local_states ="
+                show(stdout, "text/plain", local_states);
+                @info "rank $(my_rank): expected ="
+                show(stdout, "text/plain", expected);
+                @info "rank $(my_rank): match = ", match
             end
             MPI.Barrier(MPI.COMM_WORLD)
         end

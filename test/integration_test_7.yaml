@@ -1,6 +1,6 @@
 filter:
   nprt: 10
-  optimize_resampling: true
+  optimize_resampling: false
 
 model:
   llw2d:
