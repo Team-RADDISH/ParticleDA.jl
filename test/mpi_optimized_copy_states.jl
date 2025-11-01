@@ -124,8 +124,7 @@ for (trial_name, indices_func) in trial_sets
                 indices, 
                 my_rank, 
                 n_particle_per_rank,
-                timer,
-                !no_dedup
+                timer
             )
         end
     end

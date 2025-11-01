@@ -18,9 +18,9 @@ mpi_size = MPI.Comm_size(MPI.COMM_WORLD)
 llw2d_src = joinpath(dirname(pathof(ParticleDA)), "..", "test", "models", "llw2d.jl")
 include(llw2d_src)
 using .LLW2d
-observation_file = joinpath(dirname(pathof(ParticleDA)), "..", "extra", "weak_scaling", "test_observations.h5")
-parameters_file = joinpath(dirname(pathof(ParticleDA)), "..", "extra", "weak_scaling", "parametersW1.yaml")
-output_file = joinpath(dirname(pathof(ParticleDA)), "..", "extra", "weak_scaling", "llw2d_filtering.h5")
+observation_file = "test_observations.h5"
+parameters_file = "parametersW1.yaml"
+output_file = "llw2d_filtering.h5"
 #filter_type = OptimalFilter
 filter_type = BootstrapFilter
 summary_stat_type = NaiveMeanSummaryStat
@@ -48,7 +48,7 @@ open(parameters_file, "w") do io
     YAML.write(io, parameters)
 end
 
-println("Optimized copy states enabled: ", parameters["filter"]["optimize_copy_states"])
+println("Optimized resampling enabled: ", parameters["filter"]["optimize_resampling"])
 
 final_states, final_statistics = run_particle_filter(
   LLW2d.init, parameters_file, observation_file, filter_type, summary_stat_type

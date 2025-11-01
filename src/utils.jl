@@ -88,73 +88,6 @@ function copy_states!(
     resampling_indices::Vector{Int},
     my_rank::Int,
     nprt_per_rank::Int,
-    to::TimerOutputs.TimerOutput = TimerOutputs.TimerOutput(),
-    dedup::Bool = false
-) where T
-
-    if dedup
-        return copy_states_dedup!(particles, buffer, resampling_indices, my_rank, nprt_per_rank, to)
-    end
-
-    # These are the particle indices stored on this rank
-    particles_have = my_rank * nprt_per_rank + 1:(my_rank + 1) * nprt_per_rank
-
-    # These are the particle indices this rank should have after resampling
-    particles_want = resampling_indices[particles_have]
-
-    # These are the ranks that have the particles this rank should have
-    rank_has = floor.(Int, (particles_want .- 1) / nprt_per_rank)
-
-    # We could work out how many sends and receives we have to do and allocate
-    # this appropriately but, lazy
-    reqs = Vector{MPI.Request}(undef, 0)
-
-    # Send particles to processes that want them
-    @timeit_debug to "send loop" begin
-        for (k,id) in enumerate(resampling_indices)
-            rank_wants = floor(Int, (k - 1) / nprt_per_rank)
-            if id in particles_have && rank_wants != my_rank
-                local_id = id - my_rank * nprt_per_rank
-                req = MPI.Isend(view(particles, :, local_id), rank_wants, id, MPI.COMM_WORLD)
-                push!(reqs, req)
-            end
-        end
-    end
-
-    # Receive particles this rank wants from ranks that have them
-    # If I already have them, just do a local copy
-    # Receive into a buffer so we dont accidentally overwrite stuff
-    @timeit_debug to "receive loop" begin
-        for (k,proc,id) in zip(1:nprt_per_rank, rank_has, particles_want)
-            if proc == my_rank
-                @timeit_debug to "local copy" begin
-                    local_id = id - my_rank * nprt_per_rank
-                    buffer[:, k] .= view(particles, :, local_id)
-                end
-            else
-                @timeit_debug to "remote receive" begin
-                    req = MPI.Irecv!(view(buffer, :, k), proc, id, MPI.COMM_WORLD)
-                    push!(reqs,req)
-                end
-            end
-        end
-    end
-
-    # Wait for all comms to complete
-    @timeit_debug to "waitall phase" MPI.Waitall(reqs)
-
-    @timeit_debug to "buffer write-back" particles .= buffer
-
-end
-
-# An optimized version of copy_states that minimizes the number of messages sent
-# by deduplicating particles that need to be sent between ranks.
-function copy_states_dedup!(
-    particles::AbstractMatrix{T},
-    buffer::AbstractMatrix{T},
-    resampling_indices::Vector{Int},
-    my_rank::Int,
-    nprt_per_rank::Int,
     to::TimerOutputs.TimerOutput = TimerOutputs.TimerOutput()
 ) where T
 
@@ -243,7 +176,7 @@ function _determine_sends(resampling_indices::Vector{Int}, my_rank::Int, nprt_pe
     return sends_to
 end
 
-function _categorize_wants(particles_want, my_rank::Int, nprt_per_rank::Int)
+function _categorize_wants(particles_want::Vector{Int}, my_rank::Int, nprt_per_rank::Int)
     local_copies = Dict{Int, Vector{Int}}()
     remote_copies = Dict{Int, Vector{Int}}()
 

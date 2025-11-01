@@ -271,7 +271,7 @@ function run_particle_filter(
             @timeit_debug timer "Resample" resample!(
                 filter_data.resampling_indices, filter_data.weights, rng
             )
-            if filter_params.optimize_copy_states
+            if filter_params.optimize_resampling
                 # Optimize resampling indices to minimize data movement when copying states
                 @timeit_debug timer "Optimize Resample" filter_data.resampling_indices .= optimized_resample!(
                     filter_data.resampling_indices, my_size
@@ -293,8 +293,7 @@ function run_particle_filter(
             filter_data.resampling_indices,
             my_rank,
             nprt_per_rank,
-            timer,
-            filter_params.optimize_copy_states
+            timer
         )
                                                       
         if filter_params.verbose

@@ -3,7 +3,7 @@ simulate_observations:
   seed: 123
 model:
   llw2d:
-    station_filename: "/home/ucabc46/exp/ParticleDA.jl/extra/weak_scaling/stationsW1.txt"
+    station_filename: "stationsW1.txt"
     nu: 2.5
     nu_initial_state: 2.5
     peak_height: 30.0
@@ -27,7 +27,7 @@ model:
       - 1
     time_step: 0.5
 filter:
-  optimize_copy_states: true
+  optimize_resampling: true
   output_filename: "llw2d_filtering.h5"
-  nprt: 1000
+  nprt: 2000
   enable_timers: true
