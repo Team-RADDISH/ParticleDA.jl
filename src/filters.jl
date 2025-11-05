@@ -25,7 +25,7 @@ function init_filter end
     )
 
 Sample new values for two-dimensional array of state vectors `states` from proposal
-distribution writing in-place to `states` array and compute logarithm of unnormalized 
+distribution writing in-place to `states` array and compute logarithm of unnormalized
 particle weights writing to `log_weights` given observation vector `observation`, with
 state space model described by `model`, named tuple of filter specific data
 structures `filter_data`, filter type `T` and random number generator `rng` used to
@@ -39,7 +39,7 @@ function sample_proposal_and_compute_log_weights! end
 """
     BootstrapFilter <: ParticleFilter
 
-Singleton type `BootstrapFilter`.  This can be used as argument of 
+Singleton type `BootstrapFilter`.  This can be used as argument of
 [`run_particle_filter`](@ref) to select the bootstrap filter.
 """
 struct BootstrapFilter <: ParticleFilter end
@@ -47,7 +47,7 @@ struct BootstrapFilter <: ParticleFilter end
 """
     OptimalFilter <: ParticleFilter
 
-Singleton type `OptimalFilter`.  This can be used as argument of 
+Singleton type `OptimalFilter`.  This can be used as argument of
 [`run_particle_filter`](@ref) to select the optimal proposal filter (for conditionally
 linear-Gaussian models).
 """
@@ -55,11 +55,11 @@ struct OptimalFilter <: ParticleFilter end
 
 # Initialize arrays used by the filter
 function init_filter(
-    filter_params::FilterParameters, 
-    model, 
+    filter_params::FilterParameters,
+    model,
     nprt_per_rank::Int,
     n_tasks::Int,
-    ::Type{BootstrapFilter}, 
+    ::Type{BootstrapFilter},
     summary_stat_type::Type{<:AbstractSummaryStat}
 )
     state_dimension = get_state_dimension(model)
@@ -78,7 +78,7 @@ function init_filter(
 
     # Memory buffer used during copy of the states
     copy_buffer = Array{state_eltype, 2}(undef, state_dimension, nprt_per_rank)
-    return (; 
+    return (;
         weights,
         resampling_indices,
         statistics,
@@ -90,9 +90,9 @@ end
 
 struct OfflineMatrices{R<:Real, M<:AbstractMatrix{R}, F<:AbstractPDMat{R}}
     # Covariance between state X and observations Y given previous state x
-    cov_X_Y::M  
+    cov_X_Y::M
     # Covariance between observations Y given previous state x
-    cov_Y_Y::F  
+    cov_Y_Y::F
 end
 
 struct OnlineMatrices{T<:AbstractMatrix}
@@ -107,7 +107,7 @@ end
 # Allocate and compute matrices that do not depend on time-dependent variables
 function init_offline_matrices(model)
     return OfflineMatrices(
-        get_covariance_state_observation_given_previous_state(model), 
+        get_covariance_state_observation_given_previous_state(model),
         get_covariance_observation_observation_given_previous_state(model),
     )
 end
@@ -130,11 +130,11 @@ end
 
 # Initialize arrays used by the filter
 function init_filter(
-    filter_params::FilterParameters, 
+    filter_params::FilterParameters,
     model,
     nprt_per_rank::Int,
     n_tasks::Int,
-    ::Type{OptimalFilter}, 
+    ::Type{OptimalFilter},
     summary_stat_type::Type{<:AbstractSummaryStat}
 )
     filter_data = init_filter(
@@ -184,17 +184,14 @@ function get_log_density_observation_given_previous_state(
     get_observation_mean_given_state!(observation_mean, pre_noise_state, model, task_index)
     return -invquad(
         filter_data.offline_matrices.cov_Y_Y, observation - observation_mean
-    ) / 2 
+    ) / 2
 end
 
-# ldiv! not currently defined for PDMat so define here
-LinearAlgebra.ldiv!(A::PDMat, B::AbstractMatrix) = ldiv!(A.chol, B)
-
 function update_states_given_observations!(
-    states::AbstractMatrix, 
-    observation::AbstractVector, 
-    model, 
-    filter_data, 
+    states::AbstractMatrix,
+    observation::AbstractVector,
+    model,
+    filter_data,
     rng::Random.AbstractRNG
 )
     observation_buffer = filter_data.online_matrices.observation_buffer
@@ -217,7 +214,7 @@ function update_states_given_observations!(
     # To allow for only a subset of state components being correlated to observations
     # (given previous state) and so needing to be updated as part of optimal proposal
     # the model can specify the relevant indices to update. This avoids computing a
-    # zero update for such state components 
+    # zero update for such state components
     update_indices = get_state_indices_correlated_to_observations(model)
     # Update particles to account for observations, X = X - QHᵀ(HQHᵀ + R)⁻¹(Y − y)
     # The following lines are equivalent to the single statement version
@@ -227,7 +224,7 @@ function update_states_given_observations!(
     # but we stage across multiple statements to allow using in-place operations to
     # avoid unnecessary allocations.
     observation_buffer .-= observation
-    ldiv!(cov_Y_Y, observation_buffer)
+    ldiv!(cholesky(cov_Y_Y), observation_buffer)
     mul!(state_buffer, cov_X_Y, observation_buffer)
     @view(states[update_indices, :]) .-= state_buffer
 end
@@ -258,6 +255,6 @@ function sample_proposal_and_compute_log_weights!(
     end
     # Update to account for conditioning on observations can be performed using matrix-
     # matrix level 3 BLAS operations therefore perform outside of threaded loop over
-    # particles 
+    # particles
     update_states_given_observations!(states, observation, model, filter_data, rng)
 end
