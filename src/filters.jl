@@ -187,9 +187,6 @@ function get_log_density_observation_given_previous_state(
     ) / 2 
 end
 
-# ldiv! not currently defined for PDMat so define here
-LinearAlgebra.ldiv!(A::PDMat, B::AbstractMatrix) = ldiv!(A.chol, B)
-
 function update_states_given_observations!(
     states::AbstractMatrix, 
     observation::AbstractVector, 
@@ -227,7 +224,7 @@ function update_states_given_observations!(
     # but we stage across multiple statements to allow using in-place operations to
     # avoid unnecessary allocations.
     observation_buffer .-= observation
-    ldiv!(cov_Y_Y, observation_buffer)
+    ldiv!(cholesky(cov_Y_Y), observation_buffer)
     mul!(state_buffer, cov_X_Y, observation_buffer)
     @view(states[update_indices, :]) .-= state_buffer
 end
