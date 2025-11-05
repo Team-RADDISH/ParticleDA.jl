@@ -1,6 +1,6 @@
 using ParticleDA
 using ParticleDA.Kalman
-using HDF5, LinearAlgebra, MPI, PDMats, Random, StableRNGs, Statistics, Test, YAML 
+using HDF5, LinearAlgebra, MPI, PDMats, Random, StableRNGs, Statistics, Test, YAML
 
 include(joinpath(@__DIR__, "models", "llw2d.jl"))
 include(joinpath(@__DIR__, "models", "lorenz63.jl"))
@@ -100,7 +100,7 @@ end
         check_hdf5_group_valid(file, group, group_name)
         @test read(group, dataset_name) == test_array
         @test all([
-            read_attribute(group[dataset_name], k) == test_attributes[k] 
+            read_attribute(group[dataset_name], k) == test_attributes[k]
             for k in keys(test_attributes)
         ])
         # test writing to existing dataset name results in warning and does not update
@@ -115,9 +115,9 @@ end
     # test writing timer data
     timer_strings = ["ab", "cde", "fg", "hij"]
     ParticleDA.write_timers(
-        map(length, timer_strings), 
-        length(timer_strings), 
-        codeunits(join(timer_strings)), 
+        map(length, timer_strings),
+        length(timer_strings),
+        codeunits(join(timer_strings)),
         output_filename
     )
     h5open(output_filename, "cw") do file
@@ -132,7 +132,7 @@ end
 
 
 @testset (
-    "Generic model interface unit tests - $(parentmodule(typeof(model)))"   
+    "Generic model interface unit tests - $(parentmodule(typeof(model)))"
 ) for model in (
     LLW2d.init(Dict()),
     Lorenz63.init(Dict()),
@@ -159,7 +159,7 @@ end
                     "x_length" => 100e3,
                     "y_length" => 100e3,
                     "station_boundary_x" => 30e3,
-                    "station_boundary_y" => 30e3, 
+                    "station_boundary_y" => 30e3,
                 )
             )
         ),
@@ -182,7 +182,7 @@ end
         config.model,
         seed,
         estimate_bound_constant,
-        config.estimate_n_samples; 
+        config.estimate_n_samples;
         RNGType=StableRNG
     )
 end
@@ -223,7 +223,7 @@ end
         avg=mean(states; dims=2), var=var(states, corrected=true; dims=2)
     )
     for statistics_type in (
-        ParticleDA.NaiveMeanSummaryStat, 
+        ParticleDA.NaiveMeanSummaryStat,
         ParticleDA.NaiveMeanAndVarSummaryStat,
         ParticleDA.MeanSummaryStat,
         ParticleDA.MeanAndVarSummaryStat
@@ -279,12 +279,12 @@ end
         new_states = copy(states)
         Random.seed!(rng, seed)
         ParticleDA.sample_proposal_and_compute_log_weights!(
-            new_states, 
-            log_weights, 
-            observation, 
-            time_index, 
-            model, 
-            filter_data, 
+            new_states,
+            log_weights,
+            observation,
+            time_index,
+            model,
+            filter_data,
             filter_type,
             rng
         )
@@ -299,12 +299,12 @@ end
         # Check filter update gives deterministic updates when rng state is fixed
         Random.seed!(rng, seed)
         ParticleDA.sample_proposal_and_compute_log_weights!(
-            new_states_2, 
-            log_weights_2, 
-            observation, 
-            time_index, 
-            model, 
-            filter_data, 
+            new_states_2,
+            log_weights_2,
+            observation,
+            time_index,
+            model,
+            filter_data,
             filter_type,
             rng
         )
@@ -318,10 +318,10 @@ end
     n_task = 1
     model_params_dict = Dict(
         "llw2d" => Dict(
-            "nx" => 32, 
-            "ny" => 32, 
-            "n_stations_x" => 4, 
-            "n_stations_y" => 4, 
+            "nx" => 32,
+            "ny" => 32,
+            "n_stations_x" => 4,
+            "n_stations_y" => 4,
             "padding" => 0
         )
     )
@@ -340,8 +340,8 @@ end
     online_matrices = ParticleDA.init_online_matrices(model, 1)
     for f in nfields(online_matrices)
         matrix = getfield(online_matrices, f)
-        @test isa(matrix, AbstractMatrix) 
-    end    
+        @test isa(matrix, AbstractMatrix)
+    end
     state_dimension = ParticleDA.get_state_dimension(model)
     updated_indices = ParticleDA.get_state_indices_correlated_to_observations(
         model
@@ -381,10 +381,10 @@ end
     # X = F(x) + U and Y = HX + V where x is the previous state value, F the forward
     # operator for the deterministic state dynamics, U ~ Normal(0, Q) the additive
     # state noise, X the state at the next time step, H the linear observation
-    # operator, V ~ Normal(0, R) the additive observation noise and Y the modelled 
-    # observations, is Normal(m, C) where 
+    # operator, V ~ Normal(0, R) the additive observation noise and Y the modelled
+    # observations, is Normal(m, C) where
     # m = F(x) + QHᵀ(HQHᵀ + R)⁻¹(y − HF(x))
-    #   = F(x) + cov(X, Y) @ cov(Y, Y)⁻¹ (y − HF(x)) 
+    #   = F(x) + cov(X, Y) @ cov(Y, Y)⁻¹ (y − HF(x))
     # and C = Q − QHᵀ(HQHᵀ + R)⁻¹HQ = cov(X, X) - cov(X, Y) cov(Y, Y)⁻¹ cov(X, Y)ᵀ
     analytic_mean = copy(state)
     @view(analytic_mean[updated_indices]) .+= (
@@ -404,7 +404,7 @@ end
         # Create set of state 'particles' all equal to propagated state
         states = Matrix{ParticleDA.get_state_eltype(model)}(
             undef, (state_dimension, nprt)
-        )        
+        )
         states .= state
         updated_states = copy(states)
         for state in eachcol(updated_states)
@@ -414,21 +414,21 @@ end
         # Mean of noise added by update_particle_noise! should be zero in all components
         # and empirical mean should therefore be zero to within Monte Carlo error. The
         # constant in the tolerance below was set by looking at scale of typical
-        # deviation, the point of check is that errors scale at expected O(1/√N) rate.     
-        @test maximum(abs.(mean(noise, dims=2))) < (10. / sqrt(nprt))  
+        # deviation, the point of check is that errors scale at expected O(1/√N) rate.
+        @test maximum(abs.(mean(noise, dims=2))) < (10. / sqrt(nprt))
         # Covariance of noise added by update_particle_noise! to observed state
         # components should be cov_X_X as computed above and empirical covariance of
         # these components should therefore be within Monte Carlo error of cov_X_X. The
         # constant in tolerance below was set by looking at scale of typical deviations,
-        # the point of check is that errors scale at expected O(1/√N) rate.     
+        # the point of check is that errors scale at expected O(1/√N) rate.
         noise_cov = cov(noise, dims=2)
-        @test maximum(abs.(noise_cov .- cov_X_X)) < (10. / sqrt(nprt))        
+        @test maximum(abs.(noise_cov .- cov_X_X)) < (10. / sqrt(nprt))
         ParticleDA.update_states_given_observations!(
             updated_states, observation, model, filter_data, rng
         )
         updated_mean = mean(updated_states, dims=2)
         updated_cov = cov(updated_states, dims=2)
-        # Mean and covariance of updated particles should be within O(1/√N) Monte Carlo 
+        # Mean and covariance of updated particles should be within O(1/√N) Monte Carlo
         # error of analytic values - constants in tolerances were set by looking at
         # scale of typical deviations, main point of checks are that errors scale at
         # expected O(1/√N) rate.
@@ -473,14 +473,14 @@ end
 end
 
 
-@testset "Integration test -- $(input_file) with $(filter_type) and $(stat_type)" for 
+@testset "Integration test -- $(input_file) with $(filter_type) and $(stat_type)" for
         filter_type in (ParticleDA.BootstrapFilter, ParticleDA.OptimalFilter),
         stat_type in (ParticleDA.MeanSummaryStat, ParticleDA.MeanAndVarSummaryStat),
         input_file in ["integration_test_$i.yaml" for i in 1:6]
     observation_file_path = tempname()
     ParticleDA.simulate_observations_from_model(
-        LLW2d.init, 
-        joinpath(@__DIR__, input_file),  
+        LLW2d.init,
+        joinpath(@__DIR__, input_file),
         observation_file_path
     )
     observation_sequence = h5open(
@@ -488,9 +488,9 @@ end
     )
     @test !any(isnan.(observation_sequence))
     states, statistics = ParticleDA.run_particle_filter(
-        LLW2d.init, 
-        joinpath(@__DIR__, input_file), 
-        observation_file_path, 
+        LLW2d.init,
+        joinpath(@__DIR__, input_file),
+        observation_file_path,
         filter_type,
         stat_type,
     )

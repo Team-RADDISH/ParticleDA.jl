@@ -8,7 +8,7 @@
 [![DOI:10.5194/gmd-2023-38](https://img.shields.io/badge/Journal_article-10.5194/gmd--2023--38-d4a519.svg)](https://doi.org/10.5194/gmd-2023-38)
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 
-`ParticleDA.jl` is a Julia package to perform data assimilation with particle filters, 
+`ParticleDA.jl` is a Julia package to perform data assimilation with particle filters,
 supporting both thread-based parallelism and distributed processing using MPI.
 
 This project is developed in collaboration with the
