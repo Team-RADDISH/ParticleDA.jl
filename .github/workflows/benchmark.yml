@@ -16,10 +16,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# needed to allow julia-actions/cache to delete old caches that it has created
 permissions:
+  # needed to allow julia-actions/cache to delete old caches that it has created
   actions: write
   contents: read
+  # Needed to post a custom job status when pushing the results to a branch
+  statuses: write
 
 jobs:
   benchmark:
