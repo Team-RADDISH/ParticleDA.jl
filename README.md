@@ -6,7 +6,7 @@
 [![Coverage](https://codecov.io/gh/Team-RADDISH/ParticleDA.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/Team-RADDISH/ParticleDA.jl)
 [![DOI](https://zenodo.org/badge/232626497.svg)](https://zenodo.org/badge/latestdoi/232626497)
 [![DOI:10.5194/gmd-2023-38](https://img.shields.io/badge/Journal_article-10.5194/gmd--2023--38-d4a519.svg)](https://doi.org/10.5194/gmd-2023-38)
-
+[![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 
 `ParticleDA.jl` is a Julia package to perform data assimilation with particle filters, 
 supporting both thread-based parallelism and distributed processing using MPI.

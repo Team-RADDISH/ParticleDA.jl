@@ -8,6 +8,13 @@ include(joinpath(@__DIR__, "models", "lineargaussian.jl"))
 
 using .LLW2d
 using .Lorenz63
+using Aqua
+
+# We purposefully add, but not use, OpenMPI_jll:
+# https://github.com/Team-RADDISH/ParticleDA.jl/pull/296. So let's run all the Aqua tests,
+# excluding the stale dep one, and then run that one alone and ignore `OpenMPI_jll`.
+Aqua.test_all(ParticleDA; stale_deps=false)
+Aqua.test_stale_deps(ParticleDA; ignore=[:OpenMPI_jll])
 
 @testset "LLW2d model unit tests" begin
     dx = dy = 2e3
