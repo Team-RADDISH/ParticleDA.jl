@@ -5,7 +5,7 @@ using Distributions
 using HDF5
 using Random
 using PDMats
-using OrdinaryDiffEq
+using OrdinaryDiffEqTsit5: OrdinaryDiffEqTsit5, Tsit5, ODEProblem
 using ParticleDA
 
 Base.@kwdef struct Lorenz63ModelParameters{S <: Real, T <: Real}
@@ -50,7 +50,7 @@ function init(
     parameters = get_params(Lorenz63ModelParameters{S, T}, parameters_dict)
     time_span = (0, parameters.time_step)
     integrators = [
-        OrdinaryDiffEq.init(
+        OrdinaryDiffEqTsit5.init(
             ODEProblem(update_time_derivative!, u, time_span, parameters), 
             Tsit5();
             save_everystep=false
