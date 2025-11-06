@@ -5,7 +5,9 @@ using Distributions
 using HDF5
 using Random
 using PDMats
-using OrdinaryDiffEqTsit5: OrdinaryDiffEqTsit5, Tsit5, ODEProblem
+# `ForwardDiff` is only needed to trigger loading a pkgextension.
+import ForwardDiff as _
+using OrdinaryDiffEqTsit5: OrdinaryDiffEqTsit5, Tsit5, ODEProblem, reinit!, step!
 using ParticleDA
 
 Base.@kwdef struct Lorenz63ModelParameters{S <: Real, T <: Real}
