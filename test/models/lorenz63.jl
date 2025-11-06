@@ -5,7 +5,9 @@ using Distributions
 using HDF5
 using Random
 using PDMats
-using OrdinaryDiffEq
+# `ForwardDiff` is only needed to trigger loading a pkgextension.
+import ForwardDiff as _
+using OrdinaryDiffEqTsit5: OrdinaryDiffEqTsit5, Tsit5, ODEProblem, reinit!, step!
 using ParticleDA
 
 Base.@kwdef struct Lorenz63ModelParameters{S <: Real, T <: Real}
@@ -50,7 +52,7 @@ function init(
     parameters = get_params(Lorenz63ModelParameters{S, T}, parameters_dict)
     time_span = (0, parameters.time_step)
     integrators = [
-        OrdinaryDiffEq.init(
+        OrdinaryDiffEqTsit5.init(
             ODEProblem(update_time_derivative!, u, time_span, parameters), 
             Tsit5();
             save_everystep=false
