@@ -514,7 +514,7 @@ end
 end
 
 @testset "MPI test -- $(file)" for file in (
-    "mpi_filtering.jl", "mpi_copy_states.jl", "mpi_summary_statistics.jl", "mpi_optimized_copy_states.jl"
+    "mpi_filtering.jl", "mpi_copy_states.jl", "mpi_summary_statistics.jl"
 )
     julia = Base.julia_cmd()
     flags = ["--startup-file=no", "-q", "-t$(Base.Threads.nthreads())"]

@@ -13,11 +13,11 @@ export JULIA_NUM_THREADS=$OMP_NUM_THREADS
 
 julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
 
-PARTICLEDA_TEST_DIR=$HOME/ParticleDA.jl/test
-RESULTS_DIR=$PARTICLEDA_TEST_DIR/output
+PARTICLEDA_WEAKSCALING_DIR=$HOME/ParticleDA.jl/extra/weak_scaling
+RESULTS_DIR=$PARTICLEDA_WEAKSCALING_DIR/output
 mkdir -p $RESULTS_DIR
 JULIA_DIR=$HOME/.julia
 
 $JULIA_DIR/bin/mpiexecjl -n $SLURM_NNODES\
      julia --project=. \
-     $PARTICLEDA_TEST_DIR/mpi_optimized_copy_states.jl -t $RESULTS_DIR/all_timers_$SLURM_NNODES.h5 -o
+     $PARTICLEDA_TEST_DIR/optimized_copy_states.jl -t $RESULTS_DIR/all_timers_$SLURM_NNODES.h5 -o
