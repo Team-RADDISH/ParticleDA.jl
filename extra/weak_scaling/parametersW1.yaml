@@ -29,5 +29,5 @@ model:
 filter:
   optimize_resampling: true
   output_filename: "llw2d_filtering.h5"
-  nprt: 2000
+  nprt: 2000  # Arbitrary - this will be overwritten in run_particleda.jl script
   enable_timers: true

@@ -26,7 +26,9 @@ function optimized_resample!(resampled_indices::AbstractVector{Int}, nrank::Int)
     end
 
     # Solve the optimal transport problem using the HiGHS solver
-    y = emd(supply_vector, demand_vector, cost_matrix, HiGHS.Optimizer())
+    optimizer = HiGHS.Optimizer()
+    HiGHS._set_option(optimizer, "log_to_console", false)
+    y = emd(supply_vector, demand_vector, cost_matrix, optimizer)
 
     # update resampled_indices
     for i in 1:nrank
