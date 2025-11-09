@@ -93,9 +93,12 @@ function copy_states!(
     to::TimerOutputs.TimerOutput = TimerOutputs.TimerOutput()
 ) where T
 
-    # Same as copy_states
+    # These are the particle indices stored on this rank
     particles_have = my_rank * nprt_per_rank + 1:(my_rank + 1) * nprt_per_rank
+
+    # These are the particle indices this rank should have after resampling
     particles_want = resampling_indices[particles_have]
+
     reqs = Vector{MPI.Request}(undef, 0)
 
     # Determine which particles need to be sent where
@@ -185,14 +188,12 @@ function _categorize_wants(particles_want::Vector{Int}, my_rank::Int, nprt_per_r
     for k in 1:nprt_per_rank
         id = particles_want[k]
         source_rank = floor(Int, (id - 1) / nprt_per_rank)
+        dict = source_rank == my_rank ? local_copies : remote_copies
 
-        if source_rank == my_rank
-            get!(() -> Int[], local_copies, id) |> v -> push!(v, k)
-        else
-            get!(() -> Int[], remote_copies, id) |> v -> push!(v, k)
+        vec = get!(dict, id) do
+            Int[]  # initialize a new vector only if id not present
         end
+        push!(vec, k)
     end
     return local_copies, remote_copies
 end
-
-
