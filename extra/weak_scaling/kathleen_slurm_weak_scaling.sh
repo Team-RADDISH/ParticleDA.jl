@@ -5,7 +5,6 @@
 #SBATCH --nodes=4
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=40
-#SBATCH --chdir=/home/ucabc46/ParticleDA.jl/extra/weak_scaling
 #SBATCH --output=slurm_log/%x-%j.out
 #SBATCH --error=slurm_log/%x-%j.err
 
@@ -15,6 +14,8 @@ export JULIA_NUM_THREADS=$OMP_NUM_THREADS
 PARTICLEDA_WEAKSCALING_DIR=$HOME/ParticleDA.jl/extra/weak_scaling
 JULIA_DIR=$HOME/.julia
 
+cd $PARTICLEDA_WEAKSCALING_DIR
+
 $JULIA_DIR/bin/mpiexecjl -n $SLURM_NNODES\
-     julia --project=. \
+     julia --project=$PARTICLEDA_WEAKSCALING_DIR \
      $PARTICLEDA_WEAKSCALING_DIR/run_particleda.jl
