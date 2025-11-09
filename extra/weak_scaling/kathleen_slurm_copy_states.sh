@@ -18,6 +18,8 @@ RESULTS_DIR=$PARTICLEDA_WEAKSCALING_DIR/output
 mkdir -p $RESULTS_DIR
 JULIA_DIR=$HOME/.julia
 
+cd $PARTICLEDA_WEAKSCALING_DIR
+
 $JULIA_DIR/bin/mpiexecjl -n $SLURM_NNODES\
      julia --project=. \
-     $PARTICLEDA_TEST_DIR/optimized_copy_states.jl -t $RESULTS_DIR/all_timers_$SLURM_NNODES.h5 -o
+     $PARTICLEDA_WEAKSCALING_DIR/optimized_copy_states.jl -t $RESULTS_DIR/all_timers_$SLURM_NNODES.h5 -o
