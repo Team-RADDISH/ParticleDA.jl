@@ -17,6 +17,8 @@ Parameters for ParticleDA run. Keyword arguments:
    the scheduler to balance load across threads but potentially increase overheads.
    If simulation of the model being filtered use multiple threads then it may be 
    beneficial to set the `n_tasks = 1` to avoid too much contention between threads.
+* `optimize_resampling::Bool`: Flag to control whether to optimize resampling indices
+   to minimize data movement when copying states between MPI ranks.
 """
 Base.@kwdef struct FilterParameters{V<:Union{AbstractSet, AbstractVector}}
     master_rank::Int = 0
@@ -27,6 +29,7 @@ Base.@kwdef struct FilterParameters{V<:Union{AbstractSet, AbstractVector}}
     particle_save_time_indices::V = []
     seed::Union{Nothing, Int} = nothing
     n_tasks::Int = -1
+    optimize_resampling::Bool = true
 end
 
 
