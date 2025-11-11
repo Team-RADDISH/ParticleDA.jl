@@ -5,8 +5,6 @@ using Distributions
 using HDF5
 using Random
 using PDMats
-# `ForwardDiff` is only needed to trigger loading a pkgextension.
-import ForwardDiff as _
 using OrdinaryDiffEqTsit5: OrdinaryDiffEqTsit5, Tsit5, ODEProblem, reinit!, step!
 using ParticleDA
 
