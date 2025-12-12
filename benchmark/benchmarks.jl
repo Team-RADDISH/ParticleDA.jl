@@ -8,9 +8,7 @@ using HDF5
 include(joinpath(joinpath(@__DIR__, "..", "test"), "models", "llw2d.jl"))
 using .LLW2d
 
-if !MPI.Initialized()
-    MPI.Init()
-end
+MPI.Init()
 
 const SUITE = BenchmarkGroup()
 const my_rank = MPI.Comm_rank(MPI.COMM_WORLD)

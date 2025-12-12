@@ -1,5 +1,7 @@
 .DS_Store
 Manifest.toml
+Manifest-v*.toml
 /dev/
 /docs/build/
 /.benchmarkci
+*.h5

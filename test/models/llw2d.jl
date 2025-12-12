@@ -360,7 +360,6 @@ end
 function ParticleDA.get_covariance_observation_noise(model::LLW2dModel)
     observation_dimension = ParticleDA.get_observation_dimension(model)
     return PDiagMat(
-        observation_dimension,
         [
             ParticleDA.get_covariance_observation_noise(model, i, i) 
             for i in 1:observation_dimension
