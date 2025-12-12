@@ -1,0 +1,15 @@
+filter:
+  nprt: 10
+  optimize_resampling: false
+
+model:
+  llw2d:
+    nx: 51
+    ny: 51
+    n_stations_x: 4
+    n_stations_y: 4
+    padding: 0
+    
+simulate_observations:
+  seed: 123
+  n_time_step: 10

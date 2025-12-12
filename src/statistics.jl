@@ -170,6 +170,11 @@ function combine_statistics(s1::MeanAndVarSummaryStat, s2::MeanAndVarSummaryStat
     MeanAndVarSummaryStat(m, v, n)
 end
 
+# Register the custom reduction operator.  This is necessary only on platforms
+# where Julia doesn't support closures as cfunctions (e.g. ARM), but can be used
+# on all platforms for consistency.
+MPI.@RegisterOp(combine_statistics, AbstractCustomReductionSummaryStat)
+
 function init_statistics(
     S::Type{<:AbstractCustomReductionSummaryStat}, T::Type, dimension::Int
 )

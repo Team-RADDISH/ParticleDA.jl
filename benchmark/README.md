@@ -11,6 +11,9 @@ this package.  Benchmarks can be run in two different modes:
 
 ## Run benchmarks on the current branch
 
+> [!NOTE]
+> The manifest for the benchmarks environment is compatible only for a single minor version of Julia, because in general manifests are version-specific.  Currently this is compatible with Julia v1.10.  If you want to run the benchmarks with a different version of Julia and are having troubles instiantiating the environment, delete the manifest file, and follow the instructions below as normal, but running `Pkg.resolve()` before `Pkg.instantiate()`.
+
 Before running the benchmarks, activate the environment of the `benchmark/`
 directory with:
 

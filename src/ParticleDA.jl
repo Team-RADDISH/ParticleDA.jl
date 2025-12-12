@@ -10,6 +10,8 @@ using TimerOutputs
 using LinearAlgebra
 using PDMats
 using StructArrays
+using ChunkSplitters
+using Test
 
 export run_particle_filter, simulate_observations_from_model
 export BootstrapFilter, OptimalFilter
@@ -21,6 +23,10 @@ include("models.jl")
 include("statistics.jl")
 include("filters.jl")
 include("utils.jl")
+include("testing.jl")
+include("kalman.jl")
+
+using .Kalman
 
 """
     simulate_observations_from_model(
@@ -190,17 +196,29 @@ function run_particle_filter(
     end
     timer = TimerOutput()
 
-    nprt_per_rank = Int(filter_params.nprt / MPI.Comm_size(MPI.COMM_WORLD))
+    # Number of tasks to schedule operations which can be parallelized acoss particles 
+    # over - negative n_tasks filter parameter values are assumed to correspond to 
+    # number of tasks per thread and we force the maximum number of tasks that can be 
+    # set to the number of particles on each rank so that there is at least one
+    # particle per task
+    n_tasks = min(
+        filter_params.n_tasks > 0 
+        ? filter_params.n_tasks 
+        : Threads.nthreads() * abs(filter_params.n_tasks),
+        nprt_per_rank
+    )
 
     # Do memory allocations
-    @timeit_debug timer "Model initialization" model = init_model(model_params_dict)
+    @timeit_debug timer "Model initialization" model = init_model(
+        model_params_dict, n_tasks
+    )
     
     @timeit_debug timer "State initialization" states = init_states(
-        model, nprt_per_rank, rng
+        model, nprt_per_rank, n_tasks, rng
     )
 
     @timeit_debug timer "Filter initialization" filter_data = init_filter(
-        filter_params, model, nprt_per_rank, filter_type, summary_stat_type
+        filter_params, model, nprt_per_rank, n_tasks, filter_type, summary_stat_type
     )
 
     @timeit_debug timer "Summary statistics" update_statistics!(
@@ -253,6 +271,12 @@ function run_particle_filter(
             @timeit_debug timer "Resample" resample!(
                 filter_data.resampling_indices, filter_data.weights, rng
             )
+            if filter_params.optimize_resampling
+                # Optimize resampling indices to minimize data movement when copying states
+                @timeit_debug timer "Optimize Resample" filter_data.resampling_indices .= optimized_resample!(
+                    filter_data.resampling_indices, my_size
+                )
+            end
 
         else
             @timeit_debug timer "Gather weights" MPI.Gather!(
@@ -268,7 +292,8 @@ function run_particle_filter(
             filter_data.copy_buffer,
             filter_data.resampling_indices,
             my_rank,
-            nprt_per_rank
+            nprt_per_rank,
+            timer
         )
                                                       
         if filter_params.verbose
