@@ -33,7 +33,6 @@ jobs:
         with:
           version: '1.11.7'
       - uses: julia-actions/cache@v3
-        id: julia-cache
         with:
           cache-name: "benchmarks"
       - name: Install dependencies
@@ -77,11 +76,3 @@ jobs:
           name: tune-json
           path: |
             **/tune.json
-      - name: Save Julia depot cache on cancel or failure
-        id: julia-cache-save
-        if: cancelled() || failure()
-        uses: actions/cache/save@v5
-        with:
-          path: |
-            ${{ steps.julia-cache.outputs.cache-paths }}
-          key: ${{ steps.julia-cache.outputs.cache-key }}
